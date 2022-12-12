@@ -1,0 +1,11 @@
+#include "parrot.dtsi"
+/ {
+};
+
+&non_secure_display_dma_buf {
+	status = "disabled";
+};
+
+&non_secure_display_memory {
+	status = "disabled";
+};
