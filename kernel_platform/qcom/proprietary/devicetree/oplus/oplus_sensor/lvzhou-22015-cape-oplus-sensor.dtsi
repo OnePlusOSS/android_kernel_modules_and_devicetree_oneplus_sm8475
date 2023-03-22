@@ -1,0 +1,120 @@
+/**********************************************************************************
+* Copyright (c)  2022-2024  Guangdong oplus Mobile Comm Corp., Ltd
+* Description: oplus sensor dtsi
+*
+* Version: 1.0
+* Date: 2022-07-17
+*
+* ------------------------------ Revision History: --------------------------------
+* <version>         <date>        <author>                <desc>
+***********************************************************************************/
+&soc {
+	//#ifdef OPLUS_FEATURE_SENSOR_SMEM
+	/*enum sensor_id { OPLUS_ACCEL,OPLUS_GYRO,OPLUS_MAG,OPLUS_LIGHT,OPLUS_PROXIMITY,OPLUS_SAR,OPLUS_CT,OPLUS_BAROMETER,SENSORS_NUM};*/
+	sensor_fb: sensor_fb {
+		compatible = "oplus,sensor-feedback";
+		master-id  = <3>;
+		smem-id    = <608>;
+	};
+	ssc_interactive {
+		need_lb_algo = <1>;
+		primary_lb_brl_info {
+			brl_thrd_num = <1>;
+			brl_thrd = <1>;
+			brl_l2h_thrd = <1>;
+		};
+	};
+	consumer_ir_core: consumer_ir_core {
+		compatible = "oplus,kookong_ir_core";
+		status = "okay";
+
+		vdd-type = <0>; /*0: internal LDO , 1: external LOD*/
+		vdd-supply = <&pm8350c_l11>;
+		vdd-min-vol = <3000000>;
+		vdd-max-vol = <3000000>;
+	};
+	oplus_sensor {
+		compatible = "oplus,sensor-devinfo";
+		/*enum {STK3A5X=0x01,TCS3701=0x02,TCS3408=0x04,STK3A6X=0x08,MN78911=0x10};*/
+		als-row-coe = <130>;
+		lsensor@0 {
+			sensor-name = <0x08>;//STK3A6X
+			sensor-index = <0>;//source num
+			sensor-type = <3>;//OPLUS_LIGHT
+			bus-number = <2>;
+			irq-number = <14>;
+			als-type = <2>;//<1-normal;2-under screen;3-normal needed compensation>
+			is-unit-device = <1>;//<1-alsps unit device;0-separate device>
+			is-als-dri = <1>;//<0-polling 1-irq>
+			als-factor = <130>;
+			is_als_initialed = <0>;
+			als_buffer_length = <8>;
+			normalization_value = <1057>;
+			use_lb_algo = <0>;
+		};
+		psensor@0 {
+			sensor-name = <0x08>;//STK3A6X
+			sensor-index = <0>;
+			sensor-type = <4>;//OPLUS_PROXIMITY
+			bus-number = <2>;
+			irq-number = <14>;
+			ps-type = <2>;//<1-normal;2-type_Y;3-under screen>
+			/*sensor-reg start*/
+			parameter-number = <4>;
+			sensor-reg = <0x03 0x28
+						  0xDB 0x00>; //override special reg
+		};
+		/*virtual sensor
+		enum sensor_algo_id {
+			OPLUS_PICKUP_DETECT,
+			OPLUS_LUX_AOD,
+			OPLUS_TP_GESTURE,
+			OPLUS_FP_DISPLAY,
+			OPLUS_FREE_FALL,
+			OPLUS_CAMERA_PROTECT,
+			SENSOR_ALGO_NUM
+		}*/
+		pickup_detect {
+			sensor-type = <0>;//OPLUS_PICKUP_DETECT
+			is-virtual-sensor;
+			is-need-prox = <1>;
+			prox-type = <0>;
+		};
+		lux_aod {
+			sensor-type = <1>; //OPLUS_LUX_AOD
+			is-virtual-sensor;
+			thrd-low = <12>;
+			thrd-high = <50>;
+			als-type = <0>;
+		};
+		fp_display {
+			sensor-type = <3>;//OPLUS_FP_DISPLAY
+			is-virtual-sensor;
+			prox-type = <0>; // 0 - proximity; 1 - proximity_fake
+		};
+		free_fall {
+			sensor-type = <4>;//OPLUS_FREE_FALL
+			is-virtual-sensor;
+		};
+		mag_fusion {
+			sensor-type = <6>;//OPLUS_MAG_FUSION
+			is-virtual-sensor;
+			fusion-type = <0>;//AKM_FUSION
+			fold-feature = <0>;
+		};
+	};
+	//#endif /*OPLUS_FEATURE_SENSOR_SMEM*/
+};
+
+//add for oplus consumerIr SPI mode
+&qupv3_se18_spi{
+	status = "ok";
+	consumerIr@0 {
+		compatible = "oplus,kookong_ir_spi";
+		reg = <0>;
+		status = "ok";
+
+		spi-max-frequency = <5000000>;    /*4800000,9600000,15000000,19200000*/
+		ir-spi-mode = <0>;
+	};
+};

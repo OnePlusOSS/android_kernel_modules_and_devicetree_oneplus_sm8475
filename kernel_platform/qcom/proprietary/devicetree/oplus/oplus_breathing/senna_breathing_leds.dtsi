@@ -1,0 +1,81 @@
+&pm8350c_rgb{
+	/delete-property/ compatible;
+        /delete-property/ reg;
+	/delete-node/ red;
+	/delete-node/ green;
+	/delete-node/ blue;
+};
+
+&qupv3_se2_i2c {
+	status = "ok";
+	aw210xx_led@1C {
+		compatible = "awinic,aw210xx_led";
+		reg = <0x1C>;
+
+		/* Power Config */
+		enable-gpio = <&tlmm 155 0x1>;
+		vbled-enable-gpio = <&tlmm 153 0x1>;
+		//vdd_2v8-supply = <&BOB>;
+
+		/* Other HW Resource */
+		//irq-gpio = <&tlmm 153 0x2008>;
+		//reset-gpio = <&tlmm 175 0>;
+		//wake-gpio = <&tlmm 98 0>;
+
+		global_current = <0xcc>;
+		osc_clk = <1>;
+		br_res = <1>;
+		status = "okay";
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&aw21xx_enable_pin_default>;
+		aw210xx,red {
+			aw210xx,name = "red";
+			aw210xx,id = <0>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+		};
+		aw210xx,green {
+			aw210xx,name = "green";
+			aw210xx,id = <1>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+		};
+		aw210xx,blue {
+			aw210xx,name = "blue";
+			aw210xx,id = <2>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+		};
+		aw210xx,white {
+                        aw210xx,name ="white";
+                        aw210xx,id = <3>;
+                        aw210xx,imax = <1>;
+                        aw210xx,led_default_trigger = "none";
+                        aw210xx,brightness = <0>;
+                        aw210xx,max-brightness = <255>;
+                        aw210xx,rise-time-ms = <5>;
+                        aw210xx,hold-time-ms = <0>;
+                        aw210xx,fall-time-ms = <0>;
+                        aw210xx,off-time-ms = <0>;
+                };
+
+	};
+};
