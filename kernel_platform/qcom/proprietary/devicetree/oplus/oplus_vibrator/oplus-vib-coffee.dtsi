@@ -1,0 +1,39 @@
+/**********************************************************************************
+* Copyright (c)  2008-2021  Guangdong oplus Mobile Comm Corp., Ltd
+* Description: oplus sensor dtsi
+*
+* Version: 1.0
+* Date: 2023-08-04
+*
+* ------------------------------ Revision History: --------------------------------
+* <version>           <date>                <author>                            <desc>
+***********************************************************************************/
+&tlmm {
+    linear_motor_active: linear_motor_active {
+        mux {
+            pins = "gpio95", "gpio105";
+            function = "gpio";
+        };
+        config {
+            pins = "gpio95", "gpio105";
+            drive-strength = <6>;
+            bias-pull-up;
+        };
+    };
+};
+
+&qupv3_se7_i2c {
+
+	status = "ok";
+	qcom,clk-freq-out = <1000000>;
+	aw8697_moto@5a {
+        compatible = "awinic,aw8697_haptic";
+        reg = <0x5a>;
+        reset-gpio = <&tlmm 95 0x0>;
+        irq-gpio = <&tlmm 105 0x0>;
+        qcom,device_id = <1419>;
+        pinctrl-names = "linear_motor_active";
+        pinctrl-0 = <&linear_motor_active>;
+        status = "okay";
+    };
+};

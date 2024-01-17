@@ -1,0 +1,441 @@
+&qupv3_se9_i2c {
+	status = "disabled";
+};
+&qupv3_se9_spi{
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+	pinctrl-0 = <&qupv3_se9_spi_mosi_active>, <&qupv3_se9_spi_miso_active>,
+				<&qupv3_se9_spi_clk_active>, <&qupv3_se9_spi_cs_active>;
+	pinctrl-1 = <&qupv3_se9_spi_sleep>, <&qupv3_se9_spi_cs_sleep>;
+};
+
+&tlmm {
+
+	ts_oplus_pins_default: pins_default {
+	};
+
+	pmx_ts_int_active {
+		ts_int_active: ts_int_active {
+			mux {
+				pins = "gpio65";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio65";
+				drive-strength = <8>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	pmx_ts_reset_active {
+		ts_reset_active: ts_reset_active {
+			mux {
+				pins = "gpio64";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio64";
+				drive-strength = <8>;
+				output-low;
+				bias-disable;
+			};
+		};
+	};
+};
+
+&qupv3_se9_spi {
+	status = "ok";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+        
+	goodix-berlin@0 {
+		status = "disabled";
+	};
+        
+	focaltech@2 {
+		status = "ok";
+		compatible = "focaltech-FT3681";
+		reg = <0x2>;
+		spi-max-frequency = <12000000>;
+		chip-name = "FT3681";
+
+		/* Interrupt && Irq-gpio */
+		interrupt-parent = <&tlmm>;
+		interrupts = <65 0x2002>;
+		irq-gpio = <&tlmm 65 0x2002>;
+		reset-gpio = <&tlmm 64 0x1>;
+
+		/* Power Config */
+		vdd_2v8-supply = <&L28B>;
+		vcc_1v8-supply = <&L19B>;
+		vdd_2v8_volt = <3000000>;
+		/* Other HW Resource */
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_oplus_pins_default>;
+
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <16 36>;
+		earsense,tx-rx-num = <17 18>;
+		touchpanel,panel-coords = <17280 38592>;
+		touchpanel,display-coords = <1080 2412>;
+		touchpanel,touchmajor-limit = <128 216>;
+		touchpanel,elimination-range = <20 200 200>;
+		//touchpanel,int-mode = <1>; /*0: interrupt and disable, 1:interrupt and not disable*/
+		touchpanel,msecs-to-jiffies-time = <150>;
+		touchpanel,smooth-level = <0 110 115 120 140 155>;
+		touchpanel,smooth-level-charging = <0 110 115 120 140 155>;
+		touchpanel,sensitive-level = <0 19 16 14 13 10>;
+		touchpanel,single-optimized-time = <8>;
+		touchpanel,high-frame-rate-time = <60>;
+		//touchpanel,irq_need_dev_resume_time = <250>;
+		//touchpanel,curved-size = <45>;
+		//end_stretch_value = <480 250 16 16>;
+
+		vid_len = <2>;
+		firmware_name = "AB728001";
+		touchpanel,tp-index = <0>;
+		touchpanel,tp_ic_type = <2>;
+		panel_type = <3>;
+		// type of tp_dev ,TP-SAMSUNG = 8;
+		platform_support_project = <23611 23682 23683 23612 23684 23685 23688>;
+		platform_support_project_dir = <23611 23611 23611 23611 23611 23611 23611>;
+		platform_support_project_commandline = "dsi_oplus_coffee_boe_ili7838e_1080_2412_dsc_cmd";
+
+		prevention,curved_screen_V2;
+		prevention,grip_disable_level = <6>;
+		prevention,updelay_time_ms = <30>;
+		prevention,makeup_cnt_weight = <4 1 2 2 2>;
+		prevention,large_corner_range = <1202 2958>;
+		prevention,large_corner_judge_condition = <500 300 1044 7 7>;
+		prevention,trx_reject_condition = <8 7 7>;
+		prevention,trx_strict_reject_condition = <8 6 6>;
+		prevention,large_judge_time_ms = <500 50 30>;
+		prevention,large_exit_condition = <8 8 2>;
+		prevention,single_channel_width = <150 150>;
+		prevention,normal_tap_condition = <10 350>;
+		prevention,long_edge_condition = <179 90 120 80>;
+		prevention,long_strict_edge_condition = <160 60>;
+		prevention,long_fingerhold_condition = <70 6 4 4>;
+		prevention,short_edge_condition = <179 90 120 80>;
+		prevention,short_strict_edge_condition = <160 60>;
+		prevention,large_strict_exit_condition = <6 6>;
+		prevention,top_corner_config = <218 652 476>;
+		prevention,edge_swipe_config = <159 538>;
+
+		prevention,curved_screen_V4;
+		prevention,long_eliminate_point_type = <2 10800 8040 209 24120 300 1>;
+		prevention,long_fingerhold_condition2 = <609 1740 0 0>;
+		prevention,top_corner_config2 = <3 80 600 1500 0>;
+		prevention,hor_long_top_corner_config = <261 1740 0 0>;
+		prevention,top_middle_config = <10800 884 884 0>;
+		prevention,corner_eliminate_point_type = <0 1594 1975 1>;
+		prevention,finger_hold_differ_size = <1 0 188 300>;
+		prevention,finger_hold_max_rx_exit_distance = <5 305 2001>;
+		prevention,max_rx_exit_distance = <1 5 150 305 1740>;
+		prevention,dynamic_finger_hold_exit_distance = <1 305 2001 392>;
+		prevention,edge_sliding_matched_support = <1 150 3 0>;
+
+		//grip v4.2 reclining mode
+		prevention,reclining_mode_support = <1>;
+		prevention,long_eliminate_point_type_recli = <2 23040 16896 75 50688 500 1>;
+		prevention,finger_hold_differ_size_recli = <1 0 84 400>;
+		prevention,finger_hold_max_rx_exit_distance_recli = <4 75 476>;
+		prevention,max_rx_exit_distance_recli = <1 4 100 75 381>;
+		prevention,dynamic_finger_hold_exit_distance_recli = <1 75 476 150>;
+		prevention,edge_sliding_matched_support_recli = <1 200 3 0>;
+
+		/* SW Support Feature Control */
+		esd_handle_support;
+		//headset_pump_support;
+		//fw_edge_limit_support;
+		health_monitor_support;
+		black_gesture_support;
+		sportify_aod_gesture_support;
+		pressure_report_support;
+		charger_pump_support;
+		game_switch_support;
+		fw_update_app_support;
+		smart_gesture_support;
+		report_flow_unlock_support;
+                report_rate_white_list_support;
+		fingerprint_underscreen_support;
+		//auto_test_force_pass_support;
+		high_resolution_support_x16;
+		algorithm_support;
+		freq_hop_simulate_support;
+		screenoff_fingerprint_info_support;
+		irq_need_dev_resume_ok;
+		kernel_grip_support;
+		exception_upload_support;
+		//grip_no_driver_support;
+		black_gesture_indep_support;
+		//temperature_detect_shellback_support;
+		snr_read_support;
+		palm_to_sleep_support;
+		
+		/*
+		*Virtual Key Config:
+		*1:touchpanel,button-type: <virtualkey_type  supportted_button-map>
+		*virtualkey_type:
+		*Type 1: using board_properties
+		*Type 2: using same IC (button zone&& touch zone are seprate)
+		*Type 3: using diffrent IC (button zone&& touch zone are seprate)
+		*Type 4: No need of virtual key process
+		*supportted_button-map:select|menu|home|back
+		*
+		*2:touchpanel,button-map
+		*type (X1,Y1)(X2,Y2)(X3,Y3)(Width_X,Hight_Y)--Only when button-type is 0
+		*/
+		touchpanel,button-type = <4>;
+		touchpanel.button-TRx = <0 0>;
+
+		FT3681 {
+			switch_report_rate;
+			report_rate_default = <60>;
+			report_rate_game_value = <0x02>;
+		};
+	};
+
+	synaptics_tcm: synaptics_tcm@1{
+		compatible = "synaptics-s3910";
+		reg = <0x1>;
+		chip-name = "S3910";
+		status = "okay";
+		spi-max-frequency = <12000000>;
+		/* Interrupt && Irq-gpio */
+		interrupt-parent = <&tlmm>;
+		interrupts = <65 0x2008>;
+
+		/* Power Config */
+		//enable2v8_gpio = <&tlmm 26 0x1>;
+		//enable1v8_gpio = <&tlmm 97 0x1>;
+		vdd_2v8-supply = <&L28B>;
+		vcc_1v8-supply = <&L19B>;
+		vdd_2v8_volt = <3008000>;
+
+		/* Other HW Resource */
+		irq-gpio = <&tlmm 65 0x2008>;
+		reset-gpio = <&tlmm 64 0x1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_int_active &ts_reset_active>;
+
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <16 36>;
+		earsense,tx-rx-num = <17 18>;
+		touchpanel,panel-coords = <17280 38592>;
+		touchpanel,display-coords = <1080 2412>;
+		touchpanel,touchmajor-limit = <256 256>;
+		touchpanel,int-mode = <1>; /*0: interrupt and disable, 1:interrupt and not disable*/
+		touchpanel,curved-size = <45>;
+
+		prevention,curved_screen_V2;
+		prevention,grip_disable_level = <6>;
+		prevention,updelay_time_ms = <30>;
+		prevention,makeup_cnt_weight = <4 1 2 2 2>;
+		prevention,large_corner_range = <1920 4800>;
+		prevention,large_corner_judge_condition = <500 300 1600 6 6>;
+		prevention,trx_reject_condition = <8 7 7>;
+		prevention,trx_strict_reject_condition = <7 6 6>;
+		prevention,large_judge_time_ms = <500 50 30>;
+		prevention,large_exit_condition = <15 12 2>;
+		prevention,single_channel_width = <512 512>;
+		prevention,normal_tap_condition = <10 300>;
+		prevention,long_edge_condition = <230 100 180 80>;
+		prevention,long_strict_edge_condition = <170 80>;
+		prevention,long_fingerhold_condition = <50 6 4 4>;
+		prevention,short_edge_condition = <230 100 180 80>;
+		prevention,short_strict_edge_condition = <160 60>;
+		prevention,large_strict_exit_condition = <5 5>;
+		prevention,top_corner_config = <800 2400 760>;
+		prevention,edge_swipe_config = <480 1600>;
+
+		prevention,curved_screen_V4;
+		prevention,long_eliminate_point_type = <2 10800 8040 263 24120 300 1>;
+		prevention,long_fingerhold_condition2 = <1120 3200 0 0>;
+		prevention,top_corner_config2 =<3 80 420 2400 0>;
+		prevention,hor_long_top_corner_config =<480 3200 0 0>;
+		prevention,top_middle_config =<17280 1600 1600 0>;
+		prevention,corner_eliminate_point_type = <0 1200 1976 1>;
+		prevention,finger_hold_differ_size = <1 0 338 300>;
+		prevention,finger_hold_max_rx_exit_distance = <5 300 1875>;
+		prevention,max_rx_exit_distance = <1 5 150 300 1500>;
+		prevention,dynamic_finger_hold_exit_distance = <1 300 1875 600>;
+		prevention,edge_sliding_matched_support = <1 250 3 0>;
+
+		//grip v4.2 reclining mode
+		prevention,reclining_mode_support = <1>;
+		prevention,long_eliminate_point_type_recli = <2 10800 8040 300 24120 500 1>;
+		prevention,finger_hold_differ_size_recli = <1 0 338 400>;
+		prevention,finger_hold_max_rx_exit_distance_recli = <4 300 1875>;
+		prevention,max_rx_exit_distance_recli = <1 4 100 300 1500>;
+		prevention,dynamic_finger_hold_exit_distance_recli = <1 300 1875 600>;
+		prevention,edge_sliding_matched_support_recli = <1 200 3 0>;
+		prevention,long_edge_condition_recli = <200 90 120 80>;
+
+		touchpanel,smooth-level = <0 1 2 4 7 9>;
+		touchpanel,smooth-level-charging = <0 2 4 7 8 9>;
+		touchpanel,sensitive-level = <0 70 55 40 25 10>;
+		touchpanel,single-optimized-time = <8>;
+		touchpanel,high-frame-rate-time = <60>;
+
+		end_stretch_value = <480 250 16 16>;
+
+		touchpanel,tp_ic_type = <2>;
+		panel_type = <7>;
+		// type of tp_dev ,TP-SAMSUNG = 8;
+		//firmware_name = "AB7270", "SS";
+		platform_support_project = <23611 23682 23683 23612 23684 23685 23688>;
+		platform_support_project_dir = <23611 23611 23611 23611 23611 23611 23611>;
+		platform_support_project_commandline = "dsi_oplus_coffee23611_ili7838a_1080_2412_dsc_cmd";
+
+		/* SW Support Feature Control */
+		sportify_aod_gesture_support;
+		exception_upload_support;
+		black_gesture_support;
+		//fw_edge_limit_support;
+		pressure_report_support;
+		charger_pump_support;
+		game_switch_support;
+		smart_gesture_support;
+		fw_update_app_support;
+		fingerprint_underscreen_support;
+		freq_hop_simulate_support;
+		report_flow_unlock_support;
+		screenoff_fingerprint_info_support;
+		irq_need_dev_resume_ok;
+		//firmware_in_dts;
+		enable_point_auto_change;
+		report_rate_white_list_support;
+		kernel_grip_support;
+		//grip_no_driver_support;
+		health_monitor_support;
+		black_gesture_indep_support;
+		algorithm_support;
+		spi_port_support;
+		snr_read_support;
+		palm_to_sleep_support;
+		high_resolution_support_x16;
+		//temperature_detect_shellback_support;
+		//io-channels = <&pmk8350_vadc PM8350_ADC7_AMUX_THM3_100K_PU>;
+		//io-channel-names = "pm8350_hot_pocket_therm";
+		//oplus,skin_temp_chan = "pm8350_hot_pocket_therm";
+
+		/*
+		 *Virtual Key Config:
+		 *1:touchpanel,button-type: <virtualkey_type  supportted_button-map>
+		 *virtualkey_type:
+		 *Type 1: using board_properties
+		 *Type 2: using same IC (button zone&& touch zone are seprate)
+		 *Type 3: using diffrent IC (button zone&& touch zone are seprate)
+		 *Type 4: No need of virtual key process
+		 *supportted_button-map:select|menu|home|back
+		 *
+		 *2:touchpanel,button-map
+		 *type (X1,Y1)(X2,Y2)(X3,Y3)(Width_X,Hight_Y)--Only when button-type is 0
+		 */
+		touchpanel,button-type = <4>;
+		touchpanel.button-TRx = <0 0>;
+
+		S3910 {
+			switch_report_rate;
+			report_rate_default = <60>;
+			report_rate_game_value = <1>;
+			fps_report_rate = <60 2 90 1 120 3>;//1:360Hz 2:125Hz 3:240Hz
+			default_gesture_mask = <8191>;
+			fwupdate_bootloader = <1>;
+		};
+	};
+};
+&tlmm {
+	qupv3_se9_spi_pins: qupv3_se9_spi_pins {
+		qupv3_se9_spi_miso_active: qupv3_se9_spi_miso_active {
+			mux {
+				pins = "gpio10";
+				function = "qup1_se3_l0";
+			};
+
+			config {
+				pins = "gpio10";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se9_spi_mosi_active: qupv3_se9_spi_mosi_active {
+			mux {
+				pins = "gpio11";
+				function = "qup1_se3_l1";
+			};
+
+			config {
+				pins = "gpio11";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se9_spi_clk_active: qupv3_se9_spi_clk_active {
+			mux {
+				pins = "gpio12";
+				function = "qup1_se3_l2";
+			};
+
+			config {
+				pins = "gpio12";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se9_spi_cs_active: qupv3_se9_spi_cs_active {
+			mux {
+				pins = "gpio13";
+				function = "qup1_se3_l3";
+			};
+
+			config {
+				pins = "gpio13";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se9_spi_sleep: qupv3_se9_spi_sleep {
+			mux {
+				pins = "gpio10", "gpio11",
+					"gpio12";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio10", "gpio11",
+					"gpio12";
+				drive-strength = <6>;
+				//bias-disable;
+				bias-pull-down;
+			};
+		};
+		qupv3_se9_spi_cs_sleep: qupv3_se9_spi_cs_sleep {
+			mux {
+				pins = "gpio13";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio13";
+				drive-strength = <6>;
+				//bias-disable;
+				output-high;
+			};
+		};
+	};
+//#endif /*OPLUS_FEATURE_TP_BASIC*/
+};
+
+
