@@ -1,0 +1,54 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/oplus/hw-id.h>
+#include "../qcom/cape-mtp-pm8010-overlay.dts"
+#include "cape_overlay_common.dtsi"
+#include "oplus_breathing/senna_breathing_leds.dtsi"
+#include "senna_22624_overlay_common.dtsi"
+#include "oplus_uff/oplus_uff_22015.dtsi"
+#include "oplus_chg/oplus-chg-22624.dtsi"
+#include "nfc/senna-nfc-sn110t.dtsi"
+#include "sensor/senna-oplus-sensor.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Cape MTP, Senna B";
+        oplus,project-id = <22624 0x226AA 0x226AB>;
+        oplus,hw-id = <OPLUS_EVB1 OPLUS_EVB2 OPLUS_T0 OPLUS_T1 OPLUS_EVT1 OPLUS_EVT2 OPLUS_EVT3 OPLUS_DVT1 OPLUS_DVT2 OPLUS_DVT3 OPLUS_PVT1 OPLUS_PVT2 OPLUS_MP1 OPLUS_MP2 OPLUS_MP3>;
+};
+
+&pm8350b_haptics {
+    qcom,vmax-mv = <1280>;
+    qcom,cl-vmax-mv = <1280>;
+    qcom,lra-period-us = <5882>;
+    qcom,fifo-vmax-mv = <9100>;
+    qcom,old-steady-vmax-mv = <9100>;
+    qcom,cal-data-restore;
+    qcom,vibrator-type = <809>;//ela0809
+    qcom,drv-duty = <4>;//75%
+};
+
+&tlmm {
+  rf_cable0_active: rf_cable0_active {
+    mux {
+      pins = "gpio89";
+      function = "gpio";
+    };
+    config {
+      pins = "gpio89";
+      drive-strength = <2>;
+      input-enable;
+      bias-pull-up;
+    };
+  };
+};
+
+&soc {
+  oplus_rf_cable {
+    compatible = "oplus,rf_cable";
+    interrupt-parent = <&tlmm>;
+    rf_cable_support_num = <1>;
+    rf,cable0-gpio = <&tlmm 89 0>;
+    rf,cable-support-timer = <0>;
+    pinctrl-names = "rf_cable_active";
+    pinctrl-0 = <&rf_cable0_active>;
+  };
+};
