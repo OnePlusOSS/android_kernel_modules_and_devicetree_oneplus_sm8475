@@ -1,0 +1,144 @@
+/**********************************************************************************
+* Copyright (c)  2008-2021  Guangdong oplus Mobile Comm Corp., Ltd
+* Description: oplus sensor dtsi
+*
+* Version: 1.0
+* Date: 2021-07-12
+*
+* ------------------------------ Revision History: --------------------------------
+* <version>           <date>                <author>                            <desc>
+***********************************************************************************/
+&tlmm {
+    ir_enable:ir_enable {
+        mux {
+            pins = "gpio89";
+            function = "gpio";
+        };
+        config {
+            pins = "gpio89";
+            drive-strength = <6>;
+            bias-disable;
+        };
+    };
+};
+&soc {
+	//#ifdef OPLUS_FEATURE_SENSOR_SMEM
+	/*enum sensor_id { OPLUS_ACCEL,OPLUS_GYRO,OPLUS_MAG,OPLUS_LIGHT,OPLUS_PROXIMITY,OPLUS_SAR,OPLUS_CT,OPLUS_BAROMETER,SENSORS_NUM};*/
+	sensor_fb: sensor_fb {
+		compatible = "oplus,sensor-feedback";
+		master-id = <3>;
+		smem-id = <608>;
+	};
+	consumer_ir_core: consumer_ir_core {
+		compatible = "oplus,kookong_ir_core";
+		status = "okay";
+
+		vdd-type = <2>; /*0: internal LDO , 1: external LOD*/
+		ir-en = <&tlmm 89 0x00>;
+		//vdd-supply = <&pm8350c_l11>;
+		vdd-min-vol = <3060>;
+		vdd-max-vol = <3060>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ir_enable>;
+	};
+	oplus_sensor {
+		compatible = "oplus,sensor-devinfo";
+		als-row-coe = <140>;
+		gsensor@0 {
+			sensor-name = <0x8>;//BMI260
+			sensor-direction = <2>;
+			sensor-index = <0>;//source num
+			sensor-type = <0>;//OPLUS_ACCEL
+			//use-sois = <1>;
+		};
+		/* enum {AKM0991X = 0x01, MMC5x3x = 0x02, MXG4300 = 0x04};*/
+		msensor@0 {
+			sensor-name = <0x4>;//MXG4300
+			sensor-direction = <0>;
+			sensor-index = <0>;
+			sensor-type = <2>;//OPLUS_MAG
+			mag_param_nfc {
+				projects-num = <4>;
+				match-projects = <23611 23612 23683 23685>;
+				parameter-number= <18>;
+				soft-mag-parameter = <9630 0 607 0 19 0 754 0 9363 0 382 0 1212 0 1703 1 10285 0>;//e00 sign e01 sign...
+			};
+			mag_param_no_nfc {
+				projects-num = <3>;
+                                match-projects = <23682 23684 23688>;
+                                parameter-number= <18>;
+                                soft-mag-parameter = <9760 0 117 1 51 0 1 0 10090 0 359 0 61 0 262 1 10400 0>;//e00 sign e01 sign...
+			};
+		};
+		/*enum {STK3A5X=0x01,TCS3701=0x02,TCS3408=0x04,STK3A6X=0x08};*/
+		lsensor@0 {
+			sensor-name = <0x08>;//STK32600
+			sensor-index = <0>;
+			sensor-type = <3>;//OPLUS_LIGHT
+			bus-number = <1>;
+			irq-number = <63>;
+			als-type = <2>;//UNDER_LCD
+			is-unit-device = <1>;
+			is-als-dri = <0>;
+			als-factor = <140>;
+			is_als_initialed = <0>;
+			als_buffer_length = <8>;
+			//normalization_value = <549>;
+			use_lb_algo = <0>;
+			lcd_type = <0>;
+		};
+		psensor@0 {
+			sensor-name = <0x08>;//STK32600
+			sensor-index = <0>;
+			sensor-type = <4>;//OPLUS_PROXIMITY
+			bus-number = <1>;
+			irq-number = <63>;
+			ps-type = <1>;
+			parameter-number = <4>;
+			sensor-reg = <0x03 0x30 0x05 0x82>; //override special reg
+		};
+		/*virtual sensor
+		enum sensor_algo_id {
+			OPLUS_PICKUP_DETECT,
+			OPLUS_LUX_AOD,
+			OPLUS_TP_GESTURE,
+			OPLUS_FP_DISPLAY,
+			OPLUS_FREE_FALL,
+			OPLUS_CAMERA_PROTECT,
+			SENSOR_ALGO_NUM
+		}*/
+		pickup_detect {
+			sensor-type = <0>;//OPLUS_PICKUP_DETECT
+			is-virtual-sensor;
+			is-need-prox = <1>;
+			prox-type = <0>;
+		};
+		lux_aod {
+			sensor-type = <1>; //OPLUS_LUX_AOD
+			is-virtual-sensor;
+			thrd-low = <12>;
+			thrd-high = <50>;
+			als-type = <0>;
+		};
+		fp_display {
+			sensor-type = <3>;//OPLUS_FP_DISPLAY
+			is-virtual-sensor;
+			prox-type = <0>; // 0 - proximity; 1 - proximity_fake
+		};
+	};
+	//#endif /*OPLUS_FEATURE_SENSOR_SMEM*/
+};
+
+//add for oplus consumerIr SPI mode
+&qupv3_se0_spi{
+	status = "ok";
+	consumerIr@0 {
+		compatible = "oplus,kookong_ir_spi";
+		reg = <0>;
+		status = "ok";
+
+		spi-max-frequency = <5000000>;    /*4800000,9600000,15000000,19200000*/
+		ir-spi-mode = <0>;
+	};
+};
+

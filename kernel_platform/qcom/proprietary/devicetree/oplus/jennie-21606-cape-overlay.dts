@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/oplus/hw-id.h>
+#include "../qcom/cape-mtp-pm8010-overlay.dts"
+#include "cape_overlay_common.dtsi"
+#include "jennie_21606_overlay_common.dtsi"
+#include "nfc/jennie-nfc-sn100t.dtsi"
+#include "tp/oplus_tp_overlay_common.dtsi"
+#include "oplus_uff/oplus_uff_sm8475.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Cape MTP, Jennie-b";
+        oplus,project-id = <21606 21738>;
+        oplus,hw-id = <OPLUS_EVB1 OPLUS_EVB2 OPLUS_T0 OPLUS_T1 OPLUS_EVT1 OPLUS_EVT2 OPLUS_EVT3 OPLUS_DVT1 OPLUS_DVT2 OPLUS_DVT3 OPLUS_PVT1 OPLUS_PVT2 OPLUS_MP1 OPLUS_MP2 OPLUS_MP3>;
+};
+
