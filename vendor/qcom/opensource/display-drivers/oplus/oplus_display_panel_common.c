@@ -1332,10 +1332,10 @@ int oplus_display_set_cabc_status(void *buf)
 				}
 			}
 		oplus_cabc_status = *cabc_status;
-		pr_err("debug for %s, buf = [%s], oplus_cabc_status = %d\n",
-				__func__, buf, oplus_cabc_status);
+		pr_err("debug for %s, buf = [%u], oplus_cabc_status = %d\n",
+				__func__, *cabc_status, oplus_cabc_status);
 	} else {
-		pr_err("debug for %s, buf = [%s], but display panel status is not on!\n",
+		pr_err("debug for %s, buf = [%u], but display panel status is not on!\n",
 				__func__, *cabc_status);
 	}
 	return rc;
@@ -1405,10 +1405,10 @@ int oplus_display_set_dre_status(void *buf)
 			/*	disp_aal_set_dre_en(1);  MTK AAL api */
 		}
 		oplus_dre_status = *dre_status;
-		pr_err("debug for %s, buf = [%s], oplus_dre_status = %d\n",
-				__func__, buf, oplus_dre_status);
+		pr_err("debug for %s, buf = [%u], oplus_dre_status = %d\n",
+				__func__, *dre_status, oplus_dre_status);
 	} else {
-		pr_err("debug for %s, buf = [%s], but display panel status is not on!\n",
+		pr_err("debug for %s, buf = [%u], but display panel status is not on!\n",
 				__func__, *dre_status);
 	}
 	return rc;
@@ -1426,8 +1426,8 @@ int oplus_display_set_dither_status(void *buf)
 {
 	uint32_t *dither_enable = buf;
 	oplus_dither_enable = *dither_enable;
-	pr_err("debug for %s, buf = [%s], oplus_dither_enable = %d\n",
-			__func__, buf, oplus_dither_enable);
+	pr_err("debug for %s, buf = [%u], oplus_dither_enable = %d\n",
+			__func__, *dither_enable, oplus_dither_enable);
 
 	return 0;
 }

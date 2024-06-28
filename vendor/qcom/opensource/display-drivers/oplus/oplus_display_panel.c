@@ -247,7 +247,7 @@ static int oplus_export_dmabuf(int buf_size)
 	}
 	/* just for test */
 	bl_addr = (char *)vaddr;
-	sprintf(bl_addr, "dma test!");
+	scnprintf(bl_addr, PAGE_SIZE, "dma test!");
 	/* just for test */
 
 	oplus_exp_info.ops = &oplus_dmabuf_ops;

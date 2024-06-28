@@ -59,9 +59,18 @@ enum virtual_sensor_handle {
     #ifdef CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT
     elevator_detect,
     #endif //CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT
-#ifdef CONFIG_OPLUS_FEATURE_SENSOR_MONITOR
-    sensor_monitor,
-#endif
+
+        #ifdef CONFIG_OPLUS_FEATURE_SENSOR_MONITOR
+        sensor_monitor,
+        #endif
+
+        #ifdef CONFIG_OPLUS_FEATURE_ROTATION_DETECT
+        rotation_detect,
+        #endif
+        #ifdef CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT
+        back_tap_detect,
+        #endif
+
     max_virtual_sensor_support,
 };
 

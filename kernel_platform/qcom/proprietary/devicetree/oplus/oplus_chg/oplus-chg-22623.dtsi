@@ -693,7 +693,7 @@
 		qcom,vooc_little_cold_full_voltage = <4470>;
 		qcom,vooc_cool_full_voltage = <4470>;
 		qcom,vooc_warm_full_voltage = <4130>;
-		qcom,vooc_1time_full_voltage = <4540>;
+		qcom,vooc_1time_full_voltage = <4550>;
 		qcom,vooc_ntime_full_voltage = <4540>;
 		qcom,low_curr_full_t1 = <120>;
 		qcom,low_curr_full_t2 = <350>;

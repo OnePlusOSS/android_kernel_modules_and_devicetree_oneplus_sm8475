@@ -169,7 +169,7 @@ static int proc_size_memstat(struct file *file, unsigned int cmd, unsigned long 
 	struct logger_reader *reader = file->private_data;
 	struct proc_size_ms psm;
 	struct task_struct *p = NULL;
-	int ret, i, cnt = 0;
+	int ret = 0, i, cnt = 0;
 
 	void __user *argp = (void __user *) arg;
 
@@ -215,8 +215,7 @@ static int proc_size_memstat(struct file *file, unsigned int cmd, unsigned long 
 		if ((psm.flags & PROC_MS_PPID) && pid_alive(p))
 			ms->ppid = task_pid_nr(rcu_dereference(p->real_parent));
 
-		ret = __proc_memstat(p, ms, psm.flags);
-		if (likely(!ret))
+		if (likely(!__proc_memstat(p, ms, psm.flags)))
 			cnt++;
 	}
 	rcu_read_unlock();

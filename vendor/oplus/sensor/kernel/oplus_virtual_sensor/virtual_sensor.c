@@ -53,6 +53,15 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	mSensorState[SENSOR_TYPE_ELEVATOR_DETECT].rate = SENSOR_RATE_ONCHANGE;
 	#endif /*CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT*/
 
+	#ifdef CONFIG_OPLUS_FEATURE_ROTATION_DETECT
+	mSensorState[SENSOR_TYPE_ROTATION_DETECT].sensorType = SENSOR_TYPE_ROTATION_DETECT;
+	mSensorState[SENSOR_TYPE_ROTATION_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	#endif /*CONFIG_OPLUS_FEATURE_ROTATION_DETECT*/
+	#ifdef CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT
+	mSensorState[SENSOR_TYPE_BACK_TAP_DETECT].sensorType = SENSOR_TYPE_BACK_TAP_DETECT;
+	mSensorState[SENSOR_TYPE_BACK_TAP_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	#endif /*CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT*/
+
 	#ifndef _OPLUS_SENSOR_HUB_VI
 	/*mtk 2.0 need to add gain info*/
 	p = &mSensorState[SENSOR_TYPE_CAMERA_PROTECT];
@@ -105,6 +114,19 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	strlcpy(p->name, "elevator_detect", sizeof(p->name));
 	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
 	#endif /*CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT*/
+
+	#ifdef CONFIG_OPLUS_FEATURE_ROTATION_DETECT
+	p = &mSensorState[SENSOR_TYPE_ROTATION_DETECT];
+	p->gain = 1;
+	strlcpy(p->name, "rotation_detect", sizeof(p->name));
+	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+	#endif /*CONFIG_OPLUS_FEATURE_ROTATION_DETECT*/
+	#ifdef CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT
+	p = &mSensorState[SENSOR_TYPE_BACK_TAP_DETECT];
+	p->gain = 1;
+	strlcpy(p->name, "back_tap_detect", sizeof(p->name));
+	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+	#endif /*CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT*/
 
 	pr_err("set gain = 1----\n");
 	#endif
@@ -173,6 +195,17 @@ static int handle_to_index(int handle)
 		index = elevator_detect;
 		break;
 	#endif /*CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT*/
+
+	#ifdef CONFIG_OPLUS_FEATURE_ROTATION_DETECT
+	case ID_ROTATION_DETECT:
+		index = rotation_detect;
+		break;
+	#endif /*CONFIG_OPLUS_FEATURE_ROTATION_DETECT*/
+	#ifdef CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT
+	case ID_BACK_TAP_DETECT:
+		index = back_tap_detect;
+		break;
+	#endif /*CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT*/
 #ifdef CONFIG_OPLUS_FEATURE_SENSOR_MONITOR
 	case ID_SENSOR_MONITOR:
 		index = sensor_monitor;

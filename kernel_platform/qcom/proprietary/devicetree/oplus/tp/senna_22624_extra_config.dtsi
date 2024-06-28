@@ -156,6 +156,7 @@
 		spi_port_support;
 		snr_read_support;
 		temperature_detect_support;
+		palm_to_sleep_support;
 		io-channels = <&pmk8350_vadc PM8350_ADC7_AMUX_THM3_100K_PU>;
 		io-channel-names = "pm8350_hot_pocket_therm";
 		oplus,skin_temp_chan = "pm8350_hot_pocket_therm";

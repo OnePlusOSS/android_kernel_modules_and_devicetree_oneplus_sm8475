@@ -1036,7 +1036,7 @@ ssize_t oplus_adfr_get_dynamic_te(struct kobject *obj,
 {
 	struct dsi_display *display = oplus_display_get_current_display();
 	struct dsi_mode_info timing;
-	int refresh_rate;
+	int refresh_rate = 0;
 
 	if (display == NULL) {
 		DSI_ERR("%s error :NULL display", __func__);

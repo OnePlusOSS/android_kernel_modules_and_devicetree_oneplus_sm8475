@@ -337,6 +337,14 @@
 	};
 };
 
+&usb0 {
+	dwc3@a600000 {
+		compatible = "snps,dwc3";
+		maximum-speed = "super-speed";
+		dr_mode = "otg";
+	};
+};
+
 &battery_charger {
         io-channels = <&pmk8350_vadc PM8350_ADC7_GPIO1_100K_PU>,
 			<&pmk8350_vadc PM8350_ADC7_GPIO2_100K_PU>,

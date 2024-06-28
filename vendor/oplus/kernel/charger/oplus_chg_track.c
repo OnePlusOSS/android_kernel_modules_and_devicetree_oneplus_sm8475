@@ -46,10 +46,10 @@
 #define OPLUS_CHG_TRACK_EVENT_ID		"charge_monitor"
 #define OPLUS_CHG_TRACK_DWORK_RETRY_CNT		3
 
-#define OPLUS_CHG_TRACK_UI_S0C_LOAD_JUMP_THD		5
-#define OPLUS_CHG_TRACK_S0C_JUMP_THD			3
-#define OPLUS_CHG_TRACK_UI_S0C_JUMP_THD			5
-#define OPLUS_CHG_TRACK_UI_SOC_TO_S0C_JUMP_THD		3
+#define OPLUS_CHG_TRACK_UI_SOC_LOAD_JUMP_THD		5
+#define OPLUS_CHG_TRACK_SOC_JUMP_THD			3
+#define OPLUS_CHG_TRACK_UI_SOC_JUMP_THD			5
+#define OPLUS_CHG_TRACK_UI_SOC_TO_SOC_JUMP_THD		3
 #define OPLUS_CHG_TRACK_DEBUG_UISOC_SOC_INVALID		0xFF
 
 #define OPLUS_CHG_TRACK_POWER_TYPE_LEN			24
@@ -428,6 +428,8 @@ struct oplus_chg_track_hidl_wls_third_err {
 struct oplus_chg_track_status {
 	int curr_soc;
 	int pre_soc;
+	int curr_smooth_soc;
+	int pre_smooth_soc;
 	int curr_uisoc;
 	int pre_uisoc;
 	int pre_vbatt;
@@ -904,8 +906,14 @@ static struct oplus_chg_track_cp_err_reason cp_err_reason_table[] = {
 	{ TRACK_CP_ERR_CFLY_CDRV_FAULT, "cfly_cdrv_fault" },
 	{ TRACK_CP_ERR_VBAT_OVP, "vbat_ovp" },
 	{ TRACK_CP_ERR_IBAT_OCP, "ibat_ocp" },
-	{ TRACK_CP_ERR_VBUS_OVP, "vbus_ocp" },
+	{ TRACK_CP_ERR_VBUS_OVP, "vbus_ovp" },
 	{ TRACK_CP_ERR_IBUS_OCP, "ibus_ocp" },
+	{ TRACK_CP_ERR_VBATSNS_OVP, "vbatsns_ovp" },
+	{ TRACK_CP_ERR_TSD, "cp_tsd" },
+	{ TRACK_CP_ERR_PMID2OUT_OVP, "pmid2out_ovp" },
+	{ TRACK_CP_ERR_PMID2OUT_UVP, "pmid2out_uvp" },
+	{ TRACK_CP_ERR_DIAG_FAIL, "diag_fail" },
+	{ TRACK_CP_ERR_SS_TIMEOUT, "ss_timeout" },
 };
 
 static struct oplus_chg_track_cp_err_reason bidirect_cp_err_reason_table[] = {
@@ -5247,6 +5255,8 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 	if (track_status->curr_soc == -EINVAL) {
 		track_status->curr_soc = chip->soc;
 		track_status->pre_soc = chip->soc;
+		track_status->curr_smooth_soc = chip->smooth_soc;
+		track_status->pre_smooth_soc = chip->smooth_soc;
 		track_status->curr_uisoc = chip->ui_soc;
 		track_status->pre_uisoc = chip->ui_soc;
 		track_status->pre_vbatt = curr_vbatt;
@@ -5255,14 +5265,12 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 		track_status->pre_rm = curr_rm;
 		pre_local_time = curr_local_time;
 		if (chip->rsd.smooth_switch_v2 && chip->rsd.reserve_soc)
-			judge_curr_soc =
-				track_status->curr_soc * OPLUS_FULL_SOC / (OPLUS_FULL_SOC - chip->rsd.reserve_soc);
+			judge_curr_soc = track_status->curr_smooth_soc;
 		else
 			judge_curr_soc = track_status->curr_soc;
-		if (abs(track_status->curr_uisoc - judge_curr_soc) > OPLUS_CHG_TRACK_UI_S0C_LOAD_JUMP_THD) {
+		if (abs(track_status->curr_uisoc - judge_curr_soc) > OPLUS_CHG_TRACK_UI_SOC_LOAD_JUMP_THD) {
 			track_status->uisoc_load_jumped = true;
-			pr_debug("The gap between loaded uisoc and soc is too "
-				"large\n");
+			pr_debug("The gap between loaded uisoc and soc is too large\n");
 			memset(g_track_chip->uisoc_load_trigger.crux_info, 0,
 			       sizeof(g_track_chip->uisoc_load_trigger.crux_info));
 			ret = snprintf(g_track_chip->uisoc_load_trigger.crux_info, OPLUS_CHG_TRACK_CURX_INFO_LEN,
@@ -5272,15 +5280,19 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 				       "$$charger_exist@@%d$$curr_smooth_soc@@%d"
 				       "$$curr_fcc@@%d$$curr_rm@@%d$$current@@%d",
 				       track_status->curr_uisoc, track_status->curr_soc,
-				       track_status->curr_uisoc - track_status->curr_soc, track_status->pre_vbatt,
-				       curr_vbatt, track_status->pre_time_utc, curr_time_utc, chip->charger_exist, chip->smooth_soc,
+				       track_status->curr_uisoc - judge_curr_soc, track_status->pre_vbatt, curr_vbatt,
+				       track_status->pre_time_utc, curr_time_utc, chip->charger_exist, chip->smooth_soc,
 				       curr_fcc, curr_rm, chip->icharging);
-			schedule_delayed_work(&g_track_chip->uisoc_load_trigger_work, msecs_to_jiffies(TRACK_TIME_SCHEDULE_UI_SOC_LOAD_JUMP));
+			schedule_delayed_work(&g_track_chip->uisoc_load_trigger_work,
+					      msecs_to_jiffies(TRACK_TIME_SCHEDULE_UI_SOC_LOAD_JUMP));
 		}
 	} else {
 		track_status->curr_soc = track_status->debug_soc != OPLUS_CHG_TRACK_DEBUG_UISOC_SOC_INVALID ?
 						 track_status->debug_soc :
 						 chip->soc;
+		track_status->curr_smooth_soc = track_status->debug_soc != OPLUS_CHG_TRACK_DEBUG_UISOC_SOC_INVALID ?
+							track_status->debug_soc :
+							chip->smooth_soc;
 		track_status->curr_uisoc = track_status->debug_uisoc != OPLUS_CHG_TRACK_DEBUG_UISOC_SOC_INVALID ?
 						   track_status->debug_uisoc :
 						   chip->ui_soc;
@@ -5291,7 +5303,7 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 			      (curr_time_utc - track_status->pre_time_utc);
 
 	if (!track_status->soc_jumped &&
-	    abs(track_status->curr_soc - track_status->pre_soc) > OPLUS_CHG_TRACK_S0C_JUMP_THD) {
+	    abs(track_status->curr_soc - track_status->pre_soc) > OPLUS_CHG_TRACK_SOC_JUMP_THD) {
 		track_status->soc_jumped = true;
 		pr_debug("The gap between curr_soc and pre_soc is too large\n");
 		memset(g_track_chip->soc_trigger.crux_info, 0, sizeof(g_track_chip->soc_trigger.crux_info));
@@ -5313,10 +5325,9 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 	}
 
 	if (!track_status->uisoc_jumped &&
-	    abs(track_status->curr_uisoc - track_status->pre_uisoc) > OPLUS_CHG_TRACK_UI_S0C_JUMP_THD) {
+	    abs(track_status->curr_uisoc - track_status->pre_uisoc) > OPLUS_CHG_TRACK_UI_SOC_JUMP_THD) {
 		track_status->uisoc_jumped = true;
-		pr_debug("The gap between curr_uisoc and pre_uisoc is too "
-			"large\n");
+		pr_debug("The gap between curr_uisoc and pre_uisoc is too large\n");
 		memset(g_track_chip->uisoc_trigger.crux_info, 0, sizeof(g_track_chip->uisoc_trigger.crux_info));
 		ret = snprintf(g_track_chip->uisoc_trigger.crux_info, OPLUS_CHG_TRACK_CURX_INFO_LEN,
 			       "$$curr_uisoc@@%d$$pre_uisoc@@%d$$curr_uisoc_pre_uisoc_gap@@%d"
@@ -5336,12 +5347,12 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 	}
 
 	if (chip->rsd.smooth_switch_v2 && chip->rsd.reserve_soc)
-		judge_curr_soc = track_status->curr_soc * OPLUS_FULL_SOC / (OPLUS_FULL_SOC - chip->rsd.reserve_soc);
+		judge_curr_soc = track_status->curr_smooth_soc;
 	else
 		judge_curr_soc = track_status->curr_soc;
 
 	if (!track_status->uisoc_to_soc_jumped && !track_status->uisoc_load_jumped &&
-	    abs(track_status->curr_uisoc - judge_curr_soc) > OPLUS_CHG_TRACK_UI_SOC_TO_S0C_JUMP_THD) {
+	    abs(track_status->curr_uisoc - judge_curr_soc) > OPLUS_CHG_TRACK_UI_SOC_TO_SOC_JUMP_THD) {
 		track_status->uisoc_to_soc_jumped = true;
 		memset(g_track_chip->uisoc_to_soc_trigger.crux_info, 0,
 		       sizeof(g_track_chip->uisoc_to_soc_trigger.crux_info));
@@ -5364,12 +5375,14 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 		}
 	}
 
-	pr_debug("debug_soc:0x%x, debug_uisoc:0x%x, pre_soc:%d, curr_soc:%d,\
-		pre_uisoc:%d, curr_uisoc:%d\n",
-		track_status->debug_soc, track_status->debug_uisoc, track_status->pre_soc, track_status->curr_soc,
-		track_status->pre_uisoc, track_status->curr_uisoc);
+	pr_debug("debug_soc:0x%x, debug_uisoc:0x%x, pre_soc:%d, curr_soc:%d,"
+		 "pre_uisoc:%d, curr_uisoc:%d, pre_smooth_soc:%d, curr_smooth_soc:%d\n",
+		 track_status->debug_soc, track_status->debug_uisoc, track_status->pre_soc, track_status->curr_soc,
+		 track_status->pre_uisoc, track_status->curr_uisoc, track_status->pre_smooth_soc,
+		 track_status->curr_smooth_soc);
 
 	track_status->pre_soc = track_status->curr_soc;
+	track_status->pre_smooth_soc = track_status->curr_smooth_soc;
 	track_status->pre_uisoc = track_status->curr_uisoc;
 	track_status->pre_vbatt = curr_vbatt;
 	track_status->pre_time_utc = curr_time_utc;

@@ -8,4 +8,4 @@
 
 #include <linux/ioctl.h>
 
-#endif //ELEVATOR_DETECTHUB_H
+#endif /*ELEVATOR_DETECTHUB_H*/

@@ -26,3 +26,5 @@ obj-$(CONFIG_OPLUS_FEATURE_ACTIVITY_RECOGNITION) += oplus_activity_recognitionhu
 obj-$(CONFIG_OPLUS_FEATURE_TP_GESTURE)          += tp_gesturehub/
 obj-$(CONFIG_OPLUS_FEATURE_ELEVATOR_DETECT)     += elevator_detecthub/
 obj-$(CONFIG_OPLUS_FEATURE_SENSOR_MONITOR)	+= sensor_monitor/
+obj-$(CONFIG_OPLUS_FEATURE_ROTATION_DETECT)     += rotation_detecthub/
+obj-$(CONFIG_OPLUS_FEATURE_BACK_TAP_DETECT)     += back_tap_detecthub/
