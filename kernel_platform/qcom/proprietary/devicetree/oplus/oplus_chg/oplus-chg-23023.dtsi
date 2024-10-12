@@ -460,7 +460,7 @@
 						0   380 CURR_LIMIT_7BIT_7_5A 1 0
 						370 400 CURR_LIMIT_7BIT_6_3A 2 0
 						390 420 CURR_LIMIT_7BIT_5_0A 3 1
-						410 430 CURR_LIMIT_7BIT_4_0A 4 2 >;
+						410 430 CURR_LIMIT_7BIT_4_0A 3 2 >;
 
 
 	oplus_virtual_vphy: oplus,virtual_vphy {

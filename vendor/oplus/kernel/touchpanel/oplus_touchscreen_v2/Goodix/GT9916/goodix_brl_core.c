@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -2302,7 +2302,6 @@ static fw_update_state goodix_fw_update(void *chip_data,
 
 	r = goodix_get_cfg_parms(chip_data, cfg_fw_firmware);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_get_cfg_parms fail");
 		TPD_INFO("GT_brlD:%s Failed get cfg from firmware\n", __func__);
 	} else {
 		TPD_INFO("GT_brlD:%s success get ic cfg from firmware\n", __func__);
@@ -2310,9 +2309,7 @@ static fw_update_state goodix_fw_update(void *chip_data,
 
 	r = goodix_get_fw_parms(chip_data, cfg_fw_firmware, &fw_firmware);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_get_fw_parms fail");
 		TPD_INFO("GT_brlD:%s Failed get ic fw from firmware\n", __func__);
-		r = FW_UPDATE_ERROR;
 		goto err_parse_fw;
 	} else {
 		TPD_INFO("GT_brlD:%s success get ic fw from firmware\n", __func__);
@@ -2322,8 +2319,6 @@ static fw_update_state goodix_fw_update(void *chip_data,
 	fwu_ctrl->ic_config = &fwu_ctrl->chip_info->normal_cfg;
 	r = goodix_parse_firmware(&fwu_ctrl->fw_data);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_parse_firmware fail");
-		r = FW_UPDATE_ERROR;
 		goto err_parse_fw;
 	}
 
@@ -2346,7 +2341,6 @@ start_update:
 		}
 	} while (ret && --retry0 > 0);
 	if (ret) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_update_prepare fail");
 		TPD_INFO("GT_brlD:%s: Failed to prepare ISP, exit update:%d\n",
 			 __func__, ret);
 		goto err_fw_prepare;
@@ -2360,7 +2354,6 @@ start_update:
 		goto start_update;
 	}
 	if (ret) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_flash_firmware fail");
 		TPD_INFO("GT_brlD:flash fw data enter error\n");
 	} else {
 		TPD_INFO("GT_brlD:flash fw data success, need check version\n");
@@ -2372,7 +2365,6 @@ err_fw_prepare:
 		TPD_INFO("GT_brlD:Firmware update successfully\n");
 		r = FW_UPDATE_SUCCESS;
 	} else {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_update_finish fail");
 		TPD_INFO("GT_brlD:%s: Firmware update failed\n", __func__);
 		r = FW_UPDATE_ERROR;
 	}
@@ -5533,30 +5525,10 @@ static int goodix_gt9916_ts_probe(struct spi_device *spi)
 	ts->irq = spi->irq;
 	ts->chip_data = chip_info;
 	spi_set_drvdata(spi, ts);
-
-	/* tp_index*/
-	ret = of_property_read_u32(ts->dev->of_node, "touchpanel,tp-index", &ts->tp_index);
-
-	if (ret) {
-		TPD_BOOT_INFO("ts->tp_index not specified\n");
-		ts->tp_index = 0;
-	} else {
-		if (ts->tp_index >= TP_SUPPORT_MAX) {
-			TP_INFO(ts->tp_index, "ts->tp_index is big than %d\n", TP_SUPPORT_MAX);
-			ts->tp_index = 0;
-		}
-	}
-	TPD_INFO("ts->tp_index is %d\n", ts->tp_index);
-
 	/* add input_dev info */
 	ts->id.bustype = BUS_SPI;
 	ts->id.vendor = GOODIX;
-
-	if (!ts->tp_index) {
-		ts->id.product = GT9916;
-	} else {
-		ts->id.product = GT9916_SECOND;
-	}
+	ts->id.product = GT9916;
 
 	chip_info->hw_res = &ts->hw_res;
 	chip_info->s_client = spi;
@@ -5582,7 +5554,6 @@ static int goodix_gt9916_ts_probe(struct spi_device *spi)
 	/* 9. create goodix tool node */
 	gtx8_init_tool_node(ts, &chip_info->rawdiff_mode);
 
-	chip_info->monitor_data = &ts->monitor_data;
 	chip_info->kernel_grip_support = ts->kernel_grip_support;
 	chip_info->tp_index = ts->tp_index;
 	chip_info->max_x = ts->resolution_info.max_x;

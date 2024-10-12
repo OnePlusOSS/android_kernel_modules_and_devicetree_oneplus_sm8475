@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include "ili7807s.h"
@@ -2810,7 +2810,7 @@ static int netlink_init(void)
 
 void ili_node_init(void)
 {
-	int i = 0, ret = 0;
+	int i = 0;
 	proc_dir_ilitek = proc_mkdir("ilitek", NULL);
 
 	for (; i < ARRAY_SIZE(iliproc); i++) {
@@ -2820,7 +2820,6 @@ void ili_node_init(void)
 		if (iliproc[i].node == NULL) {
 			iliproc[i].is_created = false;
 			ILI_ERR("Failed to create %s under /proc\n", iliproc[i].name);
-			ret = -ENODEV;
 
 		} else {
 			iliproc[i].is_created = true;

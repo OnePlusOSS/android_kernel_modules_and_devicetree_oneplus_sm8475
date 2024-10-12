@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef _TOUCHPANEL_COMMON_H_
@@ -97,7 +97,6 @@
 #define SET_BIT(data, flag) ((data) |= (flag))
 #define CLR_BIT(data, flag) ((data) &= ~(flag))
 #define CHK_BIT(data, flag) ((data) & (flag))
-#define CHK_BIT_NUM(data, flag) ((data) & (1 << (flag)))
 #define VK_TAB {KEY_MENU, KEY_HOMEPAGE, KEY_BACK, KEY_SEARCH}
 
 #define SET_GESTURE_BIT(state, state_flag, config, config_flag)\
@@ -158,19 +157,18 @@
 #define SYNAPTICS    0x0901
 #define S3910        0x0901
 #define S3908        0x0902
-#define S3910_SECOND 0x0903
 
 #define GOODIX       0x0902
 #define GT9966       0x0901
 #define GT9916       0x0902
-#define GT9966_SECOND 0x0903
-#define GT9916_SECOND 0x0904
 
 #define ABS_TOUCH_COST_TIME_KERNEL  0x21
 #define ABS_TOUCH_COST_TIME_ALGO    0x22
 #define ABS_TOUCH_COST_TIME_DAEMON  0x23
 #define MAX_TOUCH_COST_TIME         1000 * 1000
 
+#define MAX_TEMPERATURE             70
+#define MIN_TEMPERATURE             -40
 /*********PART3:Struct Area**********************/
 typedef enum {
 	TYPE_ONCELL = 0,   /*such as synaptic s3706*/
@@ -579,16 +577,6 @@ typedef enum {
 	TYPE_PENCIL_MAXEYE = 2,
 } pencil_type;
 
-typedef enum {
-	HEALTH_SIMULATE_BIT_IRQ_GPIO = 0,
-	HEALTH_SIMULATE_BIT_AVDD_VDDI,
-	HEALTH_SIMULATE_BIT_ESD,
-	HEALTH_SIMULATE_BIT_MODE_SWITCH,
-	HEALTH_SIMULATE_BIT_BUS,
-	HEALTH_SIMULATE_BIT_IC_HEALTHINFO = 5,
-	HEALTH_SIMULATE_BIT_FW_UPDATE,
-} health_simulate_bit;
-
 struct point_state_monitor {
 	u64 time_counter;
 	struct point_info first_point;
@@ -622,7 +610,7 @@ struct swipes_record {
 struct monitor_data {
 	void  *chip_data; /*debug info data*/
 	struct debug_info_proc_operations  *debug_info_ops; /*debug info data*/
-	uint32_t health_simulate_trigger;
+	bool health_simulate_trigger;
 
 	u64 boot_time;
 	u64 stat_time;
@@ -754,6 +742,7 @@ struct monitor_data {
 
 	int avdd;
 	int vddi;
+	u64 abnormal_temperature_count;
 	u64 pm_resume_count;
 	u64 pm_suspend_count;
 	u64 force_bus_ready_count;
@@ -1153,6 +1142,9 @@ struct touchpanel_data {
 	u32 smooth_level_default;
 	u32 sensitive_level_default;
 
+	/******For smooth report_threshold area********/
+	bool diaphragm_touch_support;
+	u32 diaphragm_touch_level_chosen;
 
 	/******For lcd fps area********/
 	bool lcd_tp_refresh_support;                      /*lcd nofity tp refresh fps switch*/
@@ -1266,6 +1258,7 @@ struct oplus_touchpanel_operations {
 	void (*rate_white_list_ctrl)(void *chip_data, int value);
 	int (*smooth_lv_set)(void *chip_data, int level);
 	int (*sensitive_lv_set)(void *chip_data, int level);
+	int (*diaphragm_touch_lv_set)(void *chip_data, int level);
 	int (*send_temperature)       (void *chip_data, int value, bool status);
 	int (*tp_refresh_switch)(void *chip_data, int fps);
 	void (*set_gesture_state)(void *chip_data, int state);

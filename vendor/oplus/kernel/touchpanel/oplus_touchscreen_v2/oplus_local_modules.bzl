@@ -36,6 +36,36 @@ def define_oplus_local_modules():
     )
 
     define_oplus_ddk_module(
+        name = "oplus_bsp_tp_focal_common",
+        srcs = native.glob([
+            "**/*.h",
+            "Focal/focal_common.c",
+        ]),
+        includes = ["."],
+        ko_deps = [
+            "//vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_custom",
+            "//vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_common",
+        ],
+#        local_defines = ["CONFIG_REMOVE_OPLUS_FUNCTION"],
+    )
+
+    define_oplus_ddk_module(
+        name = "oplus_bsp_tp_ft3658u_spi",
+        srcs = native.glob([
+            "**/*.h",
+            "Focal/ft3658u_spi/ft3658u_driver.c",
+            "Focal/ft3658u_spi/ft3658u_test.c",
+        ]),
+        ko_deps = [
+            "//vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_custom",
+            "//vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_common",
+            "//vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_focal_common",
+        ],
+        includes = ["."],
+#        local_defines = ["CONFIG_REMOVE_OPLUS_FUNCTION"],
+    )
+
+    define_oplus_ddk_module(
         name = "oplus_bsp_tp_custom",
         srcs = native.glob([
             "**/*.h",
@@ -54,6 +84,7 @@ def define_oplus_local_modules():
             "touchpanel_healthinfo/touchpanel_healthinfo.c",
             "touchpanel_healthinfo/touchpanel_exception.c",
             "touchpanel_autotest/touchpanel_autotest.c",
+            "touchpanel_prevention/touchpanel_prevention.c",
             "touchpanel_common_driver.c",
             "touchpanel_proc.c",
             "tp_ioctl.c",
@@ -89,6 +120,8 @@ def define_oplus_local_modules():
         module_list = [
             "oplus_bsp_tp_syna_common",
             "oplus_bsp_tp_tcm_S3910",
+            "oplus_bsp_tp_focal_common",
+            "oplus_bsp_tp_ft3658u_spi",
             "oplus_bsp_tp_custom",
             "oplus_bsp_tp_common",
         ],

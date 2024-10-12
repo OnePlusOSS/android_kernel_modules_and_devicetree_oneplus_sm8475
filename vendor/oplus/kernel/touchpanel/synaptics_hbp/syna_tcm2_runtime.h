@@ -414,6 +414,21 @@ static inline void syna_pal_mutex_free(syna_pal_mutex_t *ptr)
 	/* do nothing */
 }
 /**
+ * syna_pal_mutex_trylock()
+ *
+ * Acquire/lock the mutex without waiting.
+ *
+ * @param
+ *    [ in] ptr: a mutex handle
+ *
+ * @return
+ *    none.
+ */
+static inline int syna_pal_mutex_trylock(syna_pal_mutex_t *ptr)
+{
+	return mutex_trylock((struct mutex *)ptr);
+}
+/**
  * syna_pal_mutex_lock()
  *
  * Acquire/lock the mutex.

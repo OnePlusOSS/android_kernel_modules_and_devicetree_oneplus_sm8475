@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef _SYNAPTICS_TCM_CORE_H_
@@ -13,6 +13,7 @@
 
 #include "../../touchpanel_common.h"
 #include "../synaptics_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 #ifdef TPD_DEVICE
 #undef TPD_DEVICE
@@ -700,5 +701,10 @@ int syna_tcm_rmi_write(struct syna_tcm_data *tcm_info,
 		       unsigned short addr, unsigned char *data, unsigned int length);
 
 extern void tp_fw_auto_reset_handle(struct touchpanel_data *ts);
+
+struct syna_support_grip_zone {
+	char name[GRIP_TAG_SIZE];
+	int (*handle_func)(void *chip_data, struct grip_zone_area *grip_zone, bool enable);
+};
 
 #endif  /*_SYNAPTICS_TCM_CORE_H_*/

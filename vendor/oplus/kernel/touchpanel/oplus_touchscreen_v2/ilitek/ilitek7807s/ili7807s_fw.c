@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include "ili7807s.h"
@@ -603,9 +603,9 @@ static int ilitek_tddi_fw_update_block_info(u8 *pfw)
 	ILI_INFO("==== Gesture loader info ====\n");
 	ILI_INFO("gesture move to ap addr => start = 0x%x, ap_end = 0x%x, ap_len = 0x%x\n",
 		 fbi[GESTURE].mem_start, ap_end, ap_len);
-	ILI_INFO("gesture hex addr => start = 0x%x, gesture_end = 0x%x, gesture_len = 0x%x\n",
+	ILI_INFO("gesture hex addr => start = 0x%x, gesture_end = 0x%x, hex_area = %d, gesture_len = 0x%x\n",
 		 ges_fw_start,
-		 ges_fw_end, fbi[GESTURE].len);
+		 ges_fw_end, ges_area_section, fbi[GESTURE].len);
 	ILI_INFO("=============================\n");
 	fbi[AP].name = "AP";
 	fbi[DATA].name = "DATA";

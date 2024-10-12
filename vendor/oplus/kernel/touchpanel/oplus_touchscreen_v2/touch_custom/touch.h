@@ -1,11 +1,12 @@
 /***************************************************
  * File:touch.h
  * VENDOR_EDIT
- * Copyright (c)  2008- 2030  oplus Mobile communication Corp.ltd.
+ * Copyright (c)  2008- 2030  Oplus Mobile communication Corp.ltd.
  * Description:
  *             tp dev
  * Version:1.0:
  * Date created:2016/09/02
+ * TAG: BSP.TP.Init
 */
 
 #ifndef _TOUCH_H_
@@ -13,8 +14,8 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include "../oplus_touchscreen_v2/tp_devices.h"
-#include "../oplus_touchscreen_v2/touchpanel_common.h"
+#include "../tp_devices.h"
+#include "../touchpanel_common.h"
 
 
 extern bool tp_judge_ic_match(char *tp_ic_name);
@@ -26,5 +27,5 @@ extern int preconfig_power_control(struct touchpanel_data *ts);
 extern int reconfig_power_control(struct touchpanel_data *ts);
 
 extern void display_esd_check_enable_bytouchpanel(bool enable);
-
 #endif /* _TOUCH_H_ */
+

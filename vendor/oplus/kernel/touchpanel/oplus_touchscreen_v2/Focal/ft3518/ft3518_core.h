@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef __FT3518_CORE_H__
@@ -225,6 +225,7 @@ struct chip_data_ft3518 {
 	struct fts_test mpt;
 	struct fts_autotest_offset *fts_autotest_offset;
 	struct touchpanel_data *ts;
+	struct monitor_data *monitor_data;
 	int gesture_state;
 	bool black_gesture_indep;
 	bool high_resolution_support;

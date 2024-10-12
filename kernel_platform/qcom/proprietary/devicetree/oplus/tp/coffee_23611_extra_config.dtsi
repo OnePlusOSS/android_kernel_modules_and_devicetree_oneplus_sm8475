@@ -111,44 +111,45 @@
 		prevention,grip_disable_level = <6>;
 		prevention,updelay_time_ms = <30>;
 		prevention,makeup_cnt_weight = <4 1 2 2 2>;
-		prevention,large_corner_range = <1202 2958>;
-		prevention,large_corner_judge_condition = <500 300 1044 7 7>;
+		prevention,large_corner_range = <1920 4800>;
+		prevention,large_corner_judge_condition = <500 300 1600 6 6>;
 		prevention,trx_reject_condition = <8 7 7>;
-		prevention,trx_strict_reject_condition = <8 6 6>;
+		prevention,trx_strict_reject_condition = <7 6 6>;
 		prevention,large_judge_time_ms = <500 50 30>;
-		prevention,large_exit_condition = <8 8 2>;
-		prevention,single_channel_width = <150 150>;
-		prevention,normal_tap_condition = <10 350>;
-		prevention,long_edge_condition = <179 90 120 80>;
-		prevention,long_strict_edge_condition = <160 60>;
-		prevention,long_fingerhold_condition = <70 6 4 4>;
-		prevention,short_edge_condition = <179 90 120 80>;
+		prevention,large_exit_condition = <15 12 2>;
+		prevention,single_channel_width = <512 512>;
+		prevention,normal_tap_condition = <10 300>;
+		prevention,long_edge_condition = <230 100 180 80>;
+		prevention,long_strict_edge_condition = <170 80>;
+		prevention,long_fingerhold_condition = <50 6 4 4>;
+		prevention,short_edge_condition = <230 100 180 80>;
 		prevention,short_strict_edge_condition = <160 60>;
-		prevention,large_strict_exit_condition = <6 6>;
-		prevention,top_corner_config = <218 652 476>;
-		prevention,edge_swipe_config = <159 538>;
+		prevention,large_strict_exit_condition = <5 5>;
+		prevention,top_corner_config = <800 2400 760>;
+		prevention,edge_swipe_config = <480 1600>;
 
 		prevention,curved_screen_V4;
-		prevention,long_eliminate_point_type = <2 10800 8040 209 24120 300 1>;
-		prevention,long_fingerhold_condition2 = <609 1740 0 0>;
-		prevention,top_corner_config2 = <3 80 600 1500 0>;
-		prevention,hor_long_top_corner_config = <261 1740 0 0>;
-		prevention,top_middle_config = <10800 884 884 0>;
-		prevention,corner_eliminate_point_type = <0 1594 1975 1>;
-		prevention,finger_hold_differ_size = <1 0 188 300>;
-		prevention,finger_hold_max_rx_exit_distance = <5 305 2001>;
-		prevention,max_rx_exit_distance = <1 5 150 305 1740>;
-		prevention,dynamic_finger_hold_exit_distance = <1 305 2001 392>;
-		prevention,edge_sliding_matched_support = <1 150 3 0>;
+		prevention,long_eliminate_point_type = <2 17280 12869 481 38592 300 1>;
+		prevention,long_fingerhold_condition2 = <1120 3200 0 0>;
+		prevention,top_corner_config2 =<3 80 420 2400 0>;
+		prevention,hor_long_top_corner_config =<480 3200 0 0>;
+		prevention,top_middle_config =<17280 1600 1600 0>;
+		prevention,corner_eliminate_point_type = <0 1919 3859 1>;
+		prevention,finger_hold_differ_size = <1 0 481 300>;
+		prevention,finger_hold_max_rx_exit_distance = <5 481 3216>;
+		prevention,max_rx_exit_distance = <1 5 120 481 3216>;
+		prevention,dynamic_finger_hold_exit_distance = <1 481 3216 561>;
+		prevention,edge_sliding_matched_support = <1 200 3 0>;
 
 		//grip v4.2 reclining mode
 		prevention,reclining_mode_support = <1>;
-		prevention,long_eliminate_point_type_recli = <2 23040 16896 75 50688 500 1>;
-		prevention,finger_hold_differ_size_recli = <1 0 84 400>;
-		prevention,finger_hold_max_rx_exit_distance_recli = <4 75 476>;
-		prevention,max_rx_exit_distance_recli = <1 4 100 75 381>;
-		prevention,dynamic_finger_hold_exit_distance_recli = <1 75 476 150>;
-		prevention,edge_sliding_matched_support_recli = <1 200 3 0>;
+		prevention,long_eliminate_point_type_recli = <2 17280 12869 481 38592 500 1>;
+		prevention,finger_hold_differ_size_recli = <1 0 481 300>;
+		prevention,finger_hold_max_rx_exit_distance_recli = <5 481 3216>;
+		prevention,max_rx_exit_distance_recli = <1 5 120 481 3216>;
+		prevention,dynamic_finger_hold_exit_distance_recli = <1 481 3216 561>;
+		prevention,edge_sliding_matched_support_recli = <1 150 3 0>;
+		prevention,long_edge_condition_recli = <230 100 180 80>;
 
 		/* SW Support Feature Control */
 		esd_handle_support;
@@ -178,7 +179,6 @@
 		//temperature_detect_shellback_support;
 		snr_read_support;
 		palm_to_sleep_support;
-		
 		/*
 		*Virtual Key Config:
 		*1:touchpanel,button-type: <virtualkey_type  supportted_button-map>
@@ -197,8 +197,9 @@
 
 		FT3681 {
 			switch_report_rate;
-			report_rate_default = <60>;
-			report_rate_game_value = <0x02>;
+			//report_rate_default = <60>;
+			//report_rate_game_value = <0x02>;
+			extreme_game_report_rate = <240>;//240Hz
 		};
 	};
 
@@ -238,49 +239,49 @@
 		prevention,grip_disable_level = <6>;
 		prevention,updelay_time_ms = <30>;
 		prevention,makeup_cnt_weight = <4 1 2 2 2>;
-		prevention,large_corner_range = <1920 4800>;
-		prevention,large_corner_judge_condition = <500 300 1600 6 6>;
-		prevention,trx_reject_condition = <8 7 7>;
-		prevention,trx_strict_reject_condition = <7 6 6>;
+		prevention,large_corner_range = <1914 4720>;
+		prevention,large_corner_judge_condition = <500 400 1624 7 7>;
+		prevention,trx_reject_condition = <9 8 8>;
+		prevention,trx_strict_reject_condition = <8 7 7>;
 		prevention,large_judge_time_ms = <500 50 30>;
-		prevention,large_exit_condition = <15 12 2>;
-		prevention,single_channel_width = <512 512>;
-		prevention,normal_tap_condition = <10 300>;
-		prevention,long_edge_condition = <230 100 180 80>;
-		prevention,long_strict_edge_condition = <170 80>;
-		prevention,long_fingerhold_condition = <50 6 4 4>;
-		prevention,short_edge_condition = <230 100 180 80>;
+		prevention,large_exit_condition = <8 8 2>;
+		prevention,single_channel_width = <513 513>;
+		prevention,normal_tap_condition = <10 350>;
+		prevention,long_edge_condition = <179 90 120 80>;
+		prevention,long_strict_edge_condition = <160 60>;
+		prevention,long_fingerhold_condition = <70 6 4 4>;
+		prevention,short_edge_condition = <179 90 120 80>;
 		prevention,short_strict_edge_condition = <160 60>;
-		prevention,large_strict_exit_condition = <5 5>;
-		prevention,top_corner_config = <800 2400 760>;
-		prevention,edge_swipe_config = <480 1600>;
+		prevention,large_strict_exit_condition = <6 6>;
+		prevention,top_corner_config = <800 2413 780>;
+		prevention,edge_swipe_config = <481 1930>;
 
 		prevention,curved_screen_V4;
-		prevention,long_eliminate_point_type = <2 10800 8040 263 24120 300 1>;
-		prevention,long_fingerhold_condition2 = <1120 3200 0 0>;
-		prevention,top_corner_config2 =<3 80 420 2400 0>;
-		prevention,hor_long_top_corner_config =<480 3200 0 0>;
-		prevention,top_middle_config =<17280 1600 1600 0>;
-		prevention,corner_eliminate_point_type = <0 1200 1976 1>;
-		prevention,finger_hold_differ_size = <1 0 338 300>;
-		prevention,finger_hold_max_rx_exit_distance = <5 300 1875>;
-		prevention,max_rx_exit_distance = <1 5 150 300 1500>;
-		prevention,dynamic_finger_hold_exit_distance = <1 300 1875 600>;
-		prevention,edge_sliding_matched_support = <1 250 3 0>;
+		prevention,long_eliminate_point_type = <2 17280 12869 481 38592 300 1>;
+		prevention,long_fingerhold_condition2 = <976 2776 0 0>;
+		prevention,top_corner_config2 =<3 80 513 975 0>;
+		prevention,hor_long_top_corner_config =<960 3216 0 0>;
+		prevention,top_middle_config =<17280 1608 1608 0>;
+		prevention,corner_eliminate_point_type = <0 1919 3859 1>;
+		prevention,finger_hold_differ_size = <1 0 481 300>;
+		prevention,finger_hold_max_rx_exit_distance = <5 481 3216>;
+		prevention,max_rx_exit_distance = <1 5 120 481 3216>;
+		prevention,dynamic_finger_hold_exit_distance = <1 481 3216 561>;
+		prevention,edge_sliding_matched_support = <1 200 3 0>;
 
 		//grip v4.2 reclining mode
 		prevention,reclining_mode_support = <1>;
-		prevention,long_eliminate_point_type_recli = <2 10800 8040 300 24120 500 1>;
-		prevention,finger_hold_differ_size_recli = <1 0 338 400>;
-		prevention,finger_hold_max_rx_exit_distance_recli = <4 300 1875>;
-		prevention,max_rx_exit_distance_recli = <1 4 100 300 1500>;
-		prevention,dynamic_finger_hold_exit_distance_recli = <1 300 1875 600>;
-		prevention,edge_sliding_matched_support_recli = <1 200 3 0>;
-		prevention,long_edge_condition_recli = <200 90 120 80>;
+		prevention,long_eliminate_point_type_recli = <2 17280 12869 481 38592 500 1>;
+		prevention,finger_hold_differ_size_recli = <1 0 481 300>;
+		prevention,finger_hold_max_rx_exit_distance_recli = <5 481 3216>;
+		prevention,max_rx_exit_distance_recli = <1 5 120 481 3216>;
+		prevention,dynamic_finger_hold_exit_distance_recli = <1 481 3216 561>;
+		prevention,edge_sliding_matched_support_recli = <1 150 3 0>;
+		prevention,long_edge_condition_recli = <179 90 120 80>;
 
 		touchpanel,smooth-level = <0 1 2 4 7 9>;
 		touchpanel,smooth-level-charging = <0 2 4 7 8 9>;
-		touchpanel,sensitive-level = <0 70 55 40 25 10>;
+		touchpanel,sensitive-level = <0 70 55 25 17 10>;
 		touchpanel,single-optimized-time = <8>;
 		touchpanel,high-frame-rate-time = <60>;
 
@@ -321,6 +322,7 @@
 		snr_read_support;
 		palm_to_sleep_support;
 		high_resolution_support_x16;
+		edge_pull_out_support;
 		//temperature_detect_shellback_support;
 		//io-channels = <&pmk8350_vadc PM8350_ADC7_AMUX_THM3_100K_PU>;
 		//io-channel-names = "pm8350_hot_pocket_therm";
@@ -345,10 +347,12 @@
 		S3910 {
 			switch_report_rate;
 			report_rate_default = <60>;
-			report_rate_game_value = <1>;
-			fps_report_rate = <60 2 90 1 120 3>;//1:360Hz 2:125Hz 3:240Hz
+			report_rate_game_value = <3>;
+			fps_report_rate = <60 2 90 4 120 3>;//1:360Hz 2:120Hz 3:240Hz
 			default_gesture_mask = <8191>;
 			fwupdate_bootloader = <1>;
+			normal_config_version = <2>;
+			extreme_game_report_rate = <240>;//240Hz
 		};
 	};
 };
@@ -437,5 +441,4 @@
 	};
 //#endif /*OPLUS_FEATURE_TP_BASIC*/
 };
-
 

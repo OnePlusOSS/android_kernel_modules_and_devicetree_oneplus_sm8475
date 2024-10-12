@@ -1221,6 +1221,40 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 		seq_printf(s, "vddi:%d\n", monitor_data->vddi);
 	}
 
+	/*pm suspend resume*/
+	if (monitor_data->pm_resume_count) {
+		seq_printf(s, "pm_resume_count:%llu\n", monitor_data->pm_resume_count);
+	}
+	if (monitor_data->pm_suspend_count) {
+		seq_printf(s, "pm_suspend_count:%llu\n", monitor_data->pm_suspend_count);
+	}
+	if (monitor_data->bus_not_ready_early_event_count) {
+		seq_printf(s, "bus_not_ready_early_event_count:%llu\n", monitor_data->bus_not_ready_early_event_count);
+	}
+	if (monitor_data->bus_not_ready_event_count) {
+		seq_printf(s, "bus_not_ready_event_count:%llu\n", monitor_data->bus_not_ready_event_count);
+	}
+	if (monitor_data->bus_not_ready_notify_count) {
+		seq_printf(s, "bus_not_ready_notify_count:%llu\n", monitor_data->bus_not_ready_notify_count);
+	}
+	if (monitor_data->bus_not_ready_off_early_event_count) {
+		seq_printf(s, "bus_not_ready_off_early_event_count:%llu\n", monitor_data->bus_not_ready_off_early_event_count);
+	}
+	if (monitor_data->bus_not_ready_off_event_count) {
+		seq_printf(s, "bus_not_ready_off_event_count:%llu\n", monitor_data->bus_not_ready_off_event_count);
+	}
+	if (monitor_data->bus_not_ready_tp_suspend_count) {
+		seq_printf(s, "bus_not_ready_tp_suspend_count:%llu\n", monitor_data->bus_not_ready_tp_suspend_count);
+	}
+	if (monitor_data->irq_need_dev_resume_max_count) {
+		seq_printf(s, "irq_need_dev_resume_max_count:%llu\n", monitor_data->irq_need_dev_resume_max_count);
+	}
+	if (monitor_data->irq_need_dev_resume_all_count) {
+		seq_printf(s, "irq_need_dev_resume_all_count:%llu\n", monitor_data->irq_need_dev_resume_all_count);
+	}
+	if (monitor_data->irq_bus_not_ready_count) {
+		seq_printf(s, "irq_bus_not_ready_count:%llu\n", monitor_data->irq_bus_not_ready_count);
+	}
 	seq_printf(s, "--kernel_end--\n");
 
 	return 0;
@@ -1304,6 +1338,18 @@ int tp_healthinfo_clear(void *tp_monitor_data)
 
 	monitor_data->avdd = VOLTAGE_STATE_DEFAULT;
 	monitor_data->vddi = VOLTAGE_STATE_DEFAULT;
+
+	monitor_data->pm_resume_count = 0;
+	monitor_data->pm_suspend_count = 0;
+	monitor_data->bus_not_ready_early_event_count = 0;
+	monitor_data->bus_not_ready_event_count = 0;
+	monitor_data->bus_not_ready_notify_count = 0;
+	monitor_data->bus_not_ready_off_early_event_count = 0;
+	monitor_data->bus_not_ready_off_event_count = 0;
+	monitor_data->bus_not_ready_tp_suspend_count = 0;
+	monitor_data->irq_need_dev_resume_max_count = 0;
+	monitor_data->irq_need_dev_resume_all_count = 0;
+	monitor_data->irq_bus_not_ready_count = 0;
 
 	TPD_INFO("Clear health info Finish!\n");
 

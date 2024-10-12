@@ -1,5 +1,5 @@
 /**************************************************************
- * Copyright (c)  2008- 2030  oplus Mobile communication Corp.ltd.
+ * Copyright (c)  2008- 2030  Oplus Mobile communication Corp.ltd.
  * File       : goodix_drivers_brl.c
  * Description: Source file for Goodix GT9897 driver
  * Version   : 1.0
@@ -13,7 +13,7 @@
 #include <linux/ctype.h>
 #include <linux/proc_fs.h>
 #include <linux/of_gpio.h>
-
+#include <linux/thermal.h>
 #include "goodix_brl_core.h"
 
 #define SPI_TRANS_PREFIX_LEN    1
@@ -2303,7 +2303,6 @@ static fw_update_state goodix_fw_update(void *chip_data,
 
 	r = goodix_get_cfg_parms(chip_data, cfg_fw_firmware);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_get_cfg_parms fail");
 		TPD_INFO("GT:%s Failed get cfg from firmware\n", __func__);
 	} else {
 		TPD_INFO("GT:%s success get ic cfg from firmware\n", __func__);
@@ -2311,9 +2310,7 @@ static fw_update_state goodix_fw_update(void *chip_data,
 
 	r = goodix_get_fw_parms(chip_data, cfg_fw_firmware, &fw_firmware);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_get_fw_parms fail");
 		TPD_INFO("GT:%s Failed get ic fw from firmware\n", __func__);
-		r = FW_UPDATE_ERROR;
 		goto err_parse_fw;
 	} else {
 		TPD_INFO("GT:%s success get ic fw from firmware\n", __func__);
@@ -2323,8 +2320,6 @@ static fw_update_state goodix_fw_update(void *chip_data,
 	fwu_ctrl->ic_config = &fwu_ctrl->chip_info->normal_cfg;
 	r = goodix_parse_firmware(&fwu_ctrl->fw_data);
 	if (r < 0) {
-		tp_healthinfo_report(chip_info->monitor_data, HEALTH_FW_UPDATE, "goodix_parse_firmware fail");
-		r = FW_UPDATE_ERROR;
 		goto err_parse_fw;
 	}
 
@@ -2382,6 +2377,8 @@ err_parse_fw:
 	}
 
 	return r;
+}
+
 static enum hrtimer_restart goodix_check_hrtimer(struct hrtimer *timer)
 {
 	struct chip_data_brl *chip_info = container_of(timer, struct chip_data_brl, check_hrtimer);
@@ -3641,6 +3638,7 @@ struct oplus_touchpanel_operations goodix_ops = {
 	.set_touch_direction         = goodix_set_touch_direction,
 	.get_touch_direction         = goodix_get_touch_direction,
 	.specific_resume_operate     = goodix_specific_resume_operate,
+	.health_report               = goodix_get_health_info,
 	.set_high_frame_rate         = goodix_set_high_frame_rate,
 	.smooth_lv_set               = goodix_set_smooth_lv_set,
 	.sensitive_lv_set            = goodix_set_sensitive_lv_set,
@@ -3650,6 +3648,7 @@ struct oplus_touchpanel_operations goodix_ops = {
 	.pen_downlink_msg            = goodix_pen_downlink_data,
 };
 /********* End of implementation of oplus_touchpanel_operations callbacks**********************/
+
 static void gt_fw_status_in_differ(struct chip_data_brl *chip_info, bool on)
 {
 	struct goodix_ts_cmd temp_cmd;
@@ -5640,30 +5639,10 @@ static int goodix_gt9966_ts_probe(struct spi_device *spi)
 	ts->irq = spi->irq;
 	ts->chip_data = chip_info;
 	spi_set_drvdata(spi, ts);
-
-	/* tp_index*/
-	ret = of_property_read_u32(ts->dev->of_node, "touchpanel,tp-index", &ts->tp_index);
-
-	if (ret) {
-		TPD_BOOT_INFO("ts->tp_index not specified\n");
-		ts->tp_index = 0;
-	} else {
-		if (ts->tp_index >= TP_SUPPORT_MAX) {
-			TP_INFO(ts->tp_index, "ts->tp_index is big than %d\n", TP_SUPPORT_MAX);
-			ts->tp_index = 0;
-		}
-	}
-	TPD_INFO("ts->tp_index is %d\n", ts->tp_index);
-
 	/* add input_dev info */
 	ts->id.bustype = BUS_SPI;
 	ts->id.vendor = GOODIX;
-
-	if (!ts->tp_index) {
-		ts->id.product = GT9966;
-	} else {
-		ts->id.product = GT9966_SECOND;
-	}
+	ts->id.product = GT9966;
 
 	chip_info->hw_res = &ts->hw_res;
 	chip_info->s_client = spi;
@@ -5689,7 +5668,6 @@ static int goodix_gt9966_ts_probe(struct spi_device *spi)
 	/* 9. create goodix tool node */
 	gtx8_init_tool_node(ts, &chip_info->rawdiff_mode);
 
-	chip_info->monitor_data = &ts->monitor_data;
 	chip_info->kernel_grip_support = ts->kernel_grip_support;
 	chip_info->tp_index = ts->tp_index;
 

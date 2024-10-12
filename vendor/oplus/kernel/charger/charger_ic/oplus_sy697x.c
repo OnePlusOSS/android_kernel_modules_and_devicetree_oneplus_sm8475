@@ -66,7 +66,7 @@
 #include "oplus_sy697x.h"
 #include "../voocphy/oplus_voocphy.h"
 #include "../oplus_configfs.h"
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 #include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci.h"
 #include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm.h"
 #endif
@@ -76,8 +76,6 @@ int sc8547_subsys_init(void);
 void sc8547_subsys_exit(void);
 int sgm7220_i2c_init(void);
 void sgm7220_i2c_exit(void);
-extern int rt1711_driver_init(void);
-extern void rt1711_driver_exit(void);
 extern void oplus_enable_device_mode(bool enable);
 #endif
 
@@ -667,6 +665,8 @@ extern void oplus_usbtemp_recover_func(struct oplus_chg_chip *chip);
 extern int oplus_voocphy_get_cp_vbus(void);
 
 extern int get_usb_enum_status(void);
+extern void oplus_notify_device_mode(bool enable);
+extern void oplus_notify_usb_host(bool enable);
 static void usb_enum_check(struct work_struct *work);
 static void start_usb_enum_check(void);
 static void stop_usb_enum_check(void);
@@ -678,6 +678,15 @@ int __attribute__((weak)) get_usb_enum_status(void)
 {
 	return 1;
 }
+
+void __attribute__((weak)) oplus_notify_device_mode(bool enable)
+{
+}
+
+void __attribute__((weak)) oplus_notify_usb_host(bool enable)
+{
+}
+
 static int oplus_get_iio_channel(struct sy697x *chip, const char *propname,
 					struct iio_channel **chan);
 int oplus_sy697x_get_usb_status(void)
@@ -693,7 +702,7 @@ int oplus_sy697x_get_usb_status(void)
 int oplus_set_mode(int mode)
 {
 	int rc = 0;
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(use_rt1715) {
 		if(g_sy != NULL && g_sy->tcpc != NULL) {
 			rc = tcpm_typec_change_role(g_sy->tcpc, mode ? TYPEC_ROLE_DRP : TYPEC_ROLE_SNK);
@@ -718,7 +727,7 @@ int oplus_set_mode(int mode)
 #define IBUS_2A 2000
 #define IBUS_3A 3000
 
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 #define CHG_HV_THR     6500
 #define CHG_SOC_THR    90
 int oplus_sy697x_get_pd_type(void)
@@ -1193,7 +1202,7 @@ bool oplus_get_otg_online_status_default(void)
 		return false;
 	}
 
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(use_rt1715) {
 		if (g_sy != NULL && g_sy->tcpc != NULL) {
 			if (tcpm_inquire_typec_attach_state(g_sy->tcpc) == TYPEC_ATTACHED_SRC)
@@ -1346,7 +1355,7 @@ static void oplus_usbtemp_recover_work(struct work_struct *work)
 
 static bool opluschg_get_typec_cc_orientation(union power_supply_propval *val)
 {
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(use_rt1715) {
 		if (g_sy != NULL && g_sy->tcpc != NULL) {
 			if (tcpm_inquire_typec_attach_state(g_sy->tcpc) != TYPEC_UNATTACHED) {
@@ -1433,58 +1442,6 @@ static void oplus_keep_resume_wakelock(struct sy697x *chip, bool awake)
 		pr_err("[%s] false\n", __func__);
 	}
 	return;
-}
-
-static void oplus_notify_extcon_props(struct sy697x *chg, int id)
-{
-	union extcon_property_value val;
-	union power_supply_propval prop_val;
-
-	opluschg_get_typec_cc_orientation(&prop_val);
-	val.intval = ((prop_val.intval == 2) ? 1 : 0);
-	extcon_set_property(chg->extcon, id,
-			EXTCON_PROP_USB_TYPEC_POLARITY, val);
-	val.intval = true;
-	extcon_set_property(chg->extcon, id,
-			EXTCON_PROP_USB_SS, val);
-}
-
-static void oplus_notify_device_mode(bool enable)
-{
-	struct sy697x *chg = g_sy;
-
-	if (!chg) {
-		pr_err("[%s] chg is null\n", __func__);
-		return;
-	}
-	
-	if (enable)
-		oplus_notify_extcon_props(chg, EXTCON_USB);
-
-	extcon_set_state_sync(chg->extcon, EXTCON_USB, enable);
-	pr_err("[%s] enable[%d]\n", __func__, enable);
-}
-
-static void oplus_notify_usb_host(bool enable)
-{
-	struct sy697x *chg = g_sy;
-
-	if (!chg || !g_oplus_chip) {
-		pr_err("[%s] chg or g_oplus_chip is null\n", __func__);
-		return;
-	}
-	if (enable) {
-		pr_debug("enabling VBUS in OTG mode\n");
-		oplus_sy697x_enable_otg();
-		oplus_notify_extcon_props(chg, EXTCON_USB_HOST);
-	} else {
-		pr_debug("disabling VBUS in OTG mode\n");
-		oplus_sy697x_disable_otg();
-	}
-
-	power_supply_changed(g_oplus_chip->usb_psy);
-	extcon_set_state_sync(chg->extcon, EXTCON_USB_HOST, enable);
-	pr_debug("[%s] enable[%d]\n", __func__, enable);
 }
 
 void oplus_sy697x_typec_sink_insertion(void)
@@ -2831,7 +2788,7 @@ static irqreturn_t sy697x_irq_handler(int irq, void *data)
 	pr_notice("[%s]:(%d,%d %d, otg[%d])\n", __func__,
 		prev_pg,sy->power_good, reg_val, oplus_get_otg_enable());
 
-//	oplus_chg_track_check_wired_charging_break(curr_pg);
+	oplus_chg_track_check_wired_charging_break(curr_pg);
 
 	if (oplus_vooc_get_fastchg_started() == true
 			&& oplus_vooc_get_adapter_update_status() != 1) {
@@ -4035,7 +3992,7 @@ static int oplus_thermal_get_tmp(void)
 	int ntcctrl_gpio_value = 0;
 	int ret = 0;
 	struct sy697x *chip = g_sy;
-	//static int adc_switch_status = 0;
+
 	if (!chip) {
 		printk(KERN_ERR "[OPLUS_CHG][%s]: chip or chg not ready!\n", __func__);
 		return -1;
@@ -4063,7 +4020,7 @@ static int oplus_thermal_get_tmp(void)
 		chg_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		bb_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_high);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio);
 		flash_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		board_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
@@ -4071,7 +4028,7 @@ static int oplus_thermal_get_tmp(void)
 		flash_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		board_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_low);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio);
 		chg_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		bb_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
@@ -4087,6 +4044,7 @@ static int oplus_thermal_amux_get_tmp(void)
 	int ntcctrl_gpio_value = 0;
 	int ret = 0;
 	struct sy697x *chip = g_sy;
+
 	if (!chip) {
 		chg_err("chip or chg not ready!\n");
 		return -1;
@@ -4113,7 +4071,7 @@ static int oplus_thermal_amux_get_tmp(void)
 		pa_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_amux_high);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio_amux);
 		vbus_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
@@ -4121,7 +4079,7 @@ static int oplus_thermal_amux_get_tmp(void)
 		vbus_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_amux_low);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio_amux);
 		pa_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
@@ -4131,8 +4089,6 @@ static int oplus_thermal_amux_get_tmp(void)
 
 	return 0;
 }
-
-
 
 int oplus_sy697x_thermal_tmp_get_chg(void)
 {
@@ -5177,7 +5133,7 @@ static int opluschg_get_chargerid(void)
 }
 bool oplus_sy697x_check_pdphy_ready(void)
 {
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(g_sy && !g_sy->tcpc)
 		return true;
 
@@ -5207,7 +5163,7 @@ int oplus_sy697x_get_charger_subtype(void)
 		return CHARGER_SUBTYPE_DEFAULT;
 #endif
 	}else{
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 		if (g_sy->pd_type == PD_CONNECT_PE_READY_SNK ||
 		    g_sy->pd_type == PD_CONNECT_PE_READY_SNK_PD30 ||
 		    g_sy->pd_type == PD_CONNECT_PE_READY_SNK_APDO) {
@@ -5800,7 +5756,7 @@ struct oplus_chg_operations  oplus_chg_sy697x_ops = {
 	.need_to_check_ibatt = oplus_sy697x_need_to_check_ibatt,
 	.get_dyna_aicl_result = oplus_sy697x_get_dyna_aicl_result,
 	.get_shortc_hw_gpio_status = NULL,
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	.oplus_chg_get_pd_type = oplus_sy697x_get_pd_type,
 	.oplus_chg_pd_setup = oplus_sy697x_pd_setup,
 #endif
@@ -5819,6 +5775,7 @@ struct oplus_chg_operations  oplus_chg_sy697x_ops = {
 	.get_usbtemp_volt = oplus_sy697x_get_usbtemp_volt,
 	.oplus_usbtemp_monitor_condition = oplus_usbtemp_condition,
 	.vooc_timeout_callback = sy697x_vooc_timeout_callback,
+	.get_subboard_temp = oplus_get_subboard_temp,
 	.set_typec_cc_open = sgm7220_set_typec_cc_open,
 	.set_typec_sinkonly = sgm7220_set_typec_sinkonly,
 	.get_charger_current = sy697x_get_input_current,
@@ -5901,7 +5858,7 @@ void oplus_sy697x_set_otg_switch_status(bool value)
 	}
 
 	g_oplus_chip->otg_switch = value;
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(use_rt1715) {
 		if(g_sy != NULL && g_sy->tcpc != NULL) {
 			chg_err("%s: value=%d\n", __FUNCTION__, value);
@@ -6442,6 +6399,170 @@ static int oplus_sy697x_iio_init(struct smb5 *chip, struct device *pdev,
 	return rc;
 }
 
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
+#define TCPC_COMPLETE_RETRY_COUNT 10
+#define TCPC_COMPLETE_WORK_DELAY round_jiffies_relative(msecs_to_jiffies(300))
+static struct delayed_work tcpc_complete_work;
+static void oplus_sy697x_tcpc_complete_work(struct work_struct *data)
+{
+	static int count = 0;
+
+	if (!g_sy) {
+		pr_info("%s, sy697x chip handle(g_sy) is NULL");
+		return;
+	}
+
+	g_sy->tcpc = tcpc_dev_get_by_name("type_c_port0");
+
+	if (!g_sy->tcpc) {
+		count++;
+		pr_info("%s type_c_port0 not found, retry count=%d\n", __func__, count);
+		if (count < TCPC_COMPLETE_RETRY_COUNT)
+			schedule_delayed_work(&tcpc_complete_work, TCPC_COMPLETE_WORK_DELAY);
+	} else {
+		pr_info("%s type_c_port0 found\n", __func__);
+	}
+}
+#endif
+
+int sy697x_get_cpu_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_bb();
+
+	return 0;
+}
+
+int sy697x_get_chg_skin_therm_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_chg();
+
+	return 0;
+}
+
+int sy697x_get_vbus_btb_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_vbus_btb();
+
+	return 0;
+}
+
+int sy697x_get_batt_btb_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_batt_btb();
+
+	return 0;
+}
+
+int sy697x_get_quiet_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_board();
+
+	return 0;
+}
+
+
+static struct thermal_zone_device_ops cpu_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_cpu_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops chg_skin_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_chg_skin_therm_temp,
+};
+
+static struct thermal_zone_device_ops vbus_btb_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_vbus_btb_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops batt_btb_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_batt_btb_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops quiet_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_quiet_therm_usr_temp,
+};
+
+struct thermal_zone_device *cpu_therm_usr_tz_dev;
+struct thermal_zone_device *chg_skin_therm_usr_tz_dev;
+struct thermal_zone_device *vbus_btb_therm_usr_tz_dev;
+struct thermal_zone_device *batt_btb_therm_usr_tz_dev;
+struct thermal_zone_device *quiet_therm_usr_tz_dev;
+
+int register_charger_thermal_zones(void)
+{
+	struct thermal_zone_device *tz;
+	int ret = -1;
+
+	/* --- cpu-therm-usr */
+	tz = thermal_zone_device_register("cpu-therm-usr",
+					0, 0, NULL, &cpu_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("cpu-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		cpu_therm_usr_tz_dev = tz;
+
+
+	/* --- chg-skin-therm-usr */
+	tz = thermal_zone_device_register("chg-skin-therm-usr",
+					0, 0, NULL, &chg_skin_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("chg-skin_therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		chg_skin_therm_usr_tz_dev = tz;
+
+
+	/* --- vbus-btb--therm-usr */
+	tz = thermal_zone_device_register("vbus-btb-therm-usr",
+					0, 0, NULL, &vbus_btb_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("vbus_btb-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		vbus_btb_therm_usr_tz_dev = tz;
+
+	/* --- batt-btb-therm-usr */
+	tz = thermal_zone_device_register("batt-btb-therm-usr",
+					0, 0, NULL, &batt_btb_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("batt_btb-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		batt_btb_therm_usr_tz_dev = tz;
+
+	/* --- quiet-therm-usr */
+	tz = thermal_zone_device_register("quiet-therm-usr",
+					0, 0, NULL, &quiet_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("quiet-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		quiet_therm_usr_tz_dev = tz;
+
+	pr_err("register charger thermal zones successful..!!!");
+	return 0;
+}
+
 extern int rt_pd_manager_init(void);
 extern void rt_pd_manager_exit(void);
 #define INIT_WORK_NORMAL_DELAY 7000
@@ -6532,6 +6653,9 @@ static int sy697x_charger_probe(struct i2c_client *client,
 	sy->before_unsuspend_icl = 0;
 	sy->chgic_ops = &oplus_chgic_sy697x_ops;
 
+	// Init rt pd manager
+	rt_pd_manager_init();
+
 	ret = sy697x_detect_device(sy);
 	if (ret) {
 		pr_err("No sy697x device found!\n");
@@ -6545,11 +6669,14 @@ static int sy697x_charger_probe(struct i2c_client *client,
 		ret = -EINVAL;
 		goto err_parse_dt;
 	}
-#ifdef CONFIG_TCPC_CLASS
+#if IS_ENABLED(CONFIG_TCPC_CLASS)
 	if(use_rt1715) {
 		sy->tcpc = tcpc_dev_get_by_name("type_c_port0");
-		if (!sy->tcpc)
+		if (!sy->tcpc) {
 			pr_err("%s: type_c_port0 device not yet up");
+			INIT_DELAYED_WORK(&tcpc_complete_work, oplus_sy697x_tcpc_complete_work);
+			schedule_delayed_work(&tcpc_complete_work, TCPC_COMPLETE_WORK_DELAY);
+		}
 	}
 #endif
 
@@ -6663,7 +6790,8 @@ static int sy697x_charger_probe(struct i2c_client *client,
 
 	pr_err("sy697x probe successfully Part Num:%d, Revision:%d\n!", sy->part_no, sy->revision);
 	chg_init_done = 1;
-	rt_pd_manager_init();
+
+	register_charger_thermal_zones();
 	return 0;
 err_init:
 err_parse_dt:
@@ -6847,7 +6975,6 @@ static void sy697x_charger_shutdown(struct i2c_client *client)
 		}
 		chg_err("sy697x_charger_shutdown disable adc and otg sinkonly\n!");
 	}
-	rt_pd_manager_exit();
 }
 
 static struct i2c_driver sy697x_charger_driver = {
@@ -6876,9 +7003,9 @@ module_i2c_driver(sy697x_charger_driver);
 #else
 void __exit sy697x_charger_exit(void)
 {
+	rt_pd_manager_exit();
 	sc8547_subsys_exit();
 	sgm7220_i2c_exit();
-	rt1711_driver_exit();
 	bq27541_driver_exit();
 	i2c_del_driver(&sy697x_charger_driver);
 }
@@ -6897,7 +7024,6 @@ int __init sy697x_charger_init(void)
 	bq27541_driver_init();
 	sc8547_subsys_init();
 	sgm7220_i2c_init();
-	rt1711_driver_init();
 	return ret;
 }
 oplus_chg_module_register(sy697x_charger);

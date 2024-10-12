@@ -13,6 +13,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&fp_irq_gpio_default>,<&fp_reset_gpio_default>;
 		notify_tpinfo_flag = <1>;
+                optical_irq_disable_flag = <1>;
 		power-num = <1>;
 		power_source_1 {
 			power-mode = <1>;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/sched.h>
@@ -11,6 +11,7 @@
 
 #include "touchpanel_common.h"
 #include "touch_comon_api/touch_comon_api.h"
+#include "touchpanel_prevention/touchpanel_prevention.h"
 #include "tp_ioctl.h"
 #include "message_list.h"
 #include "touch_pen/touch_pen_core.h"
@@ -140,6 +141,7 @@ static void report_point(struct touchpanel_data *ts, struct touch_point_report *
 	if (ts->health_monitor_support) {
 		ts->monitor_data.touch_points = points_info;
 		ts->monitor_data.touch_num = down_num;
+		ts->monitor_data.direction = (ts->grip_info != NULL) ? ts->grip_info->touch_dir : ts->limit_enable;
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
 	}
 }
@@ -203,6 +205,7 @@ static void report_point_ext(struct touchpanel_data *ts, struct touch_point_repo
 	if (ts->health_monitor_support) {
 		ts->monitor_data.touch_points = points_info;
 		ts->monitor_data.touch_num = down_num;
+		ts->monitor_data.direction = (ts->grip_info != NULL) ? ts->grip_info->touch_dir : ts->limit_enable;
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
 	}
 }

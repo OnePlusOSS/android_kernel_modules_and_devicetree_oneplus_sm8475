@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef __FT3658U_CORE_H__
@@ -230,6 +230,7 @@ struct chip_data_ft3658u {
 	struct seq_file *s;
 	struct fts_autotest_offset *fts_autotest_offset;
 	struct touchpanel_data *ts;
+	struct monitor_data *monitor_data;
 	struct delayed_work prc_work;
 	struct workqueue_struct *ts_workqueue;
 	unsigned long intr_jiffies;

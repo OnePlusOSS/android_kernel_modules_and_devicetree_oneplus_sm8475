@@ -4,6 +4,10 @@
 #include "oplus-chg-22624-fw.dtsi"
 
 &soc {
+	oplus_battery_log: oplus,battery_log {
+		compatible = "oplus,battery_log";
+		oplus,battery_log_support;
+	};
 	oplus,adsp-voocphy {
 		compatible = "oplus,adsp-voocphy";
 	};

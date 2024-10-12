@@ -69,7 +69,7 @@ static void fbg_update_ed_task_info(unsigned int type)
 	}
 }
 
-static void crtl_update_refresh_rate(int pid, unsigned int vsyncNs)
+static void crtl_update_refresh_rate(int pid, int tid, unsigned int vsyncNs)
 {
 	unsigned int frame_rate =  NSEC_PER_SEC / (unsigned int)(vsyncNs);
 	bool is_sf = false;
@@ -82,7 +82,7 @@ static void crtl_update_refresh_rate(int pid, unsigned int vsyncNs)
 		return;
 	}
 
-	if ((pid != current->pid) || (pid != get_frame_group_ui(DEFAULT_FRAME_GROUP_ID)))
+	if (((pid != current->pid) && (tid != current->pid)) || (pid != get_frame_group_ui(DEFAULT_FRAME_GROUP_ID)))
 		return;
 
 	if (set_frame_rate(frame_rate))
@@ -113,7 +113,7 @@ static long ofb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case CMD_ID_SET_FPS:
 		if (data.vsyncNs <= 0)
 			return -EINVAL;
-		crtl_update_refresh_rate(data.pid, (unsigned int)data.vsyncNs);
+		crtl_update_refresh_rate(data.pid, data.tid, (unsigned int)data.vsyncNs);
 		break;
 	case CMD_ID_BOOST_HIT:
 		/* App which is not our frame boost target may request frame vsync(like systemui),

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef __FT3681_CORE_H__
@@ -191,6 +191,9 @@
 #define FTS_WRITE_RATE_240                      240
 #define FTS_WRITE_RATE_360                      360
 #define FTS_WRITE_RATE_720                      720
+
+#define INTELLIGENT_GAME_MODE   11
+#define EXTREME_GAME_MODE       12
 
 #define SPI_RETRY_NUMBER          				3
 #define CS_HIGH_DELAY             				150 /* unit: us */
@@ -440,6 +443,8 @@ struct chip_data_ft3681 {
 
 	bool charger_connected;
 	u32 spi_speed;
+	int extreme_game_report_rate;
+	bool extreme_game_flag;
 };
 
 

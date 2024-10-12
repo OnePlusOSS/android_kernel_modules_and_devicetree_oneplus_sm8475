@@ -67,6 +67,11 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	mSensorState[SENSOR_TYPE_LAY_DETECT].rate = SENSOR_RATE_ONCHANGE;
 	#endif
 
+	#ifdef CONFIG_OPLUS_FEATURE_PALM_DETECT
+	mSensorState[SENSOR_TYPE_PALM_DETECT].sensorType = SENSOR_TYPE_PALM_DETECT;
+	mSensorState[SENSOR_TYPE_PALM_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	#endif
+
 	#ifndef _OPLUS_SENSOR_HUB_VI
 	/*mtk 2.0 need to add gain info*/
 	p = &mSensorState[SENSOR_TYPE_CAMERA_PROTECT];
@@ -140,6 +145,13 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
 	#endif
 
+	#ifdef CONFIG_OPLUS_FEATURE_PALM_DETECT
+	p = &mSensorState[SENSOR_TYPE_PALM_DETECT];
+	p->gain = 1;
+	strlcpy(p->name, "palm_detect", sizeof(p->name));
+	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+	#endif
+
 	pr_err("set gain = 1----\n");
 	#endif
 }
@@ -194,6 +206,11 @@ static int handle_to_index(int handle)
 	#ifdef CONFIG_OPLUS_FEATURE_LAY_DETECT
 	case ID_LAY_DETECT:
 		index = lay_detect;
+		break;
+	#endif
+	#ifdef CONFIG_OPLUS_FEATURE_PALM_DETECT
+	case ID_PALM_DETECT:
+		index = palm_detect;
 		break;
 	#endif
 	#ifdef CONFIG_OPLUS_FEATURE_TP_GESTURE

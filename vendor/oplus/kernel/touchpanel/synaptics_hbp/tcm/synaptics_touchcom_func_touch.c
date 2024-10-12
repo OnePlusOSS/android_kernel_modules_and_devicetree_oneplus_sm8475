@@ -37,6 +37,8 @@
  */
 
 #include "synaptics_touchcom_func_touch.h"
+#include "../syna_tcm2.h"
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
 
 /**
  * syna_tcm_get_touch_data()
@@ -350,6 +352,8 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 	struct tcm_objects_data_blob *object_data;
 	static unsigned int end_of_foreach;
 
+	struct syna_tcm *tcm = container_of(touch_data, struct syna_tcm, tp_data);
+
 	if (!tcm_dev) {
 		LOGE("Invalid tcm device handle\n");
 		return _EINVAL;
@@ -593,7 +597,15 @@ int syna_tcm_parse_touch_report(struct tcm_dev *tcm_dev,
 				touch_data->gesture_id = data;
 				offset += bits;
 				if (touch_data->gesture_id) {
-					LOGI("Gesture ID=%d\n", touch_data->gesture_id);
+					LOGI("Gesture ID=%d, pwr_state = %d, sub_pwr_state = %d\n",
+						touch_data->gesture_id, tcm->pwr_state, tcm->sub_pwr_state);
+					if ((tcm->pwr_state == PWR_ON && tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) &&
+						(touch_data->gesture_id >= DTAP_DETECT && touch_data->gesture_id <= W_UNICODE)) {
+						if (tcm->health_monitor_support) {
+							tp_healthinfo_report(&tcm->monitor_data, HEALTH_REPORT, "report_gesture_event_in_resume_cnt");
+						}
+						LOGE("unexpected gesture id report in resume state\n");
+					}
 				}
 				if (touch_data->gesture_id == 3) {
 					LOGE("debug syna data: \n");

@@ -45,11 +45,6 @@ config REMOVE_OPLUS_FUNCTION
     help
       Say Y here if you want to remove all oplus function when bring up.
 
-config TOUCHPANEL_FAULT_INJECT_ENABLE
-    bool "TOUCHPANEL_FAULT_INJECT_ENABLE"
-    help
-      Say Y here if you want to remove all oplus function when bring up.
-
 config TOUCHPANEL_MULTI_NOFLASH
     bool "Multiple noflash TPs using"
     help

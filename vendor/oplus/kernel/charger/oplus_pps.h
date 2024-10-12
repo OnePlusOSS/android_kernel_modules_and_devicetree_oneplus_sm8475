@@ -544,6 +544,7 @@ struct oplus_pps_chip {
 
 	struct power_supply *pps_batt_psy;
 	struct delayed_work pps_stop_work;
+	struct delayed_work get_pps_ops_work;
 	struct delayed_work update_pps_work;
 	struct delayed_work check_vbat_diff_work;
 	struct delayed_work ready_force2svooc_work;

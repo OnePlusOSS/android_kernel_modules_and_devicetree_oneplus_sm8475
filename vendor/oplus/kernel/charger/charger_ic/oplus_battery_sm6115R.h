@@ -162,12 +162,14 @@ enum {
 	RESTART_AICL,
 };
 
+#if !IS_ENABLED(CONFIG_OPLUS_CHG_TEST_KIT)
 enum cc_modes_type {
 	MODE_DEFAULT = 0,
-	MODE_UFP,
-	MODE_DFP,
+	MODE_SINK,
+	MODE_SRC,
 	MODE_DRP
 };
+#endif /* ! CONFIG_OPLUS_CHG_TEST_KIT */
 
 enum smb_irq_index {
 	/* CHGR */
@@ -958,7 +960,7 @@ int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val);
 int smblib_get_irq_status(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_qc3_main_icl_offset(struct smb_charger *chg, int *offset_ua);
-
+int oplus_get_subboard_temp(void);
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);
 

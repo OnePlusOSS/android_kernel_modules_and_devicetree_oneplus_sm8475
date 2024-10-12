@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef NVT_H_NT36672C_NOFLASH
@@ -32,7 +32,7 @@
 #define POINT_DATA_CHECKSUM_LEN 65
 #define NVT_TOUCH_ESD_CHECK_PERIOD (2000)
 #define NVT_ID_BYTE_MAX 6
-#define POINT_DATA_LEN 111
+#define POINT_DATA_LEN 78
 #define SIZE_4KB 4096
 #define FLASH_SECTOR_SIZE SIZE_4KB
 /*#define FW_BIN_VER_OFFSET (fw_need_write_size - SIZE_4KB)*/

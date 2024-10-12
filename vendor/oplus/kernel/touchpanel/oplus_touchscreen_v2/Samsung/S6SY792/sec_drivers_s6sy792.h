@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef SEC_H_S6SY792
@@ -9,8 +9,10 @@
 /*********PART1:Head files**********************/
 #include <linux/i2c.h>
 #include "../sec_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 /*********PART2:Define Area**********************/
+/* black gesture id */
 #define GESTURE_DOUBLECLICK                     0x25
 #define GESTURE_UP_V                            0x01
 #define GESTURE_DOWN_V                          0x02
@@ -333,4 +335,8 @@ struct chip_data_s6sy792 {
 	uint32_t readselfbytes;
 };
 
+struct sec_support_grip_zone {
+	char                            name[GRIP_TAG_SIZE];
+	int                             (*handle_func) (struct chip_data_s6sy792 *chip_info, struct grip_zone_area *grip_zone, bool enable);
+};
 #endif

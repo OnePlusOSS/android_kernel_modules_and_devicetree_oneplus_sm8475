@@ -300,6 +300,8 @@ static int syna_tcm_check_flash_boot_config(struct block_data *boot_config,
 	start_block = VALUE(boot_info->boot_config_start_block);
 	device_addr = start_block * block_size;
 
+	LOGD("Boot Config in device: 0x%x\n", device_addr);
+
 	return DO_NONE;
 }
 

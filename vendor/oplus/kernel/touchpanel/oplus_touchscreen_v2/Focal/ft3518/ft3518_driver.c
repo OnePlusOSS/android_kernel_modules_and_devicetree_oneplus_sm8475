@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -531,6 +531,7 @@ static int fts_fwupg_ecc_cal_tp(struct chip_data_ft3518 *ts_data, u32 saddr, u32
 
 static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 {
+	struct monitor_data *monitor_data = ts_data->monitor_data;
 	int ret = 0;
 	u32 start_addr = 0;
 	u8 cmd[4] = { 0 };
@@ -546,6 +547,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ret = fts_fwupg_enter_into_boot(ts_data);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "Enter pramboot/bootloader failed");
 		TPD_INFO("enter into pramboot/bootloader fail,ret=%d", ret);
 		goto fw_reset;
 	}
@@ -557,6 +559,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 3, &cmd[1]);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_DATA_LEN failed");
 		TPD_INFO("data len cmd write fail");
 		goto fw_reset;
 	}
@@ -565,6 +568,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ret = fts_fwupg_erase(ts_data, FTS_REASE_APP_DELAY);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_REASE_APP_DELAY failed");
 		TPD_INFO("erase cmd write fail");
 		goto fw_reset;
 	}
@@ -574,6 +578,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ret = fts_flash_write_buf(ts_data, start_addr, buf, len, 1);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "Flash Write failed");
 		TPD_INFO("flash write fail");
 		goto fw_reset;
 	}
@@ -582,6 +587,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ecc_in_tp = fts_fwupg_ecc_cal_tp(ts_data, start_addr, len);
 
 	if (ecc_in_tp < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "ECC Read failed");
 		TPD_INFO("ecc read fail");
 		goto fw_reset;
 	}
@@ -589,6 +595,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	TPD_INFO("ecc in tp:%x, host:%x", ecc_in_tp, ecc_in_host);
 
 	if (ecc_in_tp != ecc_in_host) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "ECC Check failed");
 		TPD_INFO("ecc check fail");
 		goto fw_reset;
 	}
@@ -598,6 +605,7 @@ static int fts_upgrade(struct chip_data_ft3518 *ts_data, u8 *buf, u32 len)
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 0, NULL);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_RESET failed");
 		TPD_INFO("reset to normal boot fail");
 	}
 
@@ -610,6 +618,7 @@ fw_reset:
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 0, NULL);
 
 	if (ret < 0) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_RESET failed");
 		TPD_INFO("reset to normal boot fail");
 	}
 
@@ -2290,9 +2299,12 @@ static int fts_tp_probe(struct i2c_client *client,
 {
 	struct chip_data_ft3518 *ts_data;
 	struct touchpanel_data *ts = NULL;
+	u64 time_counter = 0;
 	int ret = -1;
 
 	TPD_INFO("%s  is called\n", __func__);
+
+	reset_healthinfo_time_counter(&time_counter);
 
 	/*step1:Alloc chip_info*/
 	ts_data = kzalloc(sizeof(struct chip_data_ft3518), GFP_KERNEL);
@@ -2352,6 +2364,9 @@ static int fts_tp_probe(struct i2c_client *client,
 	/*step7:Chip Related function*/
 	focal_create_sysfs(client);
 
+	if (ts->health_monitor_support) {
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_PROBE, &time_counter);
+	}
 	ts_data->probe_done = 1;
 	TPD_INFO("%s, probe normal end\n", __func__);
 

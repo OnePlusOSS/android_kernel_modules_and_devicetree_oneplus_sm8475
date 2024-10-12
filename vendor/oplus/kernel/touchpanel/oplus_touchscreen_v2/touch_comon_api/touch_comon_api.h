@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef _TOUCHPANEL_COMMON_API_H_
@@ -31,10 +31,6 @@ extern unsigned int tp_debug;
 
 #define TPD_INFO(a, arg...)  pr_err("[TP]"TPD_DEVICE ": " a, ##arg)
 #define TP_INFO(index, a, arg...)  pr_err("[TP""%x""]"TPD_DEVICE": " a, index, ##arg)
-
-#define GRIP_TP_INFO(a, arg...)  pr_err("[TP""%x""]"TPD_DEVICE": " a, grip_info->tp_index, ##arg)
-#define TS_TP_INFO(a, arg...)  pr_err("[TP""%x""]"TPD_DEVICE": " a, ts->tp_index, ##arg)
-
 
 #define TPD_DEBUG(a, arg...)\
 	do{\
@@ -71,7 +67,7 @@ extern unsigned int tp_debug;
 #define TP_SPECIFIC_PRINT(index, count, a, arg...)\
 			do{\
 				if (count++ == TPD_PRINT_POINT_NUM || LEVEL_DEBUG == tp_debug) {\
-					TP_INFO(index, TPD_DEVICE ": " a, ##arg);\
+					TPD_INFO(TPD_DEVICE"%x"": " a, index, ##arg);\
 					count = 0;\
 				}\
 			}while(0)

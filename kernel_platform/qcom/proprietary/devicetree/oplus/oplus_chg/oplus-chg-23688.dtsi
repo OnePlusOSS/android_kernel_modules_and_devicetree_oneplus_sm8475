@@ -20,6 +20,11 @@
 		track,wired_max_power = <100000>;
 		track,wired_fast_chg_scheme = <1>;
 	};
+
+	oplus_battery_log: oplus,battery_log {
+		compatible = "oplus,battery_log";
+		oplus,battery_log_support;
+	};
 };
 
 &pm6450_gpios {
@@ -42,7 +47,7 @@
 		qcom,pre-scaling = <1 1>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
-		qcom,scale-fn-type = <OPLUS_ADC_SCALE_HW_CALIB_DEFAULT>;
+		qcom,scale-fn-type = <OPLUS_ADC_SCALE_HW_CALIB_PMIC_THERM>;
 	};
 	usb_supplementary_temp_adc {
 		reg = <PM6450_ADC7_AMUX4_GPIO5_100K_PU>;
@@ -50,11 +55,16 @@
 		qcom,pre-scaling = <1 1>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
-		qcom,scale-fn-type = <OPLUS_ADC_SCALE_HW_CALIB_DEFAULT>;
+		qcom,scale-fn-type = <OPLUS_ADC_SCALE_HW_CALIB_PMIC_THERM>;
 	};
 };
 
 &pm6150l_gpios {
+	batt1_con_therm_gpio_default: batt1_con_therm_gpio_default {
+		pins = "gpio5";
+		function = "normal";
+		bias-high-impedance;
+	};
 	subboard_temp_gpio_default: subboard_temp_gpio_default {
 		pins = "gpio7";
 		function = "normal";
@@ -88,6 +98,7 @@
 		qcom,pre-scaling = <1 1>;
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
+		qcom,scale-fn-type = <OPLUS_ADC_SCALE_HW_CALIB_THERM_100K_PULLUP>;
 	};
 };
 
@@ -304,31 +315,31 @@
 	qcom,temp_little_cold_fastchg_current_ma_high = <2200>;
 	qcom,temp_little_cold_fastchg_current_ma_low = <2200>;
 	qcom,temp_little_cold_fastchg_current_ma = <2200>;
-	qcom,pd_temp_little_cold_fastchg_current_ma_high = <3300>;
-	qcom,pd_temp_little_cold_fastchg_current_ma_low = <3300>;
-	qcom,qc_temp_little_cold_fastchg_current_ma_high = <3300>;
-	qcom,qc_temp_little_cold_fastchg_current_ma_low = <3300>;
+	qcom,pd_temp_little_cold_fastchg_current_ma_high = <3100>;
+	qcom,pd_temp_little_cold_fastchg_current_ma_low = <3100>;
+	qcom,qc_temp_little_cold_fastchg_current_ma_high = <3100>;
+	qcom,qc_temp_little_cold_fastchg_current_ma_low = <3100>;
 
 	qcom,cool_bat_decidegc = <50>;	/*5C~12C*/
 	qcom,temp_cool_vfloat_mv = <4470>;
 	qcom,temp_cool_fastchg_current_ma_high = <2200>;
 	qcom,temp_cool_fastchg_current_ma_low = <2200>;
-	qcom,pd_temp_cool_fastchg_current_ma_high = <3600>;
-	qcom,pd_temp_cool_fastchg_current_ma_low = <3600>;
-	qcom,qc_temp_cool_fastchg_current_ma_high = <3600>;
-	qcom,qc_temp_cool_fastchg_current_ma_low = <3600>;
+	qcom,pd_temp_cool_fastchg_current_ma_high = <3100>;
+	qcom,pd_temp_cool_fastchg_current_ma_low = <3100>;
+	qcom,qc_temp_cool_fastchg_current_ma_high = <3100>;
+	qcom,qc_temp_cool_fastchg_current_ma_low = <3100>;
 
 	qcom,little_cool_bat_decidegc = <120>;	/*12C~16C*/
 	qcom,temp_little_cool_vfloat_mv = <4470>;
 	qcom,temp_little_cool_fastchg_current_ma = <2200>;
-	qcom,pd_temp_little_cool_fastchg_current_ma = <3600>;
-	qcom,qc_temp_little_cool_fastchg_current_ma = <3600>;
+	qcom,pd_temp_little_cool_fastchg_current_ma = <3100>;
+	qcom,qc_temp_little_cool_fastchg_current_ma = <3100>;
 
 	qcom,normal_bat_decidegc = <160>;	/*16C~44C*/
 	qcom,temp_normal_fastchg_current_ma = <2200>;
 	qcom,temp_normal_vfloat_mv = <4470>;
-	qcom,pd_temp_normal_fastchg_current_ma = <3600>;
-	qcom,qc_temp_normal_fastchg_current_ma = <3600>;
+	qcom,pd_temp_normal_fastchg_current_ma = <3100>;
+	qcom,qc_temp_normal_fastchg_current_ma = <3100>;
 
 	qcom,warm_bat_decidegc = <450>;		/*45C~53C*/ /*8pin Bat Vooc project need add 3 degree C*/
 	qcom,temp_warm_vfloat_mv = <4130>;
@@ -459,8 +470,9 @@
 	qcom,pmic-is-pm7250b;
 	qcom,chargerid_switch-gpio = <&tlmm 106 0x00>;
 	//for PD9V or QC9V
-	//qcom,vbatt_pdqc_to_5v_thr = <4100>;
+	qcom,vbatt_pdqc_to_5v_thr = <4470>;
 	qcom,vbatt_pdqc_to_9v_thr = <5000>;/*always 9v*/
+	qcom,tbatt_pdqc_to_5v_thr = <420>;
 	qcom,vooc_show_ui_soc_decimal;
 	qcom,ui_soc_decimal_speedmin = <20>;//2A
 	qcom,otg_scheme = <1>;//0:cid 1:ccdetect_gpio 2:switch
@@ -470,7 +482,7 @@
 		"chargerid_switch_active", "chargerid_switch_sleep", "chargerid_switch_default",
 		"ccdetect_active", "ccdetect_sleep",
 		"usbtemp_l_gpio_default", "usbtemp_r_gpio_default",
-		"subboard_temp_gpio_default";
+		"subboard_temp_gpio_default", "batt1_con_therm_gpio_default";
 
 	pinctrl-0 = <&dischg_enable>;
 	pinctrl-1 = <&dischg_disable>;
@@ -482,6 +494,7 @@
 	pinctrl-7 = <&usbtemp_l_gpio_default>;
 	pinctrl-8 = <&usbtemp_r_gpio_default>;
 	pinctrl-9 = <&subboard_temp_gpio_default>;
+	pinctrl-10 = <&batt1_con_therm_gpio_default>;
 };
 
 &qupv3_se4_i2c {
@@ -505,6 +518,8 @@
 
 		qcom,voocphy_dual_cp_support;
 		qcom,copycat_vooc_support;
+		oplus,copycat_identify_algorithm = <2>;
+
 		//qcom,external_gauge_support;
 		qcom,slave_cp_enable_thr = <1400>;		//2000-100mA
 		qcom,slave_cp_disable_thr_high = <1100>;	//1500+100mA
@@ -547,6 +562,10 @@
 		qcom,vooc-normal-high-temp = <430>;
 		qcom,vooc-warm-allow-vol = <4000>;
 		qcom,vooc-warm-allow-soc = <50>;
+
+		qcom,impedance_calculation_newmethod;
+		qcom,svooc_circuit_r_l = <0x10>;
+		qcom,svooc_circuit_r_h = <0x11>;/* 35mR */
 
 		qcom,vooc_strategy1_batt_high_temp0 = <385>;
 		qcom,vooc_strategy1_batt_high_temp1 = <395>;
@@ -764,3 +783,20 @@
 		0x70 0x78>;
 };
 
+&thermal_zones {
+	pm7250b-ibat-lvl0 {
+		trips {
+			ibat-lvl0 {
+				temperature = <9000>;
+			};
+		};
+	};
+
+	pm7250b-ibat-lvl1 {
+		trips {
+			ibat-lvl1 {
+				temperature = <10000>;
+			};
+		};
+	};
+};

@@ -430,7 +430,7 @@ static ssize_t ux_page_pool_read(struct file *file,
 	if (len > *off)
 		len -= *off;
 	else
-		len = 0;
+		return 0;
 
 	if (copy_to_user(buffer, kbuf + *off, (len < count ? len : count)))
 		return -EFAULT;
@@ -596,7 +596,6 @@ static void kvmalloc_check_use_vmalloc(void *data, size_t size,
 {
 	if (test_task_ux(current) && (size > UXMEM_POOL_MAX_PAGES * PAGE_SIZE)) {
 		*kmalloc_flags &= ~__GFP_DIRECT_RECLAIM;
-		*kmalloc_flags |= __GFP_KSWAPD_RECLAIM;
 		*use_vmalloc = false;
 	} else if (!test_task_ux(current) && (size >= KMALLOC_MAX_PAGES * PAGE_SIZE)) {
 		*use_vmalloc = true;

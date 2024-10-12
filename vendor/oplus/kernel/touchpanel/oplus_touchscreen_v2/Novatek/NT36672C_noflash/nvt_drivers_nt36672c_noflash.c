@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
 
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
 #include<mt-plat/mtk_boot_common.h>
 #else
 #include <soc/oplus/system/boot_mode.h>
-#endif
 #endif
 
 #include "nvt_drivers_nt36672c_noflash.h"
@@ -33,7 +31,6 @@ static int nvt_get_chip_info(void *chip_data);
 static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *points, int max_num);
 static int nvt_get_touch_points(void *chip_data, struct point_info *points, int max_num);
 static int32_t nvt_ts_point_data_checksum(uint8_t *buf, uint8_t length);
-extern int (*tp_cs_gpio_notifier)(bool enable, unsigned int tp_index);
 
 /*******Part2: id map table Declear********************/
 static const struct nvt_ts_mem_map NT36675_memory_map = {
@@ -2482,7 +2479,7 @@ static void nvt_rate_white_list_ctrl(void *chip_data, int value)
 		cmd = 0x03;
 		break;
 	default:
-		TPD_INFO("%s: report rate not support\n", __func__);
+		TPD_INFO("%s: report rate = %d, not support\n", __func__);
 		return;
 	}
 
@@ -2701,12 +2698,10 @@ static int nvt_mode_switch(void *chip_data, work_mode mode, int flag)
 static fw_check_state nvt_fw_check(void *chip_data,
 				   struct resolution_info *resolution_info, struct panel_info *panel_data)
 {
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 	uint8_t ver_len = 0;
 	uint8_t fw_ver_len = 0;
-	char dev_version[MAX_DEVICE_VERSION_LENGTH] = {0};
-#endif
 	int ret = 0;
+	char dev_version[MAX_DEVICE_VERSION_LENGTH] = {0};
 	struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
 
 	nvt_esd_check_update_timer(chip_info);
@@ -2719,7 +2714,6 @@ static fw_check_state nvt_fw_check(void *chip_data,
 
 	} else {
 		panel_data->tp_fw = chip_info->fw_ver;
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 		snprintf(dev_version, MAX_DEVICE_VERSION_LENGTH,
 			 "%02X", panel_data->tp_fw);
 		TPD_INFO("%s: dev_version = %s \n", __func__, dev_version);
@@ -2732,7 +2726,6 @@ static fw_check_state nvt_fw_check(void *chip_data,
 				 dev_version);
 			TPD_INFO("%s: firmware_version = %s \n", __func__, panel_data->manufacture_info.version);
 		}
-#endif
 	}
 
 	return FW_NORMAL;
@@ -4493,12 +4486,10 @@ static int nvt_black_screen_test_preoperation(struct seq_file *s,
 	}
 
 	memset(data_buf, 0, sizeof(data_buf));
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 	snprintf(data_buf, 128, "FW Version Name:%s\n total test item = %d\n",
 			 ts->panel_data.manufacture_info.version, item_cnt);
 	tp_test_write(nvt_testdata->fp, nvt_testdata->length, data_buf,
 		      strlen(data_buf), nvt_testdata->pos);
-#endif
 
 	TPD_INFO("%s: total test item = %d \n", __func__, item_cnt);
 
@@ -6349,12 +6340,10 @@ static int nvt_autotest_preoperation(struct seq_file *s, void *chip_data,
 	}
 
 	memset(data_buf, 0, sizeof(data_buf));
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 	snprintf(data_buf, 128, "FW Version Name:%s\nTotal test item = %d\n",
 			 ts->panel_data.manufacture_info.version, item_cnt);
 	tp_test_write(nvt_testdata->fp, nvt_testdata->length, data_buf,
 		      strlen(data_buf), nvt_testdata->pos);
-#endif
 
 	TPD_INFO("%s: total test item = %d \n", __func__, item_cnt);
 
@@ -6950,14 +6939,6 @@ int nvt_tp_probe(struct spi_device *client)
 		goto err_register_driver;
 	}
 
-	/* set spi cs pin to high for normal boot */
-	if (tp_cs_gpio_notifier) {
-		tp_cs_gpio_notifier(1, ts->tp_index);
-		TPD_INFO("%s: set spi cs pin to high for normal boot.\n", __func__);
-	} else {
-		TPD_INFO("%s: tp_cs_gpio_notifier is null.\n", __func__);
-	}
-
 	ts->tp_suspend_order = TP_LCD_SUSPEND;
 	ts->tp_resume_order = LCD_TP_RESUME;
 	chip_info->is_sleep_writed = false;
@@ -6984,14 +6965,13 @@ int nvt_tp_probe(struct spi_device *client)
 #endif /* end of CONFIG_OPLUS_TP_APK*/
 
 	/* update fw in probe*/
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
+
 	if (ts->boot_mode == RECOVERY_BOOT || is_oem_unlocked()
 			|| ts->fw_update_in_probe_with_headfile)
 #else
 	if (ts->boot_mode == MSM_BOOT_MODE__RECOVERY || is_oem_unlocked()
 			|| ts->fw_update_in_probe_with_headfile)
-#endif
 #endif
 	{
 		TPD_INFO("In Recovery mode, no-flash download fw by headfile\n");
@@ -7031,16 +7011,12 @@ err_g_fw_buf:
 ts_malloc_failed:
 	kfree(chip_info);
 	chip_info = NULL;
-	/*ret = -1;*/
+	ret = -1;
 
 	TPD_INFO("%s, probe error\n", __func__);
 	return ret;
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
-void nvt_tp_remove(struct spi_device *client)
-#else
 int nvt_tp_remove(struct spi_device *client)
-#endif
 {
 	struct touchpanel_data *ts = spi_get_drvdata(client);
 
@@ -7050,10 +7026,8 @@ int nvt_tp_remove(struct spi_device *client)
 		unregister_common_touch_device(ts);
 		common_touch_data_free(ts);
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
-#else
+
 	return 0;
-#endif
 }
 
 static int nvt_spi_suspend(struct device *dev)
@@ -7121,12 +7095,13 @@ static int __init nvt_driver_init(void)
 	TPD_INFO("%s  TP ko delay 10 s\n", __func__);
 #endif
 */
+
 	if (!tp_judge_ic_match(DRIVER_NAME)) {
 		return 0;
 	}
-#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
+
 	get_oem_verified_boot_state();
-#endif
+
 	if (spi_register_driver(&tp_spi_driver) != 0) {
 		TPD_INFO("unable to add spi driver.\n");
 		return 0;

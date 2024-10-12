@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -1097,6 +1097,7 @@ static int fts_fwupg_ecc_cal_tp(struct chip_data_ft3658u *ts_data, u32 saddr, u3
 
 static int fts_upgrade(struct chip_data_ft3658u *ts_data, u8 *buf, u32 len)
 {
+	struct monitor_data *monitor_data = ts_data->monitor_data;
 	int ret = 0;
 	u32 start_addr = 0;
 	u8 cmd[4] = { 0 };
@@ -1111,9 +1112,12 @@ static int fts_upgrade(struct chip_data_ft3658u *ts_data, u8 *buf, u32 len)
 	/* enter into upgrade environment */
 	ret = fts_fwupg_enter_into_boot(ts_data);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "Enter pramboot/bootloader failed");
 		TPD_INFO("enter into pramboot/bootloader fail,ret=%d", ret);
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	cmd[0] = FTS_CMD_DATA_LEN;
@@ -1122,48 +1126,64 @@ static int fts_upgrade(struct chip_data_ft3658u *ts_data, u8 *buf, u32 len)
 	cmd[3] = (len) & 0xFF;
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 3, &cmd[1]);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_DATA_LEN failed");
 		TPD_INFO("data len cmd write fail");
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	/*erase*/
 	ret = fts_fwupg_erase(ts_data, FTS_REASE_APP_DELAY);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_REASE_APP_DELAY failed");
 		TPD_INFO("erase cmd write fail");
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	/* write app */
 	start_addr = 0;
 	ret = fts_flash_write_buf(ts_data, start_addr, buf, len, 1);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "Flash Write failed");
 		TPD_INFO("flash write fail");
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	ecc_in_host = fts_fwupg_ecc_cal_host(buf, len);
 	ecc_in_tp = fts_fwupg_ecc_cal_tp(ts_data, start_addr, len);
 
-	if (ecc_in_tp < 0) {
+	if (ecc_in_tp < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "ECC Read failed");
 		TPD_INFO("ecc read fail");
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	TPD_INFO("ecc in tp:%x, host:%x", ecc_in_tp, ecc_in_host);
 
-	if (ecc_in_tp != ecc_in_host) {
+	if (ecc_in_tp != ecc_in_host || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "ECC Check failed");
 		TPD_INFO("ecc check fail");
-		goto fw_reset;
+		if (!monitor_data || !monitor_data->health_simulate_trigger) {
+			goto fw_reset;
+		}
 	}
 
 	TPD_INFO("upgrade success, reset to normal boot");
 	cmd[0] = FTS_CMD_RESET;
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 0, NULL);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_RESET failed");
 		TPD_INFO("reset to normal boot fail");
 	}
 
@@ -1175,7 +1195,8 @@ fw_reset:
 	cmd[0] = FTS_CMD_RESET;
 	ret = touch_i2c_write_block(ts_data->client, cmd[0], 0, NULL);
 
-	if (ret < 0) {
+	if (ret < 0 || (monitor_data && monitor_data->health_simulate_trigger)) {
+		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FTS_CMD_RESET failed");
 		TPD_INFO("reset to normal boot fail");
 	}
 
@@ -2096,6 +2117,9 @@ static int fts3658u_get_touch_points(void *chip_data, struct point_info *points,
 		}
 
 		if (ts_data->fod_trigger) {
+			if (ts_data->fod_trigger == TYPE_SMALL_FOD_TRIGGER) {
+				tp_healthinfo_report(ts_data->monitor_data, HEALTH_REPORT, HEALTH_REPORT_FOD_ABNORMAL);
+			}
 			ts_data->fod_trigger = TYPE_NO_FOD_TRIGGER;
 		}
 	}
@@ -2107,13 +2131,70 @@ static void fts3658u_health_report(void *chip_data, struct monitor_data *mon_dat
 {
 	int ret = 0;
 	struct chip_data_ft3658u *ts_data = (struct chip_data_ft3658u *)chip_data;
+	char *freq_str = NULL;
 
 	ret = touch_i2c_read_byte(ts_data->client, 0x01);
 	TPD_INFO("Health register(0x01):0x%x", ret);
-	ret = touch_i2c_read_byte(ts_data->client, FTS_REG_HEALTH_1);
-	TPD_INFO("Health register(0xFD):0x%x", ret);
+	if ((ret & 0x01) && !ts_data->is_in_water) {
+		TPD_DETAIL("Health register(0x01):Water Shield");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_SHIELD_WATER);
+		ts_data->is_in_water = true;
+	}
+	if (ret & 0x02) {
+		TPD_DETAIL("Health register(0x01):Palm Shield");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_SHIELD_PALM);
+	}
+	if (ret & 0x04) {
+		TPD_DETAIL("Health register(0x01):Freq Hopping");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_HOPPING);
+	}
+	if (ret & 0x08) {
+		TPD_DETAIL("Health register(0x01):Base Refresh");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_BASELINE_ERR);
+	}
+	if (ret & 0x10) {
+		if (ts_data->charger_connected) {
+			TPD_DETAIL("Health register(0x01):Big Noise in Charge");
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_NOISE_CHARGE);
+		} else {
+			TPD_DETAIL("Health register(0x01):Big Noise");
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_NOISE);
+		}
+	}
+	if (ret & 0x20) {
+		TPD_DETAIL("Health register(0x01):Temperature");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_TEMP_DRIFT);
+	}
+	if (ret & 0x40) {
+		TPD_DETAIL("Health register(0x01):Chanel Fill");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_CHANEL_FILL);
+	}
+	if (ret & 0x80) {
+		if (!ts_data->fod_trigger) {
+			TPD_DETAIL("Health register(0x01):FOD");
+			ts_data->fod_trigger = TYPE_SMALL_FOD_TRIGGER;
+		}
+	}
+	/*ret = touch_i2c_read_byte(ts_data->client, FTS_REG_HEALTH_1);
+	TPD_INFO("Health register(0xFD):0x%x(water-flag:%d / noise-flag:%d)" / no-suitable-freq:%d)",
+			ret, (ret & 0x01), (ret & 0x02), ((ret & 0x10) >> 4));*/
+	/*if (ret & 0x10 && !mon_data->no_suitable_freq) {
+		mon_data->no_suitable_freq = true;
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_NO_SUITABLE_FREQ);
+	}*/
 	ret = touch_i2c_read_byte(ts_data->client, FTS_REG_HEALTH_2);
-	TPD_INFO("Health register(0xFE):0x%x", ret);
+	TPD_INFO("Health register(0xFE):0x%x(work-freq:%d)", ret, ret);
+	if (mon_data->work_freq && mon_data->work_freq != ret) {
+		freq_str = kzalloc(10, GFP_KERNEL);
+		if (!freq_str) {
+			TPD_INFO("freq_str kzalloc failed.\n");
+		} else {
+			snprintf(freq_str, 10, "freq_%d", ret);
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, freq_str);
+			kfree(freq_str);
+		}
+	}
+	mon_data->work_freq = ret;
 }
 
 static int fts3658u_get_gesture_info(void *chip_data, struct gesture_info *gesture)
@@ -2581,19 +2662,22 @@ static int fts3658u_tp_probe(struct i2c_client * client,
 	}
 
 	ts_data->black_gesture_indep = ts->black_gesture_indep_support;
-
+	ts_data->monitor_data = &ts->monitor_data;
 	/*step6:create ftxxxx-debug related proc files*/
 	fts_create_apk_debug_channel(ts_data);
 
 #ifdef FTS_KIT
 	/*proc/touchpanel/baseline_test*/
-	/*create baseline_test, oplus     driver delete*/
+	/*create baseline_test, oplus driver delete*/
 	fts_create_proc_baseline_test(ts);
 #endif
 
 	/*step7:Chip Related function*/
 	focal_create_sysfs(client);
 
+	if (ts->health_monitor_support) {
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_PROBE, &time_counter);
+	}
 	ts_data->probe_done = 1;
 	TPD_INFO("%s, probe normal end\n", __func__);
 

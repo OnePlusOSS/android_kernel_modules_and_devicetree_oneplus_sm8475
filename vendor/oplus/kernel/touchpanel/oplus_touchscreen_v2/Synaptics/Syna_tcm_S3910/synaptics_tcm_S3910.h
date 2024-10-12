@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #ifndef _SYNAPTICS_TCM_CORE_H_
@@ -13,6 +13,7 @@
 
 #include "../../touchpanel_common.h"
 #include "../synaptics_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 #ifdef TPD_DEVICE
 #undef TPD_DEVICE
@@ -126,7 +127,6 @@
 #define SYNA_GET_RATE_240                        10
 #define SYNA_GET_RATE_360                        300
 #define SYNA_GET_RATE_720                        600
-#define SYNA_GET_RATE_180                        180
 
 #define SYNA_WRITE_RATE_120                      120
 #define SYNA_WRITE_RATE_180                      180
@@ -376,6 +376,13 @@ enum stretch_status {
 	EDGE_STRETCH_LEFT,
 };
 
+enum smart_mode {
+	DIAPHRAGM_DEFAULT_MODE = 0,
+	DIAPHRAGM_FILM_MODE = 1,
+	DIAPHRAGM_WATERPROO_MODE = 2,
+	DIAPHRAGM_FILM_WATERPROO_MODE = 3,
+};
+
 struct syna_tcm_buffer {
 	bool clone;
 	unsigned char *buf;
@@ -532,13 +539,6 @@ struct syna_dc_in_driver {
 	uint16_t g_abs_dark_sel;
 };
 
-struct spi_bus_data {
-	unsigned char *buf;
-	unsigned int buf_size;
-	struct spi_transfer *xfer;
-	unsigned int xfer_count;
-};
-
 #define FP_AREA_RATE_BLACKSCREEN 1024
 
 struct fp_area_rate {
@@ -549,6 +549,7 @@ struct fp_area_rate {
 
 #define FIRMWARE_MODE_BL_MAX 2
 #define FPS_REPORT_NUM 6
+#define GAME_REPORT_NUM 5
 #define ERROR_STATE_MAX 3
 #define FWUPDATE_BL_MAX 3
 #define FW_BUF_SIZE             (256 * 1024)
@@ -651,6 +652,8 @@ struct syna_tcm_data {
 	bool switch_game_rate_support;
 	unsigned int fps_report_rate_num;
 	u32 fps_report_rate_array[FPS_REPORT_NUM];
+	unsigned int game_report_rate_num;
+	u32 game_report_rate_array[GAME_REPORT_NUM];
 	/*temperatue data*/
 	u32 syna_tempepratue[2];
 	unsigned int syna_low_temp_enable;
@@ -675,14 +678,6 @@ struct syna_tcm_data {
 	int extreme_game_report_rate;
 	bool extreme_game_flag;
 	bool high_resolution_support_x16;
-
-	unsigned int end_of_foreach;
-	struct spi_bus_data spi_data;
-	/*device s3910*/
-	int pre_remaining_frames;
-	bool report_flag;
-	unsigned int offset;
-	unsigned int remaining_size;
 };
 
 struct device_hcd {
@@ -792,5 +787,10 @@ int syna_tcm_rmi_write(struct syna_tcm_data *tcm_info,
 		       unsigned short addr, unsigned char *data, unsigned int length);
 */
 extern void tp_fw_auto_reset_handle(struct touchpanel_data *ts);
+
+struct syna_support_grip_zone {
+	char name[GRIP_TAG_SIZE];
+	int (*handle_func)(void *chip_data, struct grip_zone_area *grip_zone, bool enable);
+};
 
 #endif  /*_SYNAPTICS_TCM_CORE_H_*/

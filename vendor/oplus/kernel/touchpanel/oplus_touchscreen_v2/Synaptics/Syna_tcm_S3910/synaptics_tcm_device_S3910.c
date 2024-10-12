@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include <linux/cdev.h>
@@ -40,7 +40,6 @@ struct fifo_queue {
 #endif
 
 static struct device_hcd *g_device_hcd[TP_SUPPORT_MAX] = {NULL};
-static struct class * tcm_class = NULL;
 
 static void device_capture_touch_report(struct device_hcd *device_hcd,
 					unsigned int count)
@@ -51,6 +50,9 @@ static void device_capture_touch_report(struct device_hcd *device_hcd,
 	unsigned int size;
 	unsigned char *data;
 	struct syna_tcm_data *tcm_info = device_hcd->tcm_info;
+	static bool report;
+	static unsigned int offset;
+	static unsigned int remaining_size;
 
 	if (count < 2) {
 		return;
@@ -70,29 +72,29 @@ static void device_capture_touch_report(struct device_hcd *device_hcd,
 	switch (id) {
 	case REPORT_TOUCH:
 		if (count >= 4) {
-			tcm_info->remaining_size = le2_to_uint(&data[2]);
+			remaining_size = le2_to_uint(&data[2]);
 
 		} else {
-			tcm_info->report_flag = false;
+			report = false;
 			goto exit;
 		}
 
-		retval = syna_tcm_alloc_mem(&device_hcd->report, tcm_info->remaining_size);
+		retval = syna_tcm_alloc_mem(&device_hcd->report, remaining_size);
 
 		if (retval < 0) {
 			TPD_INFO("Failed to allocate memory for device_hcd->report.buf\n");
-			tcm_info->report_flag = false;
+			report = false;
 			goto exit;
 		}
 
 		idx = 4;
 		size = count - idx;
-		tcm_info->offset = 0;
-		tcm_info->report_flag = true;
+		offset = 0;
+		report = true;
 		break;
 
 	case STATUS_CONTINUED_READ:
-		if (tcm_info->report_flag == false) {
+		if (report == false) {
 			goto exit;
 		}
 
@@ -108,26 +110,26 @@ static void device_capture_touch_report(struct device_hcd *device_hcd,
 	}
 
 	if (size) {
-		size = MIN(size, tcm_info->remaining_size);
-		retval = tp_memcpy(&device_hcd->report.buf[tcm_info->offset],
-				   device_hcd->report.buf_size - tcm_info->offset,
+		size = MIN(size, remaining_size);
+		retval = tp_memcpy(&device_hcd->report.buf[offset],
+				   device_hcd->report.buf_size - offset,
 				   &data[idx],
 				   count - idx,
 				   size);
 
 		if (retval < 0) {
 			TPD_INFO("Failed to copy touch report data\n");
-			tcm_info->report_flag = false;
+			report = false;
 			goto exit;
 
 		} else {
-			tcm_info->offset += size;
-			tcm_info->remaining_size -= size;
+			offset += size;
+			remaining_size -= size;
 			device_hcd->report.data_length += size;
 		}
 	}
 
-	if (tcm_info->remaining_size) {
+	if (remaining_size) {
 		goto exit;
 	}
 
@@ -141,7 +143,7 @@ static void device_capture_touch_report(struct device_hcd *device_hcd,
 
 	UNLOCK_BUFFER(tcm_info->report.buffer);
 
-	tcm_info->report_flag = false;
+	report = false;
 
 exit:
 	UNLOCK_BUFFER(device_hcd->report);
@@ -346,12 +348,13 @@ static int device_insert_fifo(struct syna_tcm_data *tcm_info,
 	int retval = 0;
 	struct fifo_queue *pfifo_data = NULL;
 	struct fifo_queue *pfifo_data_temp = NULL;
+	static int pre_remaining_frames = -1;
 
 	mutex_lock(&tcm_info->fifo_mutex);
 
 	/* check queue buffer limit */
 	if (tcm_info->fifo_remaining_frame >= FIFO_QUEUE_MAX_FRAMES) {
-		if (tcm_info->fifo_remaining_frame != tcm_info->pre_remaining_frames)
+		if (tcm_info->fifo_remaining_frame != pre_remaining_frames)
 			TPD_INFO("Reached %d and drop FIFO first frame\n",
 				tcm_info->fifo_remaining_frame);
 
@@ -361,12 +364,12 @@ static int device_insert_fifo(struct syna_tcm_data *tcm_info,
 		list_del(&pfifo_data_temp->next);
 		kfree(pfifo_data_temp->fifo_data);
 		kfree(pfifo_data_temp);
-		tcm_info->pre_remaining_frames = tcm_info->fifo_remaining_frame;
+		pre_remaining_frames = tcm_info->fifo_remaining_frame;
 		tcm_info->fifo_remaining_frame--;
-	} else if (tcm_info->pre_remaining_frames >= FIFO_QUEUE_MAX_FRAMES) {
+	} else if (pre_remaining_frames >= FIFO_QUEUE_MAX_FRAMES) {
 		TPD_INFO("Reached limit, dropped oldest frame, remaining:%d\n",
 			tcm_info->fifo_remaining_frame);
-		tcm_info->pre_remaining_frames = tcm_info->fifo_remaining_frame;
+		pre_remaining_frames = tcm_info->fifo_remaining_frame;
 	} else {
 		TPD_INFO("Queued frames:%d\n",
 			tcm_info->fifo_remaining_frame);
@@ -950,8 +953,7 @@ static char *device_devnode(struct device *dev, umode_t *mode)
 
 static int device_create_class(struct device_hcd *device_hcd)
 {
-	if (tcm_class != NULL) {
-		device_hcd->class = tcm_class;
+	if (device_hcd->class != NULL) {
 		return 0;
 	}
 
@@ -961,7 +963,7 @@ static int device_create_class(struct device_hcd *device_hcd)
 		TPD_INFO("Failed to create class\n");
 		return -ENODEV;
 	}
-	tcm_class = device_hcd->class;
+
 	device_hcd->class->devnode = device_devnode;
 
 	return 0;
@@ -1061,8 +1063,6 @@ static int device_init(struct syna_tcm_data *tcm_info)
 		retval = -ENODEV;
 		goto err_create_device;
 	}
-
-	tcm_info->pre_remaining_frames = -1;
 
 	g_device_hcd[device_hcd->tp_index] = device_hcd;
 	return 0;

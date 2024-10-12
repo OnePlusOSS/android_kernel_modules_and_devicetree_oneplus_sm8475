@@ -33,6 +33,7 @@
 
 	reserved_memory: reserved-memory { };
 
+/*
 	mem-offline {
 		compatible = "qcom,mem-offline";
 		offline-sizes = <0x1 0x40000000 0x0 0x40000000>,
@@ -41,6 +42,7 @@
 		granule = <512>;
 		mboxes = <&qmp_aop 0>;
 	};
+*/
 
 	aliases: aliases {
 		mmc0 = &sdhc_1; /*SDC1 eMMC slot*/

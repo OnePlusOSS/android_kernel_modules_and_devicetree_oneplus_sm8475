@@ -31,8 +31,5 @@ EXPORT_SYMBOL(touchpanel_event_call_notifier);
 int (*tp_gesture_enable_notifier)(unsigned int tp_index) = NULL;
 EXPORT_SYMBOL(tp_gesture_enable_notifier);
 
-int (*tp_cs_gpio_notifier)(bool enable, unsigned int tp_index) = NULL;
-EXPORT_SYMBOL(tp_cs_gpio_notifier);
-
 MODULE_DESCRIPTION("Touchscreen Event Notify Driver");
 MODULE_LICENSE("GPL");

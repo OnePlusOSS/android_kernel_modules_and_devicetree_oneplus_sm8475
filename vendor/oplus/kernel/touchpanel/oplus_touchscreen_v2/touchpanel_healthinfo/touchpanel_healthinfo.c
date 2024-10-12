@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 oplus. All rights reserved.
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
 #include "touchpanel_healthinfo.h"
@@ -11,14 +11,13 @@
 #include <linux/delay.h>
 #include <linux/mutex.h>
 #include <linux/ktime.h>
-#include <linux/stacktrace.h>
 #include <asm/stack_pointer.h>
-#include <asm/stacktrace.h>
 #include <asm/current.h>
 #include <linux/version.h>
 
 #include "../touchpanel_common.h"
 #include "../touch_comon_api/touch_comon_api.h"
+#include "../touchpanel_prevention/touchpanel_prevention.h"
 
 #ifdef CONFIG_OPLUS_KEVENT_UPLOAD_DELETE
 #include <linux/oplus_kevent.h>
@@ -98,6 +97,28 @@ bool is_point_reporting(int obj_attention, struct point_info *points, int num)
 		&& (points[num].status != 0));
 }
 
+bool is_point_in_zone(struct list_head *zone_list, struct point_info cur_p,
+		      int direction)
+{
+	struct list_head *pos = NULL;
+	struct grip_zone_area *grip_area = NULL;
+
+	list_for_each(pos, zone_list) {
+		grip_area = (struct grip_zone_area *)pos;
+
+		if ((grip_area->support_dir >> direction) & 0x01) {
+			if ((cur_p.x < grip_area->start_x + grip_area->x_width)
+					&& (cur_p.x > grip_area->start_x) &&
+					(cur_p.y < grip_area->start_y + grip_area->y_width)
+					&& (cur_p.y > grip_area->start_y)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 int add_point_to_record(struct points_record *points_record,
 			struct point_info point)
 {
@@ -144,7 +165,7 @@ int add_swipe_to_record(struct swipes_record *swipes_record,
 	return swipes_record->count;
 }
 
-/*int print_point_from_record(struct seq_file *s,
+int print_point_from_record(struct seq_file *s,
 			    struct points_record *points_record, char *prefix)
 {
 	int i = 0;
@@ -173,9 +194,9 @@ int add_swipe_to_record(struct swipes_record *swipes_record,
 	}
 
 	return 0;
-}*/
+}
 
-/*int print_swipe_from_record(struct seq_file *s,
+int print_swipe_from_record(struct seq_file *s,
 			    struct swipes_record *swipes_record, char *prefix)
 {
 	int i = 0;
@@ -206,7 +227,7 @@ int add_swipe_to_record(struct swipes_record *swipes_record,
 	}
 
 	return 0;
-}*/
+}
 
 int update_value_count_list(struct list_head *list, void *value,
 			    value_record_type value_type)
@@ -219,6 +240,14 @@ int update_value_count_list(struct list_head *list, void *value,
 
 	list_for_each(pos, list) {
 		vc = (struct health_value_count *)pos;
+		if (IS_ERR_OR_NULL(vc)) {
+			TPD_INFO("%s:vc is error:%p", __func__, vc);
+			return -1;
+		}
+		if (IS_ERR_OR_NULL(vc->value)) {
+			TPD_INFO("%s:vc->value is error:%p", __func__, vc->value);
+			return -1;
+		}
 
 		switch (value_type) {
 		case TYPE_RECORD_INT:
@@ -331,23 +360,31 @@ int print_value_count_list(struct seq_file *s, struct list_head *list,
 
 	list_for_each(pos, list) {
 		vc = (struct health_value_count *)pos;
+		if (IS_ERR_OR_NULL(vc)) {
+			TPD_INFO("%s:vc is error:%p", __func__, vc);
+			return -1;
+		}
+		if (IS_ERR_OR_NULL(vc->value)) {
+			TPD_INFO("%s:vc->value is error:%p", __func__, vc->value);
+			return -1;
+		}
 
 		if (value_type == vc->value_type) {
 			switch (value_type) {
 			case TYPE_RECORD_INT:
 				vc_value = vc->value;
 
-				/*if (s) {
+				if (s) {
 					seq_printf(s, "%s%d:%d\n", prefix ? prefix : "", *vc_value, vc->count);
-				}*/
+				}
 
 				TPD_DETAIL("%s%d:%d\n", prefix ? prefix : "", *vc_value, vc->count);
 				break;
 
 			case TYPE_RECORD_STR:
-				/*if (s) {
+				if (s) {
 					seq_printf(s, "%s%s:%d\n", prefix ? prefix : "", (char *)vc->value, vc->count);
-				}*/
+				}
 
 				TPD_DETAIL("%s%s:%d\n", prefix ? prefix : "", (char *)vc->value, vc->count);
 				break;
@@ -414,10 +451,10 @@ char *print_as_matrix(struct seq_file *s, void *value, int len, int linebreak,
 		snprintf(tmp_str_child, DEFAULT_CHILD_STR_LEN, "0x%02x, ", tmp_uint8[i]);
 		strcat(tmp_str, tmp_str_child);
 
-		/*if (i % linebreak == linebreak - 1) {
+		if (i % linebreak == linebreak - 1) {
 			if (s) {
 				seq_printf(s, "%s\n", tmp_str);
-			}*/
+			}
 
 			TPD_DETAIL("%s\n", tmp_str);
 
@@ -427,11 +464,12 @@ char *print_as_matrix(struct seq_file *s, void *value, int len, int linebreak,
 
 			memset(tmp_str, 0, linebreak * DEFAULT_CHILD_STR_LEN);
 		}
-	
+	}
+
 	if (i % linebreak) {
-		/*if (s) {
+		if (s) {
 			seq_printf(s, "%s\n", tmp_str);
-		}*/
+		}
 
 		TPD_DETAIL("%s\n", tmp_str);
 
@@ -560,9 +598,9 @@ void print_buffer_list(struct seq_file *s, struct list_head *list, char *prefix)
 	list_for_each(pos, list) {
 		vc = (struct health_value_count *)pos;
 
-		/*if (s) {
+		if (s) {
 			seq_printf(s, "%slen=%d\n", prefix ? prefix : "", vc->count);
-		}*/
+		}
 
 		print_as_matrix(s, vc->value, vc->count, DEFAULT_BUF_MATRIX_LINEBREAK, false);
 	}
@@ -608,15 +646,15 @@ void print_delta_data(struct seq_file *s, int32_t *delta_data, int tx_num,
 			strcat(tmp_str, tmp_str_child);
 		}
 
-		/*if (s) {
+		if (s) {
 			seq_printf(s, "%s", tmp_str);
-		}*/
+		}
 
 		TPD_DETAIL("%s\n", tmp_str);
 	}
-	/*if (s) {
+	if (s) {
 		seq_printf(s, "\n");
-	}*/
+	}
 
 	tp_kfree((void **)&tmp_str);
 	tp_kfree((void **)&tmp_str_child);
@@ -704,6 +742,61 @@ int point_state_up_handle(struct monitor_data *monitor_data, int i,
 			monitor_data->swipe_count++;
 		}
 
+		if (!monitor_data->kernel_grip_support) {
+			if (is_point_in_zone(&monitor_data->dead_zone_list,
+					     monitor_data->points_state[i].first_point, direction)
+					&& is_point_in_zone(&monitor_data->dead_zone_list,
+							    monitor_data->points_state[i].last_point, direction)
+					&& !monitor_data->points_state[i].is_down_handled) { /*grip dead zone2*/
+				add_point_to_record(&monitor_data->dead_zone_points,
+						    monitor_data->points_state[i].first_point);
+				TPD_DETAIL("dead zone [%d %d] / %d.\n",
+					   monitor_data->points_state[i].first_point.x,
+					   monitor_data->points_state[i].first_point.y,
+					   monitor_data->dead_zone_points.count);
+			}
+			/*grip elimination 2*/
+			if (direction == VERTICAL_SCREEN) {
+				if (monitor_data->elizone_point_tophalf_i == i) {
+					add_point_to_record(&monitor_data->elimination_zone_points,
+							    monitor_data->points_state[i].first_point);
+					TPD_DETAIL("eli zone [%d %d] / %d.\n",
+						   monitor_data->points_state[i].first_point.x,
+						   monitor_data->points_state[i].first_point.y,
+						   monitor_data->elimination_zone_points.count);
+					monitor_data->elizone_point_tophalf_i = -1;
+				}
+				if (monitor_data->elizone_point_bothalf_i == i) {
+					add_point_to_record(&monitor_data->elimination_zone_points,
+							    monitor_data->points_state[i].first_point);
+					TPD_DETAIL("eli zone [%d %d] / %d.\n",
+						   monitor_data->points_state[i].first_point.x,
+						   monitor_data->points_state[i].first_point.y,
+						   monitor_data->elimination_zone_points.count);
+					monitor_data->elizone_point_bothalf_i = -1;
+				}
+			} else {
+				if (monitor_data->elizone_point_tophalf_i == i) {
+					add_point_to_record(&monitor_data->lanscape_elimination_zone_points,
+							    monitor_data->points_state[i].first_point);
+					TPD_DETAIL("lans eli zone [%d %d] / %d.\n",
+						   monitor_data->points_state[i].first_point.x,
+						   monitor_data->points_state[i].first_point.y,
+						   monitor_data->lanscape_elimination_zone_points.count);
+					monitor_data->elizone_point_tophalf_i = -1;
+				}
+				if (monitor_data->elizone_point_bothalf_i == i) {
+					add_point_to_record(&monitor_data->lanscape_elimination_zone_points,
+							    monitor_data->points_state[i].first_point);
+					TPD_DETAIL("lans eli zone [%d %d] / %d.\n",
+						   monitor_data->points_state[i].first_point.x,
+						   monitor_data->points_state[i].first_point.y,
+						   monitor_data->lanscape_elimination_zone_points.count);
+					monitor_data->elizone_point_bothalf_i = -1;
+				}
+			}
+		}
+
 		monitor_data->points_state[i].max_swipe_distance_sq = 0;
 		monitor_data->points_state[i].last_swipe_distance_sq = 0;
 		reset_healthinfo_time_counter(&monitor_data->points_state[i].time_counter);
@@ -723,7 +816,14 @@ int tp_touch_healthinfo_handle(struct monitor_data *monitor_data,
 	bool is_first_point = false;
 	bool is_jumping_point = false;
 
-
+	int elizone_points_tophalf_count = 0;
+	int elizone_points_bothalf_count = 0;
+	int points_tophalf_count = 0;
+	int points_bothalf_count = 0;
+	bool need_record_eli_point_tophalf = false;
+	bool need_record_eli_point_bothalf = false;
+	int elizone_point_tophalf_i = -1;
+	int elizone_point_bothalf_i = -1;
 
 	u64 touch_time = 0;
 
@@ -887,10 +987,124 @@ int tp_touch_healthinfo_handle(struct monitor_data *monitor_data,
 					monitor_data->points_state[i].is_down_handled = true;
 				}
 
+				/*grip judge*/
+				if (!monitor_data->kernel_grip_support) {
+					if (!monitor_data->points_state[i].is_down_handled
+							&& !is_point_in_zone(&monitor_data->dead_zone_list, points[i], direction)
+							&& is_point_in_zone(&monitor_data->dead_zone_list,
+									    monitor_data->points_state[i].first_point, direction)) { /*grip dead zone 1*/
+						monitor_data->points_state[i].is_down_handled = true;
+						TPD_DETAIL("swipe from dead zone[%d %d] to [%d %d].\n",
+							   monitor_data->points_state[i].first_point.x,
+							   monitor_data->points_state[i].first_point.y, points[i].x, points[i].y);
+
+					} else if (monitor_data->points_state[i].max_swipe_distance_sq == 0
+							&& !monitor_data->points_state[i].is_down_handled
+							&& is_point_in_zone(&monitor_data->condition_zone_list, points[i], direction)
+							&& check_healthinfo_time_counter_timeout(
+								monitor_data->points_state[i].time_counter,
+								LONG_CLICK_TIME)) { /*grip condition zone long press(>400ms)*/
+						add_point_to_record(&monitor_data->condition_zone_points, points[i]);
+						TPD_DETAIL("condition zone [%d %d] / %d.\n", points[i].x, points[i].y,
+							   monitor_data->condition_zone_points.count);
+						monitor_data->points_state[i].is_down_handled = true;
+
+					} else if (is_point_in_zone(&monitor_data->elimination_zone_list, points[i],
+								    direction)) { /*grip elimination 1*/
+						if (points[i].y < monitor_data->max_y / 2) {
+							elizone_points_tophalf_count++;
+
+							if (!monitor_data->points_state[i].is_down_handled
+									&& !need_record_eli_point_tophalf
+									&& monitor_data->points_state[i].max_swipe_distance_sq == 0
+									&& monitor_data->elizone_point_tophalf_i < 0) {
+								need_record_eli_point_tophalf = true;
+								elizone_point_tophalf_i = i;
+							}
+
+						} else {
+							elizone_points_bothalf_count++;
+
+							if (!monitor_data->points_state[i].is_down_handled
+									&& !need_record_eli_point_bothalf
+									&& monitor_data->points_state[i].max_swipe_distance_sq == 0
+									&& monitor_data->elizone_point_bothalf_i < 0) {
+								need_record_eli_point_bothalf = true;
+								elizone_point_bothalf_i = i;
+							}
+						}
+					} else {
+						if (monitor_data->elizone_point_tophalf_i == i) {
+							monitor_data->elizone_point_tophalf_i = -1;
+						}
+						if (monitor_data->elizone_point_bothalf_i == i) {
+							monitor_data->elizone_point_bothalf_i = -1;
+						}
+					}
+
+					if (points[i].y < monitor_data->max_y / 2) {
+						points_tophalf_count++;
+
+					} else {
+						points_bothalf_count++;
+					}
+				}
+
 				points_handled++;
 			}
 
 			i++;
+		}
+
+		/*grip elimination 2*/
+		if (!monitor_data->kernel_grip_support) {
+			if (direction == VERTICAL_SCREEN) {
+				if ((elizone_points_tophalf_count || elizone_points_bothalf_count)
+						&& elizone_points_tophalf_count + elizone_points_bothalf_count < finger_num) {
+					if (need_record_eli_point_tophalf) {
+						/*add_point_to_record(&monitor_data->elimination_zone_points,
+								    points[elizone_point_tophalf_i]);
+						TPD_DETAIL("eli zone [%d %d] / %d.\n", points[elizone_point_tophalf_i].x,
+							   points[elizone_point_tophalf_i].y, monitor_data->elimination_zone_points.count);*/
+						monitor_data->elizone_point_tophalf_i = elizone_point_tophalf_i;
+						monitor_data->points_state[elizone_point_tophalf_i].is_down_handled = true;
+					}
+
+					if (need_record_eli_point_bothalf) {
+						/*add_point_to_record(&monitor_data->elimination_zone_points,
+								    points[elizone_point_bothalf_i]);
+						TPD_DETAIL("eli zone [%d %d] / %d.\n", points[elizone_point_bothalf_i].x,
+							   points[elizone_point_bothalf_i].y, monitor_data->elimination_zone_points.count);*/
+						monitor_data->elizone_point_bothalf_i = elizone_point_bothalf_i;
+						monitor_data->points_state[elizone_point_bothalf_i].is_down_handled = true;
+					}
+				}
+
+			} else {
+				if (elizone_points_tophalf_count
+						&& elizone_points_tophalf_count < points_tophalf_count
+						&& need_record_eli_point_tophalf) {
+					/*add_point_to_record(&monitor_data->lanscape_elimination_zone_points,
+							    points[elizone_point_tophalf_i]);
+					TPD_DETAIL("lans eli zone [%d %d] / %d.\n", points[elizone_point_tophalf_i].x,
+						   points[elizone_point_tophalf_i].y,
+						   monitor_data->lanscape_elimination_zone_points.count);*/
+					monitor_data->elizone_point_tophalf_i = elizone_point_tophalf_i;
+					monitor_data->points_state[elizone_point_tophalf_i].is_down_handled = true;
+				}
+
+				if (elizone_points_bothalf_count
+						&& elizone_points_bothalf_count < points_bothalf_count
+						&& need_record_eli_point_bothalf) {
+					/*add_point_to_record(&monitor_data->lanscape_elimination_zone_points,
+							    points[elizone_point_bothalf_i]);
+					TPD_DETAIL("lans eli zone [%d %d] / %d.\n", points[elizone_point_bothalf_i].x,
+						   points[elizone_point_bothalf_i].y,
+						   monitor_data->lanscape_elimination_zone_points.count);*/
+					monitor_data->elizone_point_bothalf_i = elizone_point_bothalf_i;
+					monitor_data->points_state[elizone_point_bothalf_i].is_down_handled = true;
+				}
+			}
 		}
 
 		if (monitor_data->in_game_mode) {
@@ -948,6 +1162,121 @@ int tp_touch_healthinfo_handle(struct monitor_data *monitor_data,
 	}
 
 	return 0;
+}
+
+#define SHORT_ZONE_DIVIDE           3
+#define LONG_ZONE_DIVIDE            5
+
+int tp_raw_touch_healthinfo_handle(struct monitor_data *monitor_data,
+			       int obj_attention, struct point_info *points, int max_num)
+{
+	int i = 0;
+	int x_zone_divide = 0;
+	int y_zone_divide = 0;
+
+	if (!monitor_data || !monitor_data->points_state || !points) {
+		return -1;
+	}
+
+	if (monitor_data->max_y >  monitor_data->max_x) {
+		x_zone_divide = SHORT_ZONE_DIVIDE;
+		y_zone_divide = LONG_ZONE_DIVIDE;
+	} else {
+		y_zone_divide = SHORT_ZONE_DIVIDE;
+		x_zone_divide = LONG_ZONE_DIVIDE;
+	}
+
+	while (i < max_num) {
+		if (is_point_reporting(obj_attention, points, i)) {
+			/*edge corner judge*/
+			if (monitor_data->kernel_grip_support)  {
+				if ((points[i].x < 2 * monitor_data->max_x / monitor_data->tx_num
+						   || points[i].x > (monitor_data->tx_num - 2) * monitor_data->max_x / monitor_data->tx_num)
+						   && (points[i].y < 2 * monitor_data->max_y / monitor_data->rx_num
+						   || points[i].y > (monitor_data->rx_num - 2) * monitor_data->max_y / monitor_data->rx_num)) {
+					if ((!points[i].rx_press && !points[i].rx_er) || (!points[i].tx_press && !points[i].tx_er)) {
+						monitor_data->corner_trx_ewr_zero_count++;
+						TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](corner tx-rx-ewr ALL zero error)\n",
+							   i, points[i].x, points[i].y, points[i].z,
+							   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+					}
+				} else if (points[i].x < monitor_data->max_x / monitor_data->tx_num
+						   || points[i].x > (monitor_data->tx_num - 1) * monitor_data->max_x / monitor_data->tx_num) {
+					if (!points[i].rx_press && !points[i].rx_er) {
+						monitor_data->edge_rx_ewr_zero_count++;
+						TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](edge rx-ewr ALL zero error)\n",
+							   i, points[i].x, points[i].y, points[i].z,
+							   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+					}
+				} else if (points[i].y < monitor_data->max_y / monitor_data->rx_num
+					   || points[i].y > (monitor_data->rx_num - 1) * monitor_data->max_y / monitor_data->rx_num) {
+					if (!points[i].tx_press && !points[i].tx_er) {
+						monitor_data->edge_tx_ewr_zero_count++;
+						TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](edge tx-ewr ALL zero error)\n",
+							   i, points[i].x, points[i].y, points[i].z,
+							   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+					}
+				}
+
+				if ((points[i].rx_press || points[i].rx_er)
+					   && points[i].x > monitor_data->max_x / x_zone_divide
+					   && points[i].x < (x_zone_divide - 1) * monitor_data->max_x / x_zone_divide) {
+					monitor_data->center_rx_ewr_not_zero_count++;
+					TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](center rx-ewr NOT zero error)\n",
+						   i, points[i].x, points[i].y, points[i].z,
+						   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+				}
+
+				if ((points[i].tx_press || points[i].tx_er)
+					   && points[i].y > monitor_data->max_y / y_zone_divide
+					   && points[i].y < (y_zone_divide - 1) * monitor_data->max_y / y_zone_divide) {
+					monitor_data->center_tx_ewr_not_zero_count++;
+					TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](center tx-ewr NOT zero error)\n",
+						   i, points[i].x, points[i].y, points[i].z,
+						   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+				}
+			}
+
+			/*if (points[i].x == 0) {
+				monitor_data->point_x_zero_count++;
+				TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](x zero point)\n", i, points[i].x, points[i].y, points[i].z,
+					   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+			}*/
+			if (points[i].x >= monitor_data->max_x) {
+				monitor_data->point_x_over_max_count++;
+				TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](x over max error)\n", i, points[i].x, points[i].y, points[i].z,
+					   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+			}
+			/*if (points[i].y == 0) {
+				monitor_data->point_y_zero_count++;
+				TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](y zero point)\n", i, points[i].x, points[i].y, points[i].z,
+					   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+			}*/
+			if (points[i].y >= monitor_data->max_y) {
+				monitor_data->point_y_over_max_count++;
+				TPD_DETAIL("Touchpanel id %d :Raw Down[%4d %4d %4d %4d %4d %4d %4d](y over max error)\n", i, points[i].x, points[i].y, points[i].z,
+					   points[i].rx_press, points[i].tx_press, points[i].rx_er, points[i].tx_er);
+			}
+		}
+
+		i++;
+	}
+
+	return 0;
+}
+
+int tp_grip_up_healthinfo_handle(struct monitor_data *monitor_data, uint8_t up_id,
+				 int direction)
+{
+	int ret = 0;
+
+	if (!monitor_data) {
+		return 0;
+	}
+
+	point_state_up_handle(monitor_data, up_id, direction);
+
+	return ret;
 }
 
 int tp_gesture_healthinfo_handle(struct monitor_data *monitor_data,
@@ -1033,15 +1362,79 @@ int tp_report_healthinfo_handle(struct monitor_data *monitor_data, char *report)
 	return ret;
 }
 
+void reset_healthinfo_grip_time_record(void *tp_monitor_data, void *tp_grip_info)
+{
+	struct monitor_data *monitor_data = (struct monitor_data *)tp_monitor_data;
+	struct kernel_grip_info *grip_info = (struct kernel_grip_info *)tp_grip_info;
+
+	if (!monitor_data || !grip_info) {
+		return;
+	}
+
+	if (monitor_data->grip_time_record_flag == TYPE_START_RECORD) {
+		monitor_data->total_grip_time_no_touch += ktime_to_ms(ktime_get())
+			- monitor_data->grip_start_time_no_touch;
+		monitor_data->grip_time_record_flag = TYPE_END_RECORD;
+	}
+
+	grip_info->obj_bit_rcd = 0;
+	grip_info->obj_prced_bit_rcd = 0;
+}
+
 int tp_irq_interval_handle(struct monitor_data *monitor_data, int count)
 {
     if (!monitor_data) {
         return 0;
     }
-    /*if (count > 0) {
+    if (count > 0) {
         monitor_data->below_rate_counts++;
-    }*/
+    }
     return 0;
+}
+
+int tp_grip_healthinfo_handle(struct monitor_data *monitor_data,
+				     struct kernel_grip_info *grip_info)
+{
+	int ret = 0;
+	int obj_attention_raw = 0;
+	int obj_attention = 0;
+	u64 delta_time = 0;
+
+	if (!monitor_data || !grip_info) {
+		return 0;
+	}
+
+	obj_attention_raw = grip_info->obj_bit_rcd;
+	obj_attention = grip_info->obj_prced_bit_rcd;
+	monitor_data->p_grip_moni_data = &grip_info->grip_moni_data;
+
+	if (obj_attention_raw != 0 && obj_attention == 0) { /*touch is all suppressed by grip function*/
+		if (monitor_data->grip_time_record_flag != TYPE_START_RECORD) {
+			monitor_data->grip_start_time_no_touch = ktime_to_ms(ktime_get());
+			monitor_data->grip_time_record_flag = TYPE_START_RECORD;
+		}
+	} else if (obj_attention != 0 || obj_attention_raw == 0) {
+		if (monitor_data->grip_time_record_flag == TYPE_START_RECORD) {
+			delta_time = ktime_to_ms(ktime_get())
+				- monitor_data->grip_start_time_no_touch;
+			monitor_data->total_grip_time_no_touch += delta_time;
+			if (delta_time >= MS_PER_SECOND) {
+				monitor_data->total_grip_time_no_touch_one_sec += delta_time;
+			}
+			if (delta_time >= 2 * MS_PER_SECOND) {
+				monitor_data->total_grip_time_no_touch_two_sec += delta_time;
+			}
+			if (delta_time >= 3 * MS_PER_SECOND) {
+				monitor_data->total_grip_time_no_touch_three_sec += delta_time;
+			}
+			if (delta_time >= 5 * MS_PER_SECOND) {
+				monitor_data->total_grip_time_no_touch_five_sec += delta_time;
+			}
+			monitor_data->grip_time_record_flag = TYPE_END_RECORD;
+		}
+	}
+
+	return ret;
 }
 
 int tp_probe_healthinfo_handle(struct monitor_data *monitor_data,
@@ -1052,7 +1445,7 @@ int tp_probe_healthinfo_handle(struct monitor_data *monitor_data,
 	}
 
 	monitor_data->boot_time = start_time;
-	/*monitor_data->stat_time = start_time;*/
+	monitor_data->stat_time = start_time;
 	monitor_data->probe_time = check_healthinfo_time_counter_timeout(start_time, 0);
 
 	reset_healthinfo_time_counter(&monitor_data->screenon_timer);
@@ -1285,6 +1678,44 @@ int tp_voltage_healthinfo_handle(struct monitor_data *monitor_data,
 	return ret;
 }
 
+#define RECLINING_TIME_15S     15000
+#define RECLINING_TIME_10S     10000
+
+int tp_reclining_healthinfo_handle(struct monitor_data *monitor_data,
+		struct kernel_grip_info *grip_info)
+{
+	u64 time_cost = 0;
+
+	if (!monitor_data || !grip_info) {
+		return 0;
+	}
+
+	if (!monitor_data->p_grip_moni_data) {
+		return 0;
+	}
+
+	time_cost = check_healthinfo_time_counter_timeout(grip_info->reclining_start_time, 0);
+
+	if (VERTICAL_RECLINING_MODE == grip_info->last_reclining_mode) {
+		if (time_cost >= RECLINING_TIME_15S) {
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_15s_count++;
+		} else if (time_cost >= RECLINING_TIME_10S) {
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_10s_count++;
+		} else {
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_5s_count++;
+		}
+	} else {
+		if (time_cost >= RECLINING_TIME_15S) {
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_15s_count++;
+		} else if (time_cost >= RECLINING_TIME_10S) {
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_10s_count++;
+		} else {
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_5s_count++;
+		}
+	}
+	return 0;
+}
+
 int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 			 void *value)
 {
@@ -1294,6 +1725,7 @@ int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 	int *value_int = (int *)value;
 	long *value_long = (long *)value;
 	u64 *value_u64 = (u64 *)value;
+	struct kernel_grip_info *grip_info = (struct kernel_grip_info *)value;
 	struct monitor_data *monitor_data = (struct monitor_data *)tp_monitor_data;
 
 	if (!monitor_data || !monitor_data->health_monitor_support) {
@@ -1306,6 +1738,15 @@ int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 			ret = tp_touch_healthinfo_handle(monitor_data, *value_int,
 							 monitor_data->touch_points, monitor_data->touch_num,
 							 monitor_data->max_finger_support, monitor_data->direction);
+			monitor_data->touch_points = NULL;
+		}
+
+		break;
+
+	case HEALTH_RAW_TOUCH:
+		if (monitor_data->touch_points) {
+			ret = tp_raw_touch_healthinfo_handle(monitor_data, *value_int,
+							 monitor_data->touch_points, monitor_data->max_finger_support);
 			monitor_data->touch_points = NULL;
 		}
 
@@ -1374,6 +1815,15 @@ int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 				      *value_u64);
 		break;
 
+	case HEALTH_GRIP:
+		ret = tp_grip_healthinfo_handle(monitor_data, grip_info);
+		break;
+
+	case HEALTH_GRIP_UP:
+		ret = tp_grip_up_healthinfo_handle(monitor_data, *value_uint8,
+				      monitor_data->direction);
+		break;
+
 	case HEALTH_BELOW_RATE:
 		ret = tp_irq_interval_handle(monitor_data, *value_int);
 		break;
@@ -1381,6 +1831,10 @@ int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 	case HEALTH_AVDD:
 	case HEALTH_VDDI:
 		ret = tp_voltage_healthinfo_handle(monitor_data, type, *value_int);
+		break;
+
+	case HEALTH_GRIP_RECLINING:
+		ret = tp_reclining_healthinfo_handle(monitor_data, grip_info);
 		break;
 
 	default:
@@ -1393,18 +1847,19 @@ EXPORT_SYMBOL(tp_healthinfo_report);
 
 int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 {
-	//struct list_head *pos = NULL;
-	//struct health_value_count *vc = NULL;
+	struct list_head *pos = NULL;
+	struct health_value_count *vc = NULL;
 	struct monitor_data *monitor_data = (struct monitor_data *)tp_monitor_data;
-	//int *vc_value = NULL;
+	int *vc_value = NULL;
 	u64 screenon_time = 0;
+	struct grip_monitor_data  *grip = NULL;
 
-	/*if (!monitor_data->health_monitor_support) {
+	if (!monitor_data->health_monitor_support) {
 		seq_printf(s, "health monitor not supported\n");
 		return 0;
-	}*/
+	}
 
-	/*if (monitor_data->tp_ic) {
+	if (monitor_data->tp_ic) {
 		if (monitor_data->vendor) {
 			seq_printf(s, "tp_ic:%s+%s\n", monitor_data->tp_ic, monitor_data->vendor);
 		} else {
@@ -1423,17 +1878,17 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 	seq_printf(s, "max_resume_time:%lldms\n", monitor_data->max_resume_time);
 	seq_printf(s, "max_suspend_time:%lldms\n", monitor_data->max_suspend_time);
 	seq_printf(s, "RATE_MIN:%d\n", monitor_data->RATE_MIN);
-	seq_printf(s, "below_rate_counts:%d\n", monitor_data->below_rate_counts);*/
+	seq_printf(s, "below_rate_counts:%d\n", monitor_data->below_rate_counts);
 
 	/*touch time rate*/
 	screenon_time = monitor_data->screenon_timer ?
 			check_healthinfo_time_counter_timeout(monitor_data->screenon_timer, 0) : 0;
-	/*seq_printf(s, "total_screen_on_time:%llds\n",
-		   (monitor_data->total_screenon_time + screenon_time) / MS_PER_SECOND);*/
-	/*seq_printf(s, "total_touch_time:%llds\n",
+	seq_printf(s, "total_screen_on_time:%llds\n",
+		   (monitor_data->total_screenon_time + screenon_time) / MS_PER_SECOND);
+	seq_printf(s, "total_touch_time:%llds\n",
 		   monitor_data->total_touch_time / MS_PER_SECOND);
 
-	if (monitor_data->max_touch_num_in_game) {
+	if (monitor_data->total_touch_time_in_game[0]) {
 		seq_printf(s,
 			   "total_touch_time(in_game):%lld[%lld %lld %lld %lld %lld %lld %lld %lld %lld %lld]s\n",
 			   monitor_data->total_touch_time_in_game[0] / MS_PER_SECOND,
@@ -1449,6 +1904,38 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 			   monitor_data->total_touch_time_in_game[10] / MS_PER_SECOND);
 	}
 
+	if (monitor_data->total_touch_time_in_game_300[0]) {
+		seq_printf(s,
+			   "total_touch_time(in_game_300hz):%lld[%lld %lld %lld %lld %lld %lld %lld %lld %lld %lld]s\n",
+			   monitor_data->total_touch_time_in_game_300[0] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[1] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[2] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[3] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[4] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[5] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[6] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[7] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[8] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[9] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_300[10] / MS_PER_SECOND);
+	}
+
+	if (monitor_data->total_touch_time_in_game_600[0]) {
+		seq_printf(s,
+			   "total_touch_time(in_game_600hz):%lld[%lld %lld %lld %lld %lld %lld %lld %lld %lld %lld]s\n",
+			   monitor_data->total_touch_time_in_game_600[0] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[1] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[2] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[3] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[4] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[5] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[6] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[7] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[8] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[9] / MS_PER_SECOND,
+			   monitor_data->total_touch_time_in_game_600[10] / MS_PER_SECOND);
+	}
+
 	seq_printf(s, "max_holding_touch_time:%llds\n",
 		   monitor_data->max_holding_touch_time / MS_PER_SECOND);
 	seq_printf(s, "max_touch_number:%d\n", monitor_data->max_touch_num);
@@ -1458,17 +1945,18 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 			   monitor_data->max_touch_num_in_game);
 	}
 	seq_printf(s, "panel_coords:%d*%d\n", monitor_data->max_x, monitor_data->max_y);
+	seq_printf(s, "display_coords:%d*%d\n", monitor_data->display_max_x, monitor_data->display_max_y);
 	seq_printf(s, "tx_rx_num:%d*%d\n", monitor_data->tx_num, monitor_data->rx_num);
 	seq_printf(s, "click_count:%d\n", monitor_data->click_count);
-	print_delta_data(s, monitor_data->click_count_array, CLICK_COUNT_ARRAY_HEIGHT,
-			 CLICK_COUNT_ARRAY_WIDTH);
-	seq_printf(s, "swipe_count:%d\n", monitor_data->swipe_count);*/
+	/*print_delta_data(s, monitor_data->click_count_array, CLICK_COUNT_ARRAY_HEIGHT,
+			 CLICK_COUNT_ARRAY_WIDTH);*/
+	seq_printf(s, "swipe_count:%d\n", monitor_data->swipe_count);
 
 	/*firmware update*/
-	/*if (monitor_data->fw_version) {
+	if (monitor_data->fw_version) {
 		seq_printf(s, "fw_version:%s\n" "max_fw_update_time:%lldms\n",
 			   monitor_data->fw_version, monitor_data->max_fw_update_time);
-	}*/
+	}
 
 	print_value_count_list(s, &monitor_data->fw_update_result_list, TYPE_RECORD_STR,
 			       PREFIX_FW_UPDATE_RESULT);
@@ -1480,40 +1968,193 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 			  PREFIX_BUS_TRANS_ERRBUF);
 
 	/*alloc*/
-	//seq_printf(s, "alloced_size:%ld\n", monitor_data->alloced_size);
+	seq_printf(s, "alloced_size:%ld\n", monitor_data->alloced_size);
 
-	/*if (monitor_data->min_alloc_err_size) {
+	if (monitor_data->min_alloc_err_size) {
 		seq_printf(s, "alloc_error_size:%ld~%ld\n", monitor_data->min_alloc_err_size,
 			   monitor_data->max_alloc_err_size);
 		print_value_count_list(s, &monitor_data->alloc_err_funcs_list, TYPE_RECORD_STR,
 				       PREFIX_ALLOC_ERR_FUNC);
-	}*/
+	}
 
 	/*debug info*/
 	print_value_count_list(s, &monitor_data->health_report_list, TYPE_RECORD_STR,
 			       PREFIX_HEALTH_REPORT);
+
+	if (!monitor_data->kernel_grip_support) {
+		/*grip*/
+		print_point_from_record(s, &monitor_data->dead_zone_points,
+					PREFIX_GRIP_DEAD_ZONE);
+		print_point_from_record(s, &monitor_data->condition_zone_points,
+					PREFIX_GRIP_CONDIT_ZONE);
+		print_point_from_record(s, &monitor_data->elimination_zone_points,
+					PREFIX_GRIP_ELI_ZONE);
+		print_point_from_record(s, &monitor_data->lanscape_elimination_zone_points,
+					PREFIX_GRIP_LANS_ELI_ZONE);
+	} else {
+		/*grip time*/
+		seq_printf(s, "total_grip_time_no_touch:%llds\n",
+					monitor_data->total_grip_time_no_touch / MS_PER_SECOND);
+		seq_printf(s, "total_grip_time_no_touch_one_sec:%llds\n",
+					monitor_data->total_grip_time_no_touch_one_sec / MS_PER_SECOND);
+		seq_printf(s, "total_grip_time_no_touch_two_sec:%llds\n",
+					monitor_data->total_grip_time_no_touch_two_sec / MS_PER_SECOND);
+		seq_printf(s, "total_grip_time_no_touch_three_sec:%llds\n",
+					monitor_data->total_grip_time_no_touch_three_sec / MS_PER_SECOND);
+		seq_printf(s, "total_grip_time_no_touch_five_sec:%llds\n",
+					monitor_data->total_grip_time_no_touch_five_sec / MS_PER_SECOND);
+		if (monitor_data->p_grip_moni_data) {
+			grip = monitor_data->p_grip_moni_data;
+			if (grip->vertical_exit_match_y_times) {
+				seq_printf(s, "vertical_exit_match_y_times:%llu\n",
+						grip->vertical_exit_match_y_times);
+			}
+			if (grip->landscape_exit_match_y_times) {
+				seq_printf(s, "landscape_exit_match_y_times:%llu\n",
+						grip->landscape_exit_match_y_times);
+			}
+			if (grip->vertical_exit_match_x_times) {
+				seq_printf(s, "vertical_exit_match_x_times:%llu\n",
+						grip->vertical_exit_match_x_times);
+			}
+			if (grip->landscape_exit_match_x_times) {
+				seq_printf(s, "landscape_exit_match_x_times:%llu\n",
+						grip->landscape_exit_match_x_times);
+			}
+			if (grip->finger_hold_matched_times) {
+				seq_printf(s, "finger_hold_matched_times:%llu\n",
+						grip->finger_hold_matched_times);
+			}
+			if (grip->finger_hold_matched_max_times) {
+				seq_printf(s, "finger_hold_matched_max_times:%llu\n",
+						grip->finger_hold_matched_max_times);
+			}
+			if (grip->finger_hold_differ_size_times) {
+				seq_printf(s, "finger_hold_differ_size_times:%llu\n",
+						grip->finger_hold_differ_size_times);
+			}
+			if (grip->finger_hold_differ_max_times) {
+				seq_printf(s, "finger_hold_differ_max_times:%llu\n",
+						grip->finger_hold_differ_max_times);
+			}
+			if (grip->research_point_landed_times) {
+				seq_printf(s, "research_point_landed_times:%llu\n",
+						grip->research_point_landed_times);
+			}
+			if (grip->research_point_landed_times_force) {
+				seq_printf(s, "research_point_landed_times_force:%llu\n",
+						grip->research_point_landed_times_force);
+			}
+			if (grip->research_point_landed_fail_times) {
+				seq_printf(s, "research_point_landed_fail_times:%llu\n",
+						grip->research_point_landed_fail_times);
+			}
+			if (grip->vertical_corner_exit_dis_match_times) {
+				seq_printf(s, "vertical_corner_exit_dis_match_times:%llu\n",
+						grip->vertical_corner_exit_dis_match_times);
+			}
+			if (grip->landscape_corner_exit_dis_match_times) {
+				seq_printf(s, "landscape_corner_exit_dis_match_times:%llu\n",
+						grip->landscape_corner_exit_dis_match_times);
+			}
+			if (grip->vertical_corner_press_exit_match_times) {
+				seq_printf(s, "vertical_corner_press_exit_match_times:%llu\n",
+						grip->vertical_corner_press_exit_match_times);
+			}
+			if (grip->landscape_corner_press_exit_match_times) {
+				seq_printf(s, "landscape_corner_press_exit_match_times:%llu\n",
+						grip->landscape_corner_press_exit_match_times);
+			}
+			if (grip->top_shape_exit_match_times) {
+				seq_printf(s, "top_shape_exit_match_times:%llu\n",
+						grip->top_shape_exit_match_times);
+			}
+			if (grip->edge_sliding_exit_matched_times) {
+				seq_printf(s, "edge_sliding_exit_matched_times:%llu\n",
+						grip->edge_sliding_exit_matched_times);
+			}
+			if (grip->edge_sliding_beyond_distance_times) {
+				seq_printf(s, "edge_sliding_beyond_distance_times:%llu\n",
+						grip->edge_sliding_beyond_distance_times);
+			}
+			if (grip->vertical_reclining_mode_times) {
+				seq_printf(s, "vertical_reclining_mode_times:%llu\n",
+						grip->vertical_reclining_mode_times);
+			}
+			if (grip->vertical_reclining_mode_5s_count) {
+				seq_printf(s, "vertical_reclining_mode_5s_count:%llu\n",
+						grip->vertical_reclining_mode_5s_count);
+			}
+			if (grip->vertical_reclining_mode_10s_count) {
+				seq_printf(s, "vertical_reclining_mode_10s_count:%llu\n",
+						grip->vertical_reclining_mode_10s_count);
+			}
+			if (grip->vertical_reclining_mode_15s_count) {
+				seq_printf(s, "vertical_reclining_mode_15s_count:%llu\n",
+						grip->vertical_reclining_mode_15s_count);
+			}
+			if (grip->landscape_reclining_mode_times) {
+				seq_printf(s, "landscape_reclining_mode_times:%llu\n",
+						grip->landscape_reclining_mode_times);
+			}
+			if (grip->landscape_reclining_mode_5s_count) {
+				seq_printf(s, "landscape_reclining_mode_5s_count:%llu\n",
+						grip->landscape_reclining_mode_5s_count);
+			}
+			if (grip->landscape_reclining_mode_10s_count) {
+				seq_printf(s, "landscape_reclining_mode_10s_count:%llu\n",
+						grip->landscape_reclining_mode_10s_count);
+			}
+			if (grip->landscape_reclining_mode_15s_count) {
+				seq_printf(s, "landscape_reclining_mode_15s_count:%llu\n",
+						grip->landscape_reclining_mode_15s_count);
+			}
+		}
+		/*abnormal edge points with tx-rx-ewr all zero count*/
+		if (monitor_data->edge_tx_ewr_zero_count) {
+			seq_printf(s, "edge_tx_ewr_zero_count:%d\n",
+						monitor_data->edge_tx_ewr_zero_count);
+		}
+		if (monitor_data->edge_rx_ewr_zero_count) {
+			seq_printf(s, "edge_rx_ewr_zero_count:%d\n",
+						monitor_data->edge_rx_ewr_zero_count);
+		}
+		if (monitor_data->corner_trx_ewr_zero_count) {
+			seq_printf(s, "corner_trx_ewr_zero_count:%d\n",
+						monitor_data->corner_trx_ewr_zero_count);
+		}
+		/*abnormal center points with tx-rx-ewr not zero count*/
+		if (monitor_data->center_tx_ewr_not_zero_count) {
+			seq_printf(s, "center_tx_ewr_not_zero_count:%d\n",
+						monitor_data->center_tx_ewr_not_zero_count);
+		}
+		if (monitor_data->center_rx_ewr_not_zero_count) {
+			seq_printf(s, "center_rx_ewr_not_zero_count:%d\n",
+						monitor_data->center_rx_ewr_not_zero_count);
+		}
+	}
 
 	/*abnormal touch and swipe*/
 
 	/*if (monitor_data->point_x_zero_count) {
 		seq_printf(s, "point_x_zero_count:%d\n", monitor_data->point_x_zero_count);
 	}*/
-	/*if (monitor_data->point_x_over_max_count) {
+	if (monitor_data->point_x_over_max_count) {
 		seq_printf(s, "point_x_over_max_count:%d\n", monitor_data->point_x_over_max_count);
-	}*/
+	}
 	/*if (monitor_data->point_y_zero_count) {
 		seq_printf(s, "point_y_zero_count:%d\n", monitor_data->point_y_zero_count);
 	}*/
-	/*if (monitor_data->point_y_over_max_count) {
+	if (monitor_data->point_y_over_max_count) {
 		seq_printf(s, "point_y_over_max_count:%d\n", monitor_data->point_y_over_max_count);
-	}*/
+	}
 
 	if (monitor_data->max_jumping_times > JUMPING_POINT_TIMES) {
-		/*seq_printf(s, "max_point-jumping_times:%d\n", monitor_data->max_jumping_times);*/
+		seq_printf(s, "max_point-jumping_times:%d\n", monitor_data->max_jumping_times);
 		/*print_point_from_record(s, &monitor_data->jumping_points, PREFIX_POINT_JUMPING);*/
 		if (!is_delta_data_allzero(monitor_data->jumping_points_count_array,
 					monitor_data->rx_num / 2, monitor_data->tx_num / 2)) {
-			/*seq_printf(s, "%spoint:", PREFIX_POINT_JUMPING);*/
+			seq_printf(s, "%spoint:", PREFIX_POINT_JUMPING);
 			print_delta_data(s, monitor_data->jumping_points_count_array,
 						monitor_data->rx_num / 2, monitor_data->tx_num / 2);
 		}
@@ -1527,7 +2168,7 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 	/*print_point_from_record(s, &monitor_data->stuck_points, PREFIX_POINT_STUCK);
 	print_point_from_record(s, &monitor_data->lanscape_stuck_points,
 				PREFIX_POINT_LANSCAPE_STUCK);*/
-	/*if (!is_delta_data_allzero(monitor_data->stuck_points_count_array,
+	if (!is_delta_data_allzero(monitor_data->stuck_points_count_array,
 				monitor_data->rx_num / 2, monitor_data->tx_num / 2)) {
 		seq_printf(s, "%spoint:", PREFIX_POINT_STUCK);
 		print_delta_data(s, monitor_data->stuck_points_count_array, monitor_data->rx_num / 2,
@@ -1551,8 +2192,8 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 		seq_printf(s, "%sswipe:", PREFIX_SWIPE_BROKER);
 		print_delta_data(s, monitor_data->broken_swipes_count_array,
 					monitor_data->rx_num / 2, monitor_data->tx_num / 2);
-	}*/
-	/*print_swipe_from_record(s, &monitor_data->broken_swipes, PREFIX_SWIPE_BROKER);
+	}
+	/*print_swipe_from_record(s, &monitor_data->broken_swipes, PREFIX_SWIPE_BROKER);*/
 	print_swipe_from_record(s, &monitor_data->long_swipes, PREFIX_SWIPE_SUDDNT_LONG);
 
 	if (monitor_data->smooth_level_chosen) {
@@ -1560,10 +2201,10 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 	}
 	if (monitor_data->sensitive_level_chosen) {
 		seq_printf(s, "sensitive_lv:%d\n", monitor_data->sensitive_level_chosen);
-	}*/
+	}
 
 		/*black gesture*/
-	/*list_for_each(pos, &monitor_data->gesture_values_list) {
+	list_for_each(pos, &monitor_data->gesture_values_list) {
 		vc = (struct health_value_count *)pos;
         vc_value = vc->value;
 		seq_printf(s, "%s%s:%d\n", PREFIX_GESTURE, *vc_value == DOU_TAP ? "double_tap" :
@@ -1606,7 +2247,7 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 			   *vc_value == FRINGER_PRINTUP ? "(fingerprintup)" :
 			   *vc_value == SINGLE_TAP ? "single_tap" :
 			   *vc_value == HEART ? "heart" : "unknown", vc->count);
-	}*/
+	}
 
 	/*fingerprint area rate*/
 	print_value_count_list(s, &monitor_data->fp_area_rate_list, TYPE_RECORD_INT,
@@ -1617,7 +2258,7 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 			       PREFIX_FD);
 
 	/*auto test*/
-	/*if (monitor_data->auto_test_total_times) {
+	if (monitor_data->auto_test_total_times) {
 		seq_printf(s, "auto_test_failed_rate:%d/%d\n",
 			   monitor_data->auto_test_failed_times, monitor_data->auto_test_total_times);
 	}
@@ -1636,7 +2277,44 @@ int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data)
 		seq_printf(s, "vddi:%d\n", monitor_data->vddi);
 	}
 
-	seq_printf(s, "--last_exception--\n");*/
+	/*pm suspend resume*/
+	if (monitor_data->pm_resume_count) {
+		seq_printf(s, "pm_resume_count:%llu\n", monitor_data->pm_resume_count);
+	}
+	if (monitor_data->pm_suspend_count) {
+		seq_printf(s, "pm_suspend_count:%llu\n", monitor_data->pm_suspend_count);
+	}
+	if (monitor_data->force_bus_ready_count) {
+		seq_printf(s, "force_bus_ready_count:%llu\n", monitor_data->force_bus_ready_count);
+	}
+	if (monitor_data->bus_not_ready_early_event_count) {
+		seq_printf(s, "bus_not_ready_early_event_count:%llu\n", monitor_data->bus_not_ready_early_event_count);
+	}
+	if (monitor_data->bus_not_ready_event_count) {
+		seq_printf(s, "bus_not_ready_event_count:%llu\n", monitor_data->bus_not_ready_event_count);
+	}
+	if (monitor_data->bus_not_ready_notify_count) {
+		seq_printf(s, "bus_not_ready_notify_count:%llu\n", monitor_data->bus_not_ready_notify_count);
+	}
+	if (monitor_data->bus_not_ready_off_early_event_count) {
+		seq_printf(s, "bus_not_ready_off_early_event_count:%llu\n", monitor_data->bus_not_ready_off_early_event_count);
+	}
+	if (monitor_data->bus_not_ready_off_event_count) {
+		seq_printf(s, "bus_not_ready_off_event_count:%llu\n", monitor_data->bus_not_ready_off_event_count);
+	}
+	if (monitor_data->bus_not_ready_tp_suspend_count) {
+		seq_printf(s, "bus_not_ready_tp_suspend_count:%llu\n", monitor_data->bus_not_ready_tp_suspend_count);
+	}
+	if (monitor_data->irq_need_dev_resume_max_count) {
+		seq_printf(s, "irq_need_dev_resume_max_count:%llu\n", monitor_data->irq_need_dev_resume_max_count);
+	}
+	if (monitor_data->irq_need_dev_resume_all_count) {
+		seq_printf(s, "irq_need_dev_resume_all_count:%llu\n", monitor_data->irq_need_dev_resume_all_count);
+	}
+	if (monitor_data->abnormal_temperature_count) {
+		seq_printf(s, "abnormal temperature count:%llu\n", monitor_data->abnormal_temperature_count);
+	}
+	seq_printf(s, "--last_exception--\n");
 
 	return 0;
 }
@@ -1652,7 +2330,7 @@ int tp_healthinfo_clear(void *tp_monitor_data)
 
 	TPD_INFO("Clear health info Now!\n");
 
-	/*reset_healthinfo_time_counter(&monitor_data->stat_time);*/
+	reset_healthinfo_time_counter(&monitor_data->stat_time);
 	monitor_data->max_resume_time = 0;
 	monitor_data->max_suspend_time = 0;
 
@@ -1669,13 +2347,13 @@ int tp_healthinfo_clear(void *tp_monitor_data)
 	monitor_data->max_touch_num = 0;
 	monitor_data->max_touch_num_in_game = 0;
 	monitor_data->click_count = 0;
-    monitor_data->swipe_count = 0;
+	monitor_data->swipe_count = 0;
 
 	/*clear_delta_data(monitor_data->click_count_array, CLICK_COUNT_ARRAY_HEIGHT, CLICK_COUNT_ARRAY_WIDTH);*/
 
 	monitor_data->max_fw_update_time = 0;
 
-    clear_value_count_list(&monitor_data->fw_update_result_list);
+	clear_value_count_list(&monitor_data->fw_update_result_list);
 
 	/*bus transfer*/
 	clear_value_count_list(&monitor_data->bus_errs_list);
@@ -1683,12 +2361,64 @@ int tp_healthinfo_clear(void *tp_monitor_data)
 
 	monitor_data->min_alloc_err_size = 0;
 	monitor_data->max_alloc_err_size = 0;
-    clear_value_count_list(&monitor_data->alloc_err_funcs_list);
+	clear_value_count_list(&monitor_data->alloc_err_funcs_list);
 
 	/*debug info*/
 	clear_value_count_list(&monitor_data->health_report_list);
 
+	if (!monitor_data->kernel_grip_support) {
+		/*grip*/
+		monitor_data->dead_zone_points.count = 0;
+		monitor_data->condition_zone_points.count = 0;
+		monitor_data->elimination_zone_points.count = 0;
+		monitor_data->lanscape_elimination_zone_points.count = 0;
+	} else {
+		/*grip time*/
+		monitor_data->total_grip_time_no_touch = 0;
+		monitor_data->total_grip_time_no_touch_one_sec = 0;
+		monitor_data->total_grip_time_no_touch_two_sec = 0;
+		monitor_data->total_grip_time_no_touch_three_sec = 0;
+		monitor_data->total_grip_time_no_touch_five_sec = 0;
+		if (monitor_data->p_grip_moni_data) {
+			monitor_data->p_grip_moni_data->vertical_exit_match_y_times = 0;
+			monitor_data->p_grip_moni_data->landscape_exit_match_y_times = 0;
+			monitor_data->p_grip_moni_data->vertical_exit_match_x_times = 0;
+			monitor_data->p_grip_moni_data->landscape_exit_match_x_times = 0;
+			monitor_data->p_grip_moni_data->finger_hold_matched_times = 0;
+			monitor_data->p_grip_moni_data->finger_hold_matched_max_times = 0;
+			monitor_data->p_grip_moni_data->finger_hold_differ_size_times = 0;
+			monitor_data->p_grip_moni_data->finger_hold_differ_max_times = 0;
+			monitor_data->p_grip_moni_data->research_point_landed_times = 0;
+			monitor_data->p_grip_moni_data->research_point_landed_fail_times = 0;
+			monitor_data->p_grip_moni_data->vertical_corner_exit_dis_match_times = 0;
+			monitor_data->p_grip_moni_data->landscape_corner_exit_dis_match_times = 0;
+			monitor_data->p_grip_moni_data->vertical_corner_press_exit_match_times = 0;
+			monitor_data->p_grip_moni_data->landscape_corner_press_exit_match_times = 0;
+			monitor_data->p_grip_moni_data->top_shape_exit_match_times = 0;
+			monitor_data->p_grip_moni_data->edge_sliding_exit_matched_times = 0;
+			monitor_data->p_grip_moni_data->edge_sliding_beyond_distance_times = 0;
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_times = 0;
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_5s_count = 0;
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_10s_count = 0;
+			monitor_data->p_grip_moni_data->vertical_reclining_mode_15s_count = 0;
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_times = 0;
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_5s_count = 0;
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_10s_count = 0;
+			monitor_data->p_grip_moni_data->landscape_reclining_mode_15s_count = 0;
+		}
+		monitor_data->edge_tx_ewr_zero_count = 0;
+		monitor_data->edge_rx_ewr_zero_count = 0;
+		monitor_data->corner_trx_ewr_zero_count = 0;
+		monitor_data->center_tx_ewr_not_zero_count = 0;
+		monitor_data->center_rx_ewr_not_zero_count = 0;
+	}
+
 	/*abnormal touch and swipe*/
+
+	/*monitor_data->point_x_zero_count = 0;*/
+	monitor_data->point_x_over_max_count = 0;
+	/*monitor_data->point_y_zero_count = 0;*/
+	monitor_data->point_y_over_max_count = 0;
 
 	monitor_data->max_jumping_times = 0;
 
@@ -1719,10 +2449,376 @@ int tp_healthinfo_clear(void *tp_monitor_data)
 	monitor_data->blackscreen_test_failed_times = 0;
 	monitor_data->blackscreen_test_total_times = 0;
 
-	/*monitor_data->avdd = VOLTAGE_STATE_DEFAULT;
-	monitor_data->vddi = VOLTAGE_STATE_DEFAULT;*/
+	monitor_data->avdd = VOLTAGE_STATE_DEFAULT;
+	monitor_data->vddi = VOLTAGE_STATE_DEFAULT;
+
+	monitor_data->pm_resume_count = 0;
+	monitor_data->pm_suspend_count = 0;
+	monitor_data->force_bus_ready_count = 0;
+	monitor_data->bus_not_ready_early_event_count = 0;
+	monitor_data->bus_not_ready_event_count = 0;
+	monitor_data->bus_not_ready_notify_count = 0;
+	monitor_data->bus_not_ready_off_early_event_count = 0;
+	monitor_data->bus_not_ready_off_event_count = 0;
+	monitor_data->bus_not_ready_tp_suspend_count = 0;
+	monitor_data->irq_need_dev_resume_max_count = 0;
+	monitor_data->irq_need_dev_resume_all_count = 0;
+	monitor_data->abnormal_temperature_count = 0;
 
 	TPD_INFO("Clear health info Finish!\n");
+
+	return 0;
+}
+int init_grip_zone(struct device *dev, struct monitor_data *monitor_data)
+{
+	int ret = 0;
+	struct grip_zone_area *grip_zone = NULL;
+	int dead_width[2] = {0}, cond_width[4] = {0}, eli_width[4] = {0};
+
+	if (!monitor_data) {
+		TPD_INFO("monitor_data is NULL.\n");
+		return -1;
+	}
+
+	monitor_data->elizone_point_tophalf_i = -1;
+	monitor_data->elizone_point_bothalf_i = -1;
+
+	ret = of_property_read_u32_array(dev->of_node, "prevention,dead_area_width",
+					 dead_width, 2);
+
+	if (ret) {
+		dead_width[0] = 10;
+		dead_width[1] = 10;
+		TPD_INFO("panel coords using default.\n");
+	}
+
+	ret = of_property_read_u32_array(dev->of_node,
+					 "prevention,condition_area_width", cond_width, 4);
+
+	if (ret) {
+		cond_width[0] = 30;
+		cond_width[1] = 30;
+		cond_width[2] = 100;
+		cond_width[3] = 80;
+		TPD_INFO("condition area width using default.\n");
+	}
+
+	ret = of_property_read_u32_array(dev->of_node, "prevention,eli_area_width",
+					 eli_width, 4);
+
+	if (ret) {
+		eli_width[0] = 80;
+		eli_width[1] = 500;
+		eli_width[2] = 600;
+		eli_width[3] = 120;
+		TPD_INFO("eli area width using default.\n");
+	}
+
+	/*dead zone grip init*/
+	INIT_LIST_HEAD(&monitor_data->dead_zone_list);
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = dead_width[0];
+		grip_zone->y_width = monitor_data->max_y;
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_left_dead");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = (1 << VERTICAL_SCREEN) | (1 << LANDSCAPE_SCREEN_90) |
+					 (1 << LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->dead_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for ver_left_dead failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - dead_width[0];
+		grip_zone->start_y = 0;
+		grip_zone->x_width = dead_width[0];
+		grip_zone->y_width = monitor_data->max_y;
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_right_dead");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = (1 << VERTICAL_SCREEN) | (1 << LANDSCAPE_SCREEN_90) |
+					 (1 << LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->dead_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for ver_right_dead failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = monitor_data->max_x;
+		grip_zone->y_width = dead_width[1];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_left_dead");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = (1 << LANDSCAPE_SCREEN_90) | (1 <<
+					 LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->dead_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_left_dead failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = monitor_data->max_y - dead_width[1];
+		grip_zone->x_width = monitor_data->max_x;
+		grip_zone->y_width = dead_width[1];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_right_dead");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = (1 << LANDSCAPE_SCREEN_90) | (1 <<
+					 LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->dead_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_right_dead failed.\n");
+	}
+
+	/*condition grip init*/
+	INIT_LIST_HEAD(&monitor_data->condition_zone_list);
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = cond_width[0];
+		grip_zone->y_width = monitor_data->max_y;
+		grip_zone->exit_thd = cond_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_left_condtion");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = (1 << VERTICAL_SCREEN) | (1 << LANDSCAPE_SCREEN_90) |
+					 (1 << LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->condition_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for coord_buffer failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - cond_width[0];
+		grip_zone->start_y = 0;
+		grip_zone->x_width = cond_width[0];
+		grip_zone->y_width = monitor_data->max_y;
+		grip_zone->exit_thd = cond_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_right_condtion");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = (1 << VERTICAL_SCREEN) | (1 << LANDSCAPE_SCREEN_90) |
+					 (1 << LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->condition_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for ver_right_condtion failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = monitor_data->max_x;
+		grip_zone->y_width = cond_width[1];
+		grip_zone->exit_thd = cond_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_left_condtion");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = (1 << LANDSCAPE_SCREEN_90) | (1 <<
+					 LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->condition_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_left_condtion failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = monitor_data->max_y - cond_width[1];
+		grip_zone->x_width = monitor_data->max_x;
+		grip_zone->y_width = cond_width[1];
+		grip_zone->exit_thd = cond_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_right_condtion");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = (1 << LANDSCAPE_SCREEN_90) | (1 <<
+					 LANDSCAPE_SCREEN_270);
+		list_add_tail(&grip_zone->area_list, &monitor_data->condition_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_right_condtion failed.\n");
+	}
+
+	/*elimination grip init*/
+	INIT_LIST_HEAD(&monitor_data->elimination_zone_list);
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = monitor_data->max_y - eli_width[1];
+		grip_zone->x_width = eli_width[0];
+		grip_zone->y_width = eli_width[1];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_left_eli");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = 1 << VERTICAL_SCREEN;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for ver_left_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - eli_width[0];
+		grip_zone->start_y = monitor_data->max_y - eli_width[1];
+		grip_zone->x_width = eli_width[0];
+		grip_zone->y_width = eli_width[1];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "ver_right_eli");
+		grip_zone->grip_side = 1 << TYPE_LONG_SIDE;
+		grip_zone->support_dir = 1 << VERTICAL_SCREEN;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for ver_right_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = eli_width[2];
+		grip_zone->y_width = eli_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_90_left_0_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_90;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_90_left_0_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = 0;
+		grip_zone->x_width = eli_width[3];
+		grip_zone->y_width = eli_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_90_left_1_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_90;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_90_left_1_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = monitor_data->max_y - eli_width[3];
+		grip_zone->x_width = eli_width[2];
+		grip_zone->y_width = eli_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_90_right_0_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_90;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_90_right_0_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = 0;
+		grip_zone->start_y = monitor_data->max_y - eli_width[2];
+		grip_zone->x_width = eli_width[3];
+		grip_zone->y_width = eli_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_90_right_1_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_90;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_90_right_1_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - eli_width[2];
+		grip_zone->start_y = 0;
+		grip_zone->x_width = eli_width[2];
+		grip_zone->y_width = eli_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_270_left_0_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_270;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_270_left_0_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - eli_width[3];
+		grip_zone->start_y = 0;
+		grip_zone->x_width = eli_width[3];
+		grip_zone->y_width = eli_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_270_left_1_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_270;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_270_left_1_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - eli_width[2];
+		grip_zone->start_y = monitor_data->max_y - eli_width[3];
+		grip_zone->x_width = eli_width[2];
+		grip_zone->y_width = eli_width[3];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_270_right_0_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_270;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_270_right_0_eli failed.\n");
+	}
+
+	grip_zone = tp_kzalloc(sizeof(struct grip_zone_area), GFP_KERNEL);
+
+	if (grip_zone) {
+		grip_zone->start_x = monitor_data->max_x - eli_width[3];
+		grip_zone->start_y = monitor_data->max_y - eli_width[2];
+		grip_zone->x_width = eli_width[3];
+		grip_zone->y_width = eli_width[2];
+		snprintf(grip_zone->name, GRIP_TAG_SIZE - 1, "hor_270_right_1_eli");
+		grip_zone->grip_side = 1 << TYPE_SHORT_SIDE;
+		grip_zone->support_dir = 1 << LANDSCAPE_SCREEN_270;
+		list_add_tail(&grip_zone->area_list, &monitor_data->elimination_zone_list);
+
+	} else {
+		TPD_INFO("tp_kzalloc grip_zone_area for hor_270_right_1_eli failed.\n");
+	}
 
 	return 0;
 }
@@ -1771,6 +2867,20 @@ int tp_healthinfo_init(struct device *dev, void *tp_monitor_data)
 		monitor_data->max_x = temp_array[0];
 		monitor_data->max_y = temp_array[1];
 	}
+
+	ret = of_property_read_u32_array(dev->of_node, "touchpanel,display-coords",
+					 temp_array, 2);
+
+	if (ret) {
+		monitor_data->display_max_x = 1080;
+		monitor_data->display_max_y = 2340;
+		TPD_BOOT_INFO("display coords using default.\n");
+
+	} else {
+		monitor_data->display_max_x = temp_array[0];
+		monitor_data->display_max_y = temp_array[1];
+	}
+
 	monitor_data->long_swipe_judge_distance = int_sqrt(monitor_data->max_x *
 				monitor_data->max_x + monitor_data->max_y * monitor_data->max_y) /
 				LONG_SWIPE_JUDGE_RATIO;
@@ -1805,6 +2915,9 @@ int tp_healthinfo_init(struct device *dev, void *tp_monitor_data)
 	if (ret) {
 		TPD_BOOT_INFO("failed to get tp ic\n");
 	}
+
+	monitor_data->kernel_grip_support = of_property_read_bool(dev->of_node,
+				"kernel_grip_support");
 
 	monitor_data->fw_version = tp_kzalloc(MAX_DEVICE_VERSION_LENGTH, GFP_KERNEL);
 
@@ -1918,6 +3031,10 @@ int tp_healthinfo_init(struct device *dev, void *tp_monitor_data)
 	INIT_LIST_HEAD(&monitor_data->bus_errs_buff_list);
 	INIT_LIST_HEAD(&monitor_data->alloc_err_funcs_list);
 	INIT_LIST_HEAD(&monitor_data->fw_update_result_list);
+
+	if (!monitor_data->kernel_grip_support) {
+		init_grip_zone(dev, monitor_data);
+	}
 
 	monitor_data->avdd = VOLTAGE_STATE_DEFAULT;
 	monitor_data->vddi = VOLTAGE_STATE_DEFAULT;

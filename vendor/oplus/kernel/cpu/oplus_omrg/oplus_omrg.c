@@ -137,6 +137,8 @@ static DEFINE_SPINLOCK(omrg_list_lock);
 static DEFINE_KTHREAD_WORKER(g_omrg_worker);
 static struct task_struct *g_omrg_work_thread;
 static bool g_omrg_initialized;
+static DEFINE_SPINLOCK(g_ruler_write_lock);
+static DEFINE_MUTEX(g_ruler_enable_lock);
 
 static void omrg_irq_work(struct irq_work *w)
 {
@@ -1145,6 +1147,24 @@ error_out:
 	return ret;
 }
 
+static bool omrg_enable_ruler(struct omrg_rule *ruler, int enable)
+{
+	mutex_lock(&g_ruler_enable_lock);
+	ruler->enable = !!enable;
+
+	if (ruler->enable) {
+		omrg_update_state(ruler, true);
+	} else {
+		if (!omrg_disable_ruler(ruler)) {
+			ruler->enable = true;
+			mutex_unlock(&g_ruler_enable_lock);
+			return false;
+		}
+	}
+	mutex_unlock(&g_ruler_enable_lock);
+	return true;
+}
+
 static ssize_t store_ruler_enable(struct omrg_rule *ruler,
 				 const char *buf, size_t count)
 {
@@ -1153,15 +1173,8 @@ static ssize_t store_ruler_enable(struct omrg_rule *ruler,
 	if (sscanf(buf, "%d", &enable) != 1)
 		return -EINVAL;
 
-	ruler->enable = !!enable;
-
-	if (ruler->enable) {
-		omrg_update_state(ruler, true);
-	} else {
-		if (!omrg_disable_ruler(ruler)) {
-			ruler->enable = true;
-			return -EINVAL;
-		}
+	if (!omrg_enable_ruler(ruler, enable)) {
+		return -EINVAL;
 	}
 
 	return count;
@@ -1195,12 +1208,127 @@ static ssize_t show_ruler_freq_dev_list(const struct omrg_rule *ruler, char *buf
 	return ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 }
 
+static ssize_t omrg_set_master_slave(struct omrg_rule *ruler, const char *buf, size_t count, bool master)
+{
+	ssize_t ret = -EINVAL;
+	int i, j, ntokens = 0;
+	unsigned int cpu;
+	const char *cp = buf;
+	int div[2] = {-1, -1};
+	struct device *cpu_dev = NULL;
+	int tmp_num;
+	struct omrg_device *tmp_dev = NULL;
+	unsigned long flags;
+	int cur_enable = ruler->enable;
+
+	if (cur_enable)
+		omrg_enable_ruler(ruler, 0);
+
+	spin_lock_irqsave(&g_ruler_write_lock, flags);
+	while ((cp = strpbrk(cp + 1, ":")))
+		ntokens++;
+	cp = buf;
+
+	for (i = 0; i < ntokens; i++) {
+		if (sscanf(cp, "%u:%d %d", &cpu, &div[0], &div[1]) != 3) {
+			ret = -EINVAL;
+			goto out;
+		}
+		if (div[0] < 0 || div[1] < 0) {
+			ret = -EINVAL;
+			goto out;
+		}
+		cpu_dev = get_cpu_device(cpu);
+		if (IS_ERR_OR_NULL(cpu_dev)) {
+			ret = -EINVAL;
+			goto out;
+		}
+		if (master) {
+			tmp_dev = ruler->master_dev;
+			tmp_num = ruler->master_num;
+		} else {
+			tmp_dev = ruler->slave_dev;
+			tmp_num = ruler->slave_num;
+		}
+		for (j = 0; j < tmp_num; j++) {
+			if (tmp_dev[j].freq_dev->np == cpu_dev->of_node) {
+				tmp_dev[j].divider[0] = div[0];
+				tmp_dev[j].divider[1] = div[1];
+				ret = count;
+			}
+		}
+
+		cp = strnchr(cp, strlen(cp), ',');
+		if (cp == NULL)
+			goto out;
+		cp++;
+	}
+
+out:
+	spin_unlock_irqrestore(&g_ruler_write_lock, flags);
+	if (cur_enable)
+		omrg_enable_ruler(ruler, 1);
+	return ret;
+}
+
+static ssize_t store_master_divider(struct omrg_rule *ruler, const char *buf, size_t count)
+{
+	return omrg_set_master_slave(ruler, buf, count, true);
+}
+
+static ssize_t store_slave_divider(struct omrg_rule *ruler, const char *buf, size_t count)
+{
+	return omrg_set_master_slave(ruler, buf, count, false);
+}
+
+static ssize_t show_master_divider(const struct omrg_rule *ruler, char *buf)
+{
+	int i = 0, cnt = 0;
+	struct omrg_device *tmp_dev = NULL;
+
+	spin_lock(&g_ruler_write_lock);
+	for (i = 0; i < ruler->master_num; i++) {
+		tmp_dev = &ruler->master_dev[i];
+		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "%u:%d %d,",
+				tmp_dev->freq_dev->policy->cpu, tmp_dev->divider[0], tmp_dev->divider[1]);
+	}
+	/*Remove trailing ','*/
+	if (cnt > 0)
+		cnt--;
+	cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
+	spin_unlock(&g_ruler_write_lock);
+	return cnt;
+}
+
+static ssize_t show_slave_divider(const struct omrg_rule *ruler, char *buf)
+{
+	int i = 0, cnt = 0;
+	struct omrg_device *tmp_dev = NULL;
+
+	spin_lock(&g_ruler_write_lock);
+	for (i = 0; i < ruler->slave_num; i++) {
+		tmp_dev = &ruler->slave_dev[i];
+		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "%u:%d %d,",
+				tmp_dev->freq_dev->policy->cpu, tmp_dev->divider[0], tmp_dev->divider[1]);
+	}
+	/*Remove trailing ','*/
+	if (cnt > 0)
+		cnt--;
+	cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
+	spin_unlock(&g_ruler_write_lock);
+	return cnt;
+}
+
 omrg_attr_rw(ruler_enable);
 omrg_attr_ro(ruler_freq_dev_list);
+omrg_attr_rw(master_divider);
+omrg_attr_rw(slave_divider);
 
 static struct attribute *default_attrs[] = {
 	&ruler_enable.attr,
 	&ruler_freq_dev_list.attr,
+	&master_divider.attr,
+	&slave_divider.attr,
 	NULL
 };
 

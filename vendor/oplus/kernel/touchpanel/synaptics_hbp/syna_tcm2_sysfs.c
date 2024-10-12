@@ -1929,8 +1929,16 @@ retry:
 
 	if ((data[0] == CMD_SET_DYNAMIC_CONFIG) && (payload_length == 3)) {
 		if ((data[3] == DC_GESTURE_TYPE_ENABLE) || (data[3] == DC_TOUCH_AND_HOLD)) {
-			syna_pal_sleep_ms(50);
-			syna_sysfs_set_fingerprint_post(tcm);
+			if (!tcm->fp_active) {
+				syna_pal_sleep_ms(50);
+				syna_sysfs_set_fingerprint_post(tcm);
+			} else {
+				if((tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) && (tcm->pwr_state == PWR_ON)) {
+					tcm->hbp_enabled = true;
+				} else if (tcm->sub_pwr_state == SUB_PWR_SUSPEND_DONE){
+					tcm->hbp_enabled = false;
+				}
+			}
 			if (!tcm->touch_and_hold) {
 				tcm->is_fp_down = false;
 			}

@@ -1,5 +1,5 @@
 /**************************************************************
- * Copyright (c)  2008- 2030  oplus Mobile communication Corp.ltd.
+ * Copyright (c)  2008- 2030  Oplus Mobile communication Corp.ltd.
  * File       : goodix_drivers_gt9886.h
  * Description: header file for Goodix GT9886 driver
  * Version   : 1.0
@@ -762,7 +762,6 @@ struct chip_data_brl {
 	struct goodix_proc_operations       *goodix_ops;                    /*goodix func provide for debug*/
 	struct goodix_fp_coor               fp_coor_report;
 	struct goodix_health_info_v2        health_info;
-	struct monitor_data                 *monitor_data;                /*health monitor data*/
 	/*struct goodix_bus_interface         *bus;*/
 
 	struct goodix_ts_config             normal_cfg;

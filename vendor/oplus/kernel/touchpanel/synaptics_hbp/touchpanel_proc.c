@@ -631,6 +631,7 @@ static ssize_t proc_algo_version_write(struct file *file,
 
 	tp_copy_from_user(tcm->algo_version, sizeof(tcm->algo_version), buffer, count, MAX_DEVICE_VERSION_LENGTH);
 	tcm->algo_version[MAX_DEVICE_VERSION_LENGTH - 1] = '\0';
+	strreplace(tcm->algo_version, ':', '-');
 
 	TP_INFO(tcm->tp_index, "%s:algo_version=%s\n", __func__,  tcm->algo_version);
 
@@ -736,6 +737,98 @@ EXIT:
 }
 
 DECLARE_PROC_OPS(proc_aging_test_ops, simple_open, proc_aging_test_read, proc_aging_test_write, NULL);
+
+static ssize_t proc_fingerprint_active_read(struct file *file, char __user *buffer,
+				     size_t count, loff_t *ppos)
+{
+	struct syna_tcm *tcm = PDE_DATA(file_inode(file));
+	uint8_t ret = 0;
+	char page[PAGESIZE] = {0};
+
+	if (!tcm) {
+		return count;
+	}
+
+	TPD_INFO("%s: fp_active = %d.\n", __func__, tcm->fp_active);
+	snprintf(page, PAGESIZE - 1, "%d", tcm->fp_active);
+	ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
+
+	return ret;
+}
+
+static ssize_t proc_fingerprint_active_write(struct file *file,
+				      const char __user *buffer, size_t count, loff_t *ppos)
+{
+	struct syna_tcm *tcm = PDE_DATA(file_inode(file));
+	struct syna_hw_interface *hw_if;
+	int tmp = 0;
+	int retval = 0;
+	bool lpwg_enabled = false;
+	char buf[4] = {0};
+
+	if (!tcm) {
+		return count;
+	}
+
+	hw_if = tcm->hw_if;
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 2);
+
+	if (kstrtoint(buf, 10, &tmp)) {
+		TPD_INFO("%s: kstrtoint error\n", __func__);
+		return count;
+	}
+
+	tcm->fp_active = !!tmp;
+	TPD_INFO("%s: fp_active = %d.\n", __func__, tcm->fp_active);
+
+	lpwg_enabled = tcm->lpwg_enabled;
+	syna_dev_update_lpwg_status(tcm);
+
+	if (lpwg_enabled != tcm->lpwg_enabled
+			&& tcm->sub_pwr_state == SUB_PWR_SUSPEND_DONE) {
+		if (tcm->lpwg_enabled) {
+			if (tcm->tcm_dev->is_sleep) {
+				/* deep sleep, need to exit deepsleep firstly */
+				/* set irq back to active mode if not enabled yet */
+				/* enable irq */
+				if (hw_if->ops_enable_irq)
+					hw_if->ops_enable_irq(hw_if, true);
+
+				/* bring out of sleep mode. */
+				retval = syna_tcm_sleep(tcm->tcm_dev, false);
+				if (retval < 0) {
+					TPD_INFO("Fail to exit deep sleep\n");
+					return count;
+				}
+			}
+			retval = syna_dev_enable_lowpwr_gesture(tcm, true);
+			if (retval < 0) {
+				TPD_INFO("Fail to enable low power gesture mode\n");
+				return count;
+			}
+			TPD_INFO("low power gesture mode enabled\n");
+		} else {
+			/* enter sleep mode for non-LPWG cases */
+			retval = syna_tcm_sleep(tcm->tcm_dev, true);
+			if (retval < 0) {
+				TPD_INFO("Fail to enter deep sleep\n");
+				return count;
+			}
+			/* once lpwg is enabled, irq should be alive.
+			* otherwise, disable irq in suspend.
+			*/
+			/* disable irq */
+			if ((hw_if->ops_enable_irq))
+				hw_if->ops_enable_irq(hw_if, false);
+			TPD_INFO("sleep mode enabled\n");
+		}
+	}
+
+	return count;
+}
+
+DECLARE_PROC_OPS(proc_fingerprint_active_ops, simple_open, proc_fingerprint_active_read, proc_fingerprint_active_write, NULL);
 
 /*proc/touchpanel/debug_info/health_monitor*/
 #ifndef CONFIG_REMOVE_OPLUS_FUNCTION
@@ -1153,6 +1246,9 @@ int init_touchpanel_proc(struct syna_tcm *tcm,
 		},
 		{
 			"tp_aging_test", 0666, NULL, &proc_aging_test_ops, tcm, false, true
+		},
+		{
+			"fingerprint_active", 0666, NULL, &proc_fingerprint_active_ops, tcm, false, true
 		},
 	};
 
