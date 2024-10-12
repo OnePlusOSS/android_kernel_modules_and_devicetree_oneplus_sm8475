@@ -1354,7 +1354,7 @@ int syna_tcm_set_dynamic_config(struct tcm_dev *tcm_dev,
 		return _EINVAL;
 	}
 
-	LOGD("Set %d to dynamic field 0x%x\n", value, id);
+	LOGI("Set %d to dynamic field 0x%x\n", value, id);
 
 	out[0] = (unsigned char)id;
 	out[1] = (unsigned char)value;

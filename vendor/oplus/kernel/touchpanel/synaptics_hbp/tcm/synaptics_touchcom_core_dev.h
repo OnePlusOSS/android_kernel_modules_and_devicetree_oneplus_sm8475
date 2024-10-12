@@ -248,6 +248,8 @@ enum dynamic_tcm_config_id {
 	DC_DISABLE_PROXIMITY = 0x10,
 	DC_CONTROL_LBP_HBP = 0x11, /* 2-LBP(default),1-HBP */
 	DC_TOUCH_AND_HOLD = 0xD4,
+	DC_FREQUENCE_HOPPING_SYNA = 0xD2,
+	DC_LOW_TEMP_MODE_ENABLE = 0xFD,
 	DC_GESTURE_TYPE_ENABLE = 0xFE, /* Bit0 -- Double Tap, Bit13 -- Single Tap */
 	DC_ALL = 0xFF,
 };
@@ -352,8 +354,10 @@ enum tcm_report_type {
 	REPORT_TOUCH = 0x11,
 	REPORT_DELTA = 0x12,
 	REPORT_RAW = 0x13,
+	REPORT_DEBUG = 0x14,
 	REPORT_HBP_ACTIVE_FRAME = 0x23,
 	/* custom report */
+	REPORT_LOG = 0x9f,
 	REPORT_POWER_STATE_INFO = 0xFE,
 };
 

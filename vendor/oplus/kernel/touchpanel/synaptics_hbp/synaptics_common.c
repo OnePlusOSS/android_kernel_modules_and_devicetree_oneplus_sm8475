@@ -6,6 +6,7 @@
 #include "synaptics_common.h"
 #include "syna_tcm2.h"
 #include "tcm/synaptics_touchcom_func_base.h"
+#include "tcm/synaptics_touchcom_core_dev.h"
 #include <linux/crc32.h>
 #include <linux/module.h>
 #include <linux/version.h>
@@ -381,8 +382,9 @@ int syna_full_rawcap_test(struct seq_file *s, void *chip_data,
 	return error_count;
 }
 
-int syna_delta_noise_test(struct seq_file *s, void *chip_data,
-				 struct auto_testdata *syna_testdata, struct test_item_info *p_test_item_info)
+int syna_delta_noise_test_freq(struct seq_file *s, void *chip_data,
+				 struct auto_testdata *syna_testdata, struct test_item_info *p_test_item_info,
+				 int freq)
 {
 	int16_t data16 = 0;
 	int i = 0, ret = 0, index = 0, byte_cnt = 2;
@@ -434,7 +436,9 @@ int syna_delta_noise_test(struct seq_file *s, void *chip_data,
 	buf = test_data.buf;
 	TPD_INFO("%s read data size:%d\n", __func__, test_data.data_length);
 	store_to_file(syna_testdata->fp, syna_testdata->length,
-		      syna_testdata->pos, "delta_noise:");
+				syna_testdata->pos, "delta_noise:freq:");
+	store_to_file(syna_testdata->fp, syna_testdata->length,
+				syna_testdata->pos, "%d", freq);
 
 	for (i = 0; i < test_data.data_length;) {
 		index = i / byte_cnt;
@@ -466,6 +470,35 @@ int syna_delta_noise_test(struct seq_file *s, void *chip_data,
 	store_to_file(syna_testdata->fp, syna_testdata->length,
 		      syna_testdata->pos, "\n");
 
+	return error_count;
+}
+
+#define MAX_FREQ_NOISE_TIMES      4
+#define DEFAULT_FREQ_NOISE_TIMES  0
+int syna_delta_noise_test(struct seq_file *s, void *chip_data,
+	struct auto_testdata *syna_testdata, struct test_item_info *p_test_item_info)
+{
+	int count = 0;
+	int retval = 0;
+	int error_count = 0;
+	struct syna_tcm *tcm = (struct syna_tcm *)chip_data;
+
+	for (count = 0; count < MAX_FREQ_NOISE_TIMES; count++) {
+		TPD_INFO("%s : Hop to frequency : %d\n", __func__, count);
+		retval = syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_FREQUENCE_HOPPING_SYNA,
+				count, RESP_IN_ATTN);
+		if (retval < 0) {
+			error_count++;
+			TPD_INFO("Failed to hop frequency\n");
+		}
+		error_count = syna_delta_noise_test_freq(s, chip_data, syna_testdata, p_test_item_info, count);
+	}
+	retval = syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_FREQUENCE_HOPPING_SYNA,
+		DEFAULT_FREQ_NOISE_TIMES, RESP_IN_ATTN);
+	if (retval < 0) {
+		error_count++;
+		TPD_INFO("Failed to hop frequency\n");
+	}
 	return error_count;
 }
 
@@ -846,7 +879,10 @@ int syna_hybrid_absnoise_test(struct seq_file *s, void *chip_data,
 
 	TPD_INFO("%s start.\n", __func__);
 
-	syna_tcm_reset(tcm->tcm_dev); /* before the test, need to reset the IC*/
+	ret = syna_tcm_reset(tcm->tcm_dev); /* before the test, need to reset the IC*/
+	if (ret < 0) {
+		LOGE("Fail to do reset\n");
+	}
 
 	/*ret = testing_run_prod_test_item(tcm, TYPE_HYBRIDABS_NOSIE);*/
 
@@ -1082,7 +1118,7 @@ int synaptics_auto_test(struct seq_file *s,  struct device *dev)
 	/*syna_testdata.tp_fw     = FW_IMAGE_NAME;*/
 	syna_testdata.fw        =  tcm->com_test_data.limit_fw;
 	syna_testdata.test_item = test_head->test_item;
-	sscanf(tcm->tcm_dev->app_info.customer_config_id, "%x", &syna_testdata.tp_fw);
+	sscanf(tcm->tcm_dev->app_info.customer_config_id, "%llu", &syna_testdata.tp_fw);
 
 	/* TPD_INFO("%s, : send display off signal\n", __func__);
 	syna_send_signal(tcm, SIG_DISPLAY_OFF); */

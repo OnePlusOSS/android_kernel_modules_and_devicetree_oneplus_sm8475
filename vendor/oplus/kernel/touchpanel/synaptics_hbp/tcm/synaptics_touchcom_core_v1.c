@@ -36,6 +36,7 @@
  */
 
 #include "synaptics_touchcom_core_dev.h"
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
 
 #define TCM_V1_MESSAGE_MARKER 0xa5
 #define TCM_V1_MESSAGE_PADDING 0x5a
@@ -301,6 +302,7 @@ static void syna_tcm_v1_dispatch_report(struct tcm_dev *tcm_dev)
 		if (0x0b == tcm_dev->dev_mode) {
 			tcm_dev->firmware_mode_count++;
 			if (!tcm_dev->upload_flag && tcm_dev->firmware_mode_count >= FIRMWARE_MODE_BL_MAX) {
+				tp_healthinfo_report(tcm_dev->monitor_data, HEALTH_REPORT, "firmware mode = 0x0b");
 				tcm_dev->upload_flag = 1;
 			}
 		}
@@ -449,6 +451,11 @@ static int syna_tcm_v1_read(struct tcm_dev *tcm_dev, unsigned int rd_length,
 
 	if (!tcm_dev) {
 		LOGE("Invalid tcm device handle\n");
+		return _EINVAL;
+	}
+
+	if (IS_ERR_OR_NULL(buf)) {
+		LOGE("Invalid pointer buf\n");
 		return _EINVAL;
 	}
 
@@ -1031,7 +1038,7 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 {
 	int retval = 0;
 	unsigned int idx;
-	unsigned int chunks;
+	unsigned int chunks = 0;
 	unsigned int chunk_space;
 	unsigned int xfer_length;
 	unsigned int remaining_length;
@@ -1108,7 +1115,9 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 	else
 		chunk_space = tcm_dev->max_wr_size - 1;
 
-	chunks = syna_pal_ceil_div(remaining_length, chunk_space);
+	if (chunk_space)
+		chunks = syna_pal_ceil_div(remaining_length, chunk_space);
+
 	chunks = chunks == 0 ? 1 : chunks;
 
 	/* send out command packets

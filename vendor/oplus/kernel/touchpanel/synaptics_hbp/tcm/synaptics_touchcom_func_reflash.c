@@ -300,6 +300,8 @@ static int syna_tcm_check_flash_boot_config(struct block_data *boot_config,
 	start_block = VALUE(boot_info->boot_config_start_block);
 	device_addr = start_block * block_size;
 
+	LOGD("Boot Config in device: 0x%x\n", device_addr);
+
 	return DO_NONE;
 }
 
@@ -1929,6 +1931,18 @@ static int syna_tcm_do_reflash_generic(struct tcm_dev *tcm_dev,
 			LOGE("Fail to update application firmware\n");
 			goto exit;
 		}
+
+		block = &reflash_data->image_info.data[AREA_APP_CONFIG];
+
+		retval = syna_tcm_update_flash_block(tcm_dev,
+				reflash_data,
+				block,
+				wait_delay_ms);
+		if (retval < 0) {
+			LOGE("Fail to update application config\n");
+			goto exit;
+		}
+		break;
 	case UPDATE_CONFIG_ONLY:
 		block = &reflash_data->image_info.data[AREA_APP_CONFIG];
 

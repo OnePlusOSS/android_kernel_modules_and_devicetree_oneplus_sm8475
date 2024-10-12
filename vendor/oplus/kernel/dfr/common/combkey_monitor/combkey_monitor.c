@@ -48,7 +48,8 @@ static void combkey_long_press_callback(struct work_struct *work)
 static void pwrkey_long_press_callback(struct work_struct *work)
 {
 	pr_info("called. send long press pwrkey to theia.\n");
-	theia_send_event(THEIA_EVENT_PWK_LONGPRESS, THEIA_LOGINFO_KERNEL_LOG | THEIA_LOGINFO_ANDROID_LOG,
+	theia_send_event(THEIA_EVENT_PWK_LONGPRESS, THEIA_LOGINFO_KERNEL_LOG
+		 | THEIA_LOGINFO_ANDROID_LOG | THEIA_LOGINFO_DUMPSYS_SF | THEIA_LOGINFO_BINDER_INFO,
 		0, "pwrkey long press happen");
 }
 
@@ -62,6 +63,7 @@ static int combkey_monitor_notifier_call(struct notifier_block *nb, unsigned lon
 		pr_info("pwrkey handle enter.\n");
 		if (param->down == KEY_DOWN_VALUE) {
 			is_pwrkey_down = true;
+			set_pwk_flag(true);
 			pr_info("pwrkey pressed, call pwrkey monitor checker.\n");
 			black_screen_timer_restart();
 			bright_screen_timer_restart();

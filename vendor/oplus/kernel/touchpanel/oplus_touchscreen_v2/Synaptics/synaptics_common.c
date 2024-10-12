@@ -158,7 +158,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		tp_test_write(syna_testdata.fp, syna_testdata.length, data_buf,
 			      strlen(data_buf), syna_testdata.pos);
 		ret = 0;
-		goto END;
 	}
 
 	if (!syna_test_ops->syna_auto_test_preoperation) {
@@ -180,7 +179,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -198,7 +196,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -216,7 +213,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -234,7 +230,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -252,7 +247,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -270,7 +264,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -288,7 +281,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -306,7 +298,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -324,7 +315,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -342,7 +332,6 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
@@ -360,13 +349,9 @@ int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 		if (ret > 0) {
 			TPD_INFO("synaptics_capacity_test failed! ret is %d\n", ret);
 			error_count++;
-			goto END_TEST;
 		}
 		support_item++;
 	}
-
-
-END_TEST:
 
 	if (!syna_test_ops->syna_auto_test_endoperation) {
 		TPD_INFO("not support syna_test_ops->syna_auto_test_endoperation callback\n");
@@ -376,7 +361,6 @@ END_TEST:
 				p_test_item_info);
 	}
 
-END:
 	if (!support_item) {
 		error_count++;
 	}

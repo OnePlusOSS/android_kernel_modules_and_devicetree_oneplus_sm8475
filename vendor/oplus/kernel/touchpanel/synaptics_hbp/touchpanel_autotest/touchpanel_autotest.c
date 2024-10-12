@@ -45,7 +45,7 @@ ssize_t tp_test_write(void *data_start, size_t max_count,
 	}
 
 	if (*pos >= max_count) {
-		TPD_INFO("%s: pos:%ld is out of memory\n", *pos, __func__);
+		TPD_INFO("%s: pos:%ld is out of memory\n", __func__, *pos);
 		return -1;
 	}
 
@@ -181,7 +181,6 @@ ERROR:
 	return NULL;
 }
 
-/*
 static int tp_test_limit_switch(struct syna_tcm *tcm)
 {
 	char *p_node = NULL;
@@ -198,7 +197,7 @@ static int tp_test_limit_switch(struct syna_tcm *tcm)
 		return -1;
 	}
 
-	**change **.img to **_AGING.img*
+	/*change **.img to **_AGING.img*/
 	p_node	= strstr(tcm->panel_data.test_limit_name, ".");
 	if (p_node == NULL) {
 		TP_INFO(tcm->tp_index, "p_node strstr error!\n");
@@ -217,7 +216,7 @@ EXIT:
 
 	return -1;
 }
-*/
+
 static int request_test_limit(const struct firmware **fw, char *test_limit_name, struct device *device)
 {
 	int ret = 0;
@@ -247,7 +246,7 @@ static int request_real_test_limit(struct syna_tcm *tcm,
 {
 	int ret = 0;
 
-	/*if (AGING_TEST_MODE == tcm->aging_mode) {
+	if (AGING_TEST_MODE == tcm->aging_mode) {
 		ret = tp_test_limit_switch(tcm);
 		if (ret < 0) {
 			return ret;
@@ -257,13 +256,13 @@ static int request_real_test_limit(struct syna_tcm *tcm,
 			ret = request_test_limit(fw, tcm->panel_data.test_limit_name, device);
 		}
 		tp_devm_kfree(tcm->device, (void **)&tcm->panel_data.aging_test_limit_name, MAX_FW_NAME_LENGTH);
-	} else {*/
-	ret = request_test_limit(fw, test_limit_name, device);
-	/*}*/
+	} else {
+		ret = request_test_limit(fw, test_limit_name, device);
+	}
 
 	return ret;
 }
-/*
+
 void tp_limit_read(struct seq_file *s, struct syna_tcm *tcm)
 {
 	int ret = 0;
@@ -274,7 +273,7 @@ void tp_limit_read(struct seq_file *s, struct syna_tcm *tcm)
 	uint32_t *p_item_offset = NULL;
 	int32_t *p_data32 = NULL;
 
-	ret =  request_real_test_limit(tcm, &fw, tcm->panel_data.test_limit_name, tcm->device);
+	ret = request_real_test_limit(tcm, &fw, tcm->panel_data.test_limit_name, tcm->device);
 
 	if (ret < 0) {
 		TPD_INFO("Request firmware failed - %s (%d)\n", tcm->panel_data.test_limit_name,
@@ -480,8 +479,8 @@ void tp_limit_read(struct seq_file *s, struct syna_tcm *tcm)
 
 	release_firmware(fw);
 }
-EXPORT_SYMBOL(tp_limit_read);
-*/
+/*EXPORT_SYMBOL(tp_limit_read);*/
+
 int tp_auto_test(struct seq_file *s, void *v)
 {
 	struct syna_tcm *tcm = s->private;
@@ -577,7 +576,7 @@ int tp_auto_test_result(struct seq_file *s, void *v)
 {
 	struct syna_tcm *tcm = s->private;
 
-	TP_INFO(tcm->tp_index, "%s:s->size:%d,s->count:%d\n", __func__, s->size,
+	TP_INFO(tcm->tp_index, "%s:s->size:%lu,s->count:%lu\n", __func__, s->size,
 		s->count);
 	mutex_lock(&tcm->mutex);
 

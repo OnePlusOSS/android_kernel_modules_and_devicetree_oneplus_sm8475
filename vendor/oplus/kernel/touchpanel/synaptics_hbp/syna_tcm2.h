@@ -42,10 +42,16 @@
 
 #include <soc/oplus/device_info.h>
 #include "syna_tcm2_platform.h"
-#include "synaptics_touchcom_core_dev.h"
-#include "synaptics_touchcom_func_touch.h"
+#include "tcm/synaptics_touchcom_core_dev.h"
+#include "tcm/synaptics_touchcom_func_touch.h"
+#ifdef BUILD_BY_BAZEL
+#include "tp_devices.h"
+#include "touchpanel_common.h"
+#else
 #include "../oplus_touchscreen_v2/tp_devices.h"
 #include "../oplus_touchscreen_v2/touchpanel_common.h"
+#endif
+
 
 #define PLATFORM_DRIVER_NAME "synaptics_tcm_hbp"
 
@@ -57,6 +63,7 @@
 
 #define SIG_DISPLAY_ON  44
 #define SIG_DISPLAY_OFF 45
+#define SIG_FINGER_DOWN 46
 
 /*#define TP_NAME_SIZE_MAX 25*/
 /*
@@ -64,16 +71,31 @@
 #define MAX_DEVICE_VERSION_LENGTH 16
 #define MAX_DEVICE_MANU_LENGTH    16
 */
+#undef MAX_DEVICE_VERSION_LENGTH
+#define MAX_DEVICE_VERSION_LENGTH 256
 
 #define SYNAPTICS_TCM_DRIVER_ID (1 << 0)
 #define SYNAPTICS_TCM_DRIVER_VERSION 1
 #define SYNAPTICS_TCM_DRIVER_SUBVER "4.0"
 
+#define ABS_TOUCH_COST_TIME_KERNEL  0x21
+#define ABS_TOUCH_COST_TIME_ALGO    0x22
+#define ABS_TOUCH_COST_TIME_DAEMON  0x23
+#define MAX_TOUCH_COST_TIME         1000 * 1000
 
 #define TX_NUM 17
 #define RX_NUM 38
 
+#define IRQ_COST_TIME_OVER_5MS 5000
+#define IRQ_COST_TIME_OVER_10MS 10000
+#define IRQ_COST_TIME_OVER_20MS 20000
+#define IRQ_COST_TIME_OVER_50MS 50000
+
 #define FW_UPDATE_COMPLETE_TIMEOUT  msecs_to_jiffies(40*1000)
+
+#define GESTURE_MODE_SWITCH_RETRY_TIMES     5
+#define MAX_HEALTH_REPORT_LEN 50
+
 /**
  * @section: Driver Configurations
  *
@@ -275,6 +297,15 @@ typedef enum debug_level {
 	LEVEL_DEBUG,    /printk all tp debug info/
 } tp_debug_level;
 */
+
+enum fingerprint_err_type {
+	FOD_ENABLE_NO_ERROR = 0,
+	/* reserved 1-6 */
+	FINGERPRINT_AREA_NOT_MATCH = 7,
+	ANOTHER_FINGER_ON_NON_FP_ZONE = 8,
+	FINGERPRINT_DOWN_BEFORE_FP_ENABLE = 9,
+};
+
 /**
  * @brief: Power States
  *
@@ -299,6 +330,17 @@ enum sub_power_state {
 	SUB_PWR_EARLY_SUSPENDING,
 	SUB_PWR_SUSPENDING,
 	SUB_PWR_SUSPEND_DONE,
+};
+
+/**
+ * @brief: Sub Power States
+ *
+ * Enumerate the power states of device
+ */
+enum driver_state {
+	IS_PROBE = 0,
+	IS_SHUTDOWN,
+	IS_REMOVE,
 };
 
 /**
@@ -503,7 +545,7 @@ struct monitor_data {
 
 	u32 smooth_level_chosen;
 	u32 sensitive_level_chosen;
-	int RATE_MIN;
+	int rate_min;
 	int below_rate_counts;
 	tp_rate tp_rate_type;
 	int work_freq;
@@ -512,6 +554,14 @@ struct monitor_data {
 	int vddi;
 };
 
+#define MAX_BUS_ERROR_COUNT 30
+struct exception_data {
+	void  *chip_data; /debug info data/
+	bool exception_upload_support;
+	u32 exception_upload_count;
+	u32 bus_error_count;
+	u32 bus_error_upload_count;
+};
 */
 
 static inline unsigned int le2_to_uint(const unsigned char *src)
@@ -528,6 +578,14 @@ static inline unsigned int le4_to_uint(const unsigned char *src)
 	       (unsigned int)src[3] * 0x1000000;
 }
 
+struct syna_tcm_test {
+	unsigned int num_of_reports;
+	unsigned char report_type;
+	unsigned int report_index;
+	struct tcm_buffer report;
+	struct tcm_buffer test_resp;
+	struct tcm_buffer test_out;
+};
 /**
  * @brief: context of the synaptics linux-based driver
  *
@@ -539,6 +597,9 @@ struct syna_tcm {
 
 	/* TouchComm device core context */
 	struct tcm_dev *tcm_dev;
+
+	struct syna_tcm_test *test_hcd;
+	struct completion report_complete;
 
 	/* PLatform device driver */
 	struct platform_device *pdev;
@@ -565,6 +626,7 @@ struct syna_tcm {
 	/* ISR-related variables */
 	pid_t isr_pid;
 	bool irq_wake;
+	int irq_cost_time;
 
 	/* cdev and sysfs nodes creation */
 	struct cdev char_dev;
@@ -595,8 +657,8 @@ struct syna_tcm {
 	unsigned int firmware_max_x;
 	unsigned int firmware_max_y;
 	struct panel_info panel_data;	/*GPIO control(id && pinctrl && tp_type)*/
-	char algo_version[MAX_DEVICE_VERSION_LENGTH];
 	char *fw_name_fae;                 /*fw name fae*/
+	char algo_version[MAX_DEVICE_VERSION_LENGTH];
 
 	int firmware_update_type;
 	struct completion      fw_complete;                 /*completion for control fw update*/
@@ -624,13 +686,22 @@ struct syna_tcm {
 	bool rst_on_resume_enabled;
 	bool hbp_enabled; /* report data to report_to_queue[] */
 	int daemon_state;
+	int primary_timestamp_enabled;
+	int driver_current_state;
+
+	unsigned int waiting_frame;
+	unsigned int wait_for_ioctl_operation;
+	unsigned int use_short_frame_waiting;
+
 	bool snr_read_support;			/*feature to support reading snr data*/
 	bool freq_hop_simulate_support;                     /*frequency hopping simulate feature*/
+	int frame_over_cnt_report_en;
 
 	unsigned short gesture_type;
 	unsigned short touch_and_hold;
 	bool is_fp_down;
 	struct fp_underscreen_info fp_info;	/*tp info used for underscreen fingerprint*/
+	bool fp_active;	/*prepare for screen off fingerprint earlier*/
 
 	/* framebuffer callbacks notifier */
 #if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
@@ -646,6 +717,11 @@ struct syna_tcm {
 	struct notifier_block fb_notif;	/*register to control suspend/resume*/
 #endif
 
+	/******For aging test area********/
+	int aging_test;
+	int aging_mode;
+	struct aging_test_proc_operations  *aging_test_ops;
+
 	struct debug_info_proc_operations *debug_info_ops; /*debug info data*/
 	void *chip_data;
 
@@ -658,6 +734,7 @@ struct syna_tcm {
 	struct monitor_data    monitor_data;                /*health monitor data*/
 
 	bool exception_upload_support;
+	struct exception_data    exception_data;            /*exception_data monitor data*/
 
 	/* fifo to pass the data to userspace */
 	unsigned int fifo_remaining_frame;
@@ -804,6 +881,56 @@ void syna_cdev_update_power_state_report_queue(struct syna_tcm *tcm, bool wakeup
 #endif
 
 #endif
+
+
+
+#define INIT_BUFFER(buffer, is_clone) \
+	mutex_init(&buffer.buf_mutex); \
+
+#define LOCK_BUFFER(buffer) \
+	mutex_lock(&buffer.buf_mutex)
+
+#define UNLOCK_BUFFER(buffer) \
+	mutex_unlock(&buffer.buf_mutex)
+
+#define RELEASE_BUFFER(buffer) \
+	do { \
+        if (buffer.clone == false) { \
+			kfree(buffer.buf); \
+			buffer.buf_size = 0; \
+			buffer.data_length = 0; \
+        } \
+	} while (0)
+
+struct syna_tcm_report {
+	unsigned char id;
+	struct tcm_buffer buffer;
+};
+
+static inline int syna_tcm_alloc_mem(struct tcm_buffer *buffer,
+					 unsigned int size)
+{
+	if (size > buffer->buf_size) {
+		if (buffer->buf != NULL) {
+			kfree(buffer->buf);
+		}
+		buffer->buf = kzalloc(size, GFP_KERNEL);
+
+		if (!(buffer->buf)) {
+			//TPD_INFO("%s: Failed to allocate memory, size %d\n", __func__, size);
+			buffer->buf_size = 0;
+			buffer->data_length = 0;
+			return -ENOMEM;
+		}
+		buffer->buf_size = size;
+	}
+
+	memset(buffer->buf, 0, buffer->buf_size);
+	buffer->data_length = 0;
+
+	return 0;
+}
+
 
 #endif /* end of _SYNAPTICS_TCM2_DRIVER_H_ */
 

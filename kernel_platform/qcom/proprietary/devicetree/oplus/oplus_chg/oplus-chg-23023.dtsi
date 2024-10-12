@@ -281,6 +281,12 @@
 };
 
 &soc {
+	oplus,chg_gki {
+		compatible = "oplus,chg-gki";
+	};
+};
+
+&soc {
 	oplus_mms_gauge: oplus,mms_gauge {
 		compatible = "oplus,mms_gauge";
 		oplus,gauge_ic = <&oplus_virtual_gauge>;
@@ -454,7 +460,7 @@
 						0   380 CURR_LIMIT_7BIT_7_5A 1 0
 						370 400 CURR_LIMIT_7BIT_6_3A 2 0
 						390 420 CURR_LIMIT_7BIT_5_0A 3 1
-						410 430 CURR_LIMIT_7BIT_4_0A 4 2 >;
+						410 430 CURR_LIMIT_7BIT_4_0A 3 2 >;
 
 
 	oplus_virtual_vphy: oplus,virtual_vphy {
@@ -867,7 +873,7 @@
 								4480 64 0 120 0
 								4480 60 0 360 0
 								4480 55 0 120 0
-								4480 50 0 0 0
+								4480 50 0 300 0
 								4480 45 0 0 0
 								4530 42 0 0 0
 								4530 40 0 0 0
@@ -883,7 +889,7 @@
 								4480 64 0 120 0
 								4480 60 0 360 0
 								4480 55 0 120 0
-								4480 50 0 0 0
+								4480 50 0 300 0
 								4480 45 0 0 0
 								4530 42 0 0 0
 								4530 40 0 0 0
@@ -1110,7 +1116,7 @@
 		oplus,ufcs_warm_allow_soc = <50>;
 		oplus,ufcs_strategy_normal_current = <3000>;
 		oplus,ufcs_over_high_or_low_current = <3000>;
-		oplus,ufcs_timeout_third = <36000>;
+		oplus,ufcs_timeout_third = <10800>;
 		oplus,ufcs_timeout_oplus = <10800>;
 		oplus,ufcs_ibat_over_third = <4000>;
 		oplus,ufcs_ibat_over_oplus = <4000>;
@@ -1120,8 +1126,8 @@
 		oplus,ufcs_full_ffc_vbat = <4520>;
 		oplus,ufcs_full_warm_vbat = <4130>;
 		oplus,ufcs_full_cool_sw_vbat_third = <4470>;
-		oplus,ufcs_full_normal_sw_vbat_third= <4460>;
-		oplus,ufcs_full_normal_hw_vbat_third = <4470>;
+		oplus,ufcs_full_normal_sw_vbat_third= <4470>;
+		oplus,ufcs_full_normal_hw_vbat_third = <4480>;
 		oplus,ufcs_current_change_timeout = <100>;
 		oplus,ufcs_strategy_batt_high_temp = <410 420 430 400 410 420>;
 		oplus,ufcs_strategy_high_current = <3000 2000 2000 3000 3000 3000>;

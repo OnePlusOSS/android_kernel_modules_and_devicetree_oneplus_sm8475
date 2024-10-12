@@ -18,6 +18,7 @@
 	ssc_interactive {
 		need_lb_algo = <1>;
 		sup-hbm-mode = <1>;
+		report_blank_mode = <1>;
 		primary_lb_brl_info {
 			brl_thrd_num = <1>;
 			brl_thrd = <1>;

@@ -52,6 +52,7 @@ struct message_node {
 
 #define MAX_NAME_SIZE		(32)
 #define MAX_STATIC_SIZE		(32)
+#define MAX_BLOCK_BIT		(12)
 struct message_list {
 	char			*name;
 	int			size;

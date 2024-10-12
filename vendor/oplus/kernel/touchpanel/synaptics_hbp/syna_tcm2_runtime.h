@@ -309,7 +309,8 @@ static inline void syna_pal_mem_free(void *ptr)
 	if (ptr)
 		devm_kfree(dev, ptr);
 #else /* Legacy API */
-	kfree(ptr);
+	if (ptr)
+		kfree(ptr);
 #endif
 }
 /**
@@ -411,6 +412,21 @@ static inline int syna_pal_mutex_alloc(syna_pal_mutex_t *ptr)
 static inline void syna_pal_mutex_free(syna_pal_mutex_t *ptr)
 {
 	/* do nothing */
+}
+/**
+ * syna_pal_mutex_trylock()
+ *
+ * Acquire/lock the mutex without waiting.
+ *
+ * @param
+ *    [ in] ptr: a mutex handle
+ *
+ * @return
+ *    none.
+ */
+static inline int syna_pal_mutex_trylock(syna_pal_mutex_t *ptr)
+{
+	return mutex_trylock((struct mutex *)ptr);
 }
 /**
  * syna_pal_mutex_lock()

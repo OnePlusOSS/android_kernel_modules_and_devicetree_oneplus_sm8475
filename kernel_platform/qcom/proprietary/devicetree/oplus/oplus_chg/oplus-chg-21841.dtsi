@@ -336,6 +336,7 @@
 	oplus,pps_warm_allow_vol = <4000>;
 	oplus,pps_warm_allow_soc = <50>;
 	oplus,pps_strategy_normal_current = <8000>;//6A
+	oplus,pps_strategy_normal_bypass_limit_current = <8100>;
 	oplus,pps_over_high_or_low_current = <8000>;
 	oplus,pps_timeout_third = <10800>;
 	oplus,pps_timeout_oplus = <10800>;
@@ -353,7 +354,7 @@
 	oplus,pps_bcc_min_curr = <1000>;
 	oplus,pps_bcc_exit_curr = <1000>;
 	oplus,pps_switch_soc_v2 = <95>;
-	oplus,pps_switch_power_v2 = <30>;
+	oplus,pps_switch_power_v2 = <10>;
 	oplus,pps_switch_soc_v3 = <0>;
 	oplus,pps_switch_power_v3 = <10>;
 	oplus,pps_r_default = <120 10 10 15 15 15 15>;

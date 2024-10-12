@@ -106,3 +106,29 @@ config TOUCHPANEL_ST
 if TOUCHPANEL_SYNAPTICS
 source "drivers/input/touchscreen/oplus_touchscreen_v2/Synaptics/Kconfig"
 endif
+
+if TOUCHPANEL_GOODIX
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Goodix/Kconfig"
+endif
+
+if TOUCHPANEL_FOCAL
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Focal/Kconfig"
+endif
+
+if TOUCHPANEL_NOVA
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Novatek/Kconfig"
+endif
+
+if TOUCHPANEL_HIMAX
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Himax/Kconfig"
+endif
+if TOUCHPANEL_SAMSUNG
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Samsung/Kconfig"
+endif
+
+if TOUCHPANEL_ILITEK
+source "drivers/input/touchscreen/oplus_touchscreen_v2/ilitek/Kconfig"
+endif
+if TOUCHPANEL_ST
+source "drivers/input/touchscreen/oplus_touchscreen_v2/St/Kconfig"
+endif

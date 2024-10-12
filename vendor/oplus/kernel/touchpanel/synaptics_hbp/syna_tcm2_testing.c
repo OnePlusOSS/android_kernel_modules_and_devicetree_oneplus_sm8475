@@ -36,8 +36,8 @@
  */
 #include "syna_tcm2_testing.h"
 #include "syna_tcm2_testing_limits.h"
-#include "synaptics_touchcom_core_dev.h"
-#include "synaptics_touchcom_func_base.h"
+#include "tcm/synaptics_touchcom_core_dev.h"
+#include "tcm/synaptics_touchcom_func_base.h"
 
 /* g_testing_dir represents the root folder of testing sysfs
  */

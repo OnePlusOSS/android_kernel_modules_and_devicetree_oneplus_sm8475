@@ -38,13 +38,19 @@
 #include <linux/string.h>
 
 #include "syna_tcm2.h"
-#include "synaptics_touchcom_core_dev.h"
-#include "synaptics_touchcom_func_base.h"
-#include "synaptics_touchcom_func_touch.h"
+#include "tcm/synaptics_touchcom_core_dev.h"
+#include "tcm/synaptics_touchcom_func_base.h"
+#include "tcm/synaptics_touchcom_func_touch.h"
 #ifdef HAS_TESTING_FEATURE
 #include "syna_tcm2_testing.h"
 #endif
-#include "../oplus_touchscreen_v2/touchpanel_notify/touchpanel_event_notify.h"
+#ifdef BUILD_BY_BAZEL
+#include <soc/oplus/touchpanel_event_notify.h>/* kernel 6.1 */
+#else
+#include "../touchpanel_notify/touchpanel_event_notify.h"
+#endif
+
+#include "touchpanel_healthinfo/touchpanel_healthinfo.h"
 
 #if (KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE) || \
 	defined(HAVE_UNLOCKED_IOCTL)
@@ -59,6 +65,13 @@
 #define REPLACE_KTIME
 #endif
 
+#define IF_ARG_NULL_OUT(arg) \
+		do{ \
+			if (IS_ERR_OR_NULL(arg)) { \
+				LOGE("%s:arg is NULL\n", __func__); \
+				return -EINVAL; \
+			} \
+		}while(0) \
 
 #define ENABLE_PID_TASK
 
@@ -79,6 +92,11 @@ struct syna_tcm_ioctl_data_compat {
 	compat_uptr_t __user *buf;
 };
 #endif
+
+typedef struct hbp_driver_info_s {
+	int system_power_state;
+	int short_frame_waiting;
+} hbp_driver_info_t;
 
 /* defines the IOCTLs supported
  */
@@ -186,6 +204,10 @@ unsigned int g_sysfs_io_polling_interval;
  */
 static int g_sysfs_extra_bytes_read;
 
+static int g_sysfs_has_remove = 0;
+
+void syna_cdev_update_doze_state_report_queue(struct syna_tcm *tcm);
+
 /* a buffer to record the streaming report
  * considering touch report and another reports may be co-enabled
  * at the same time, give a little buffer here (3 sec x 300 fps)
@@ -196,6 +218,8 @@ static int g_sysfs_extra_bytes_read;
 /* Indicate the interrupt status especially for sysfs using */
 #define SYSFS_DISABLED_INTERRUPT		(0)
 #define SYSFS_ENABLED_INTERRUPT			(1)
+
+#define MINIMUM_WAITING_TIME			(10)
 
 #define SYNA_RETRY_CNT 60
 /* Define a data structure that contains a list_head */
@@ -701,6 +725,13 @@ static ssize_t syna_sysfs_gesture_coordinate_show(struct kobject *kobj,
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
 
+	memset(&Point_start, 0, sizeof(struct Coordinate));
+	memset(&Point_end, 0, sizeof(struct Coordinate));
+	memset(&Point_1st, 0, sizeof(struct Coordinate));
+	memset(&Point_2nd, 0, sizeof(struct Coordinate));
+	memset(&Point_3rd, 0, sizeof(struct Coordinate));
+	memset(&Point_4th, 0, sizeof(struct Coordinate));
+
 	switch (touch_data->gesture_id) {
 	case DTAP_DETECT:
 		gesture_type = DOU_TAP;
@@ -918,12 +949,12 @@ static ssize_t syna_sysfs_fingerprint_trigger_store(struct kobject *kobj,
 			tcm->fp_info.touch_state = 1;
 			tcm->is_fp_down = true;
 			touch_call_notifier_fp(&tcm->fp_info);
-			LOGI("screen on fingerprint down : (%d, %d)\n", tcm->fp_info.x, tcm->fp_info.y);
+			LOGE("screen on fingerprint down : (%d, %d)\n", tcm->fp_info.x, tcm->fp_info.y);
 		} else {
 			tcm->fp_info.touch_state = 0;
 			tcm->is_fp_down = false;
 			touch_call_notifier_fp(&tcm->fp_info);
-			LOGI("screen on fingerprint up : (%d, %d)\n", tcm->fp_info.x, tcm->fp_info.y);
+			LOGE("screen on fingerprint up : (%d, %d)\n", tcm->fp_info.x, tcm->fp_info.y);
 		}
 	} else {
 		LOGE("invalid content: '%s', length = %zd\n", buf, count);
@@ -1061,10 +1092,20 @@ static int syna_cdev_insert_fifo(struct syna_tcm *tcm,
 
 	syna_pal_mutex_lock(&g_fifo_queue_mutex);
 
+	if (tcm->fifo_remaining_frame < 4) {
+		tcm->frame_over_cnt_report_en = 1;
+	}
+	if ((tcm->fifo_remaining_frame > 4) && (tcm->health_monitor_support)
+		    && (tcm->frame_over_cnt_report_en == 1)) {
+		tcm->frame_over_cnt_report_en = 0;
+		LOGE("fifo_remaining_frame_over.\n");
+		tp_healthinfo_report(&tcm->monitor_data, HEALTH_REPORT, "fifo_remaining_frame_over_cnt");
+	}
+
 	/* check queue buffer limit */
 	if (tcm->fifo_remaining_frame >= FIFO_QUEUE_MAX_FRAMES) {
 		if (tcm->fifo_remaining_frame != pre_remaining_frames)
-			LOGI("Reached %d and drop FIFO first frame\n",
+			LOGE("Reached %d and drop FIFO first frame\n",
 				tcm->fifo_remaining_frame);
 
 		pfifo_data_temp = list_first_entry(&tcm->frame_fifo_queue,
@@ -1076,8 +1117,11 @@ static int syna_cdev_insert_fifo(struct syna_tcm *tcm,
 		kfree(pfifo_data_temp);
 		pre_remaining_frames = tcm->fifo_remaining_frame;
 		tcm->fifo_remaining_frame--;
+		if (tcm->health_monitor_support) {
+			tp_healthinfo_report(&tcm->monitor_data, HEALTH_REPORT, "FIFO_QUEUE_MAX_CNT");
+		}
 	} else if (pre_remaining_frames >= FIFO_QUEUE_MAX_FRAMES) {
-		LOGI("Reached limit, dropped oldest frame, remaining:%d\n",
+		LOGE("Reached limit, dropped oldest frame, remaining:%d\n",
 			tcm->fifo_remaining_frame);
 		pre_remaining_frames = tcm->fifo_remaining_frame;
 	}
@@ -1166,7 +1210,7 @@ static int syna_cdev_ioctl_do_hw_reset(struct syna_tcm *tcm,
 
 	/* get the reset option param */
 	param = syna_pal_le4_to_uint(&data[0]);
-	LOGI("HW reset option: %u\n", param);
+	LOGE("HW reset option: %u\n", param);
 
 	if (param == 1) {
 		if (!tcm->hw_if->ops_hw_reset) {
@@ -1187,7 +1231,7 @@ static int syna_cdev_ioctl_do_hw_reset(struct syna_tcm *tcm,
 			//tcm->hw_if->ops_enable_irq(tcm->hw_if, false);
 			LOGW("HW reset: IRQ is forced to enable\n");
 		} else {
-			LOGI("HW reset: IRQ already enabled\n");
+			LOGE("HW reset: IRQ already enabled\n");
 		}
 	} else {
 		LOGW("Unsupported HW reset option(%u) selected\n", param);
@@ -1319,6 +1363,11 @@ static int syna_cdev_ioctl_check_frame(struct syna_tcm *tcm,
 	timeout = syna_pal_le4_to_uint(&data[0]);
 	LOGD("Time out: %d\n", timeout);
 
+	if (tcm->use_short_frame_waiting != 0) {
+		timeout = MINIMUM_WAITING_TIME;
+		LOGE("Updated the frame waiting to %dms\n", timeout);
+	}
+
 	if (list_empty(&tcm->frame_fifo_queue)) {
 		LOGD("The queue is empty, wait for the frames\n");
 		result = wait_event_interruptible_timeout(tcm->wait_frame,
@@ -1376,6 +1425,10 @@ static void syna_cdev_clean_queue(struct syna_tcm *tcm)
 	while (!list_empty(&tcm->frame_fifo_queue)) {
 		pfifo_data = list_first_entry(&tcm->frame_fifo_queue,
 				struct fifo_queue, next);
+		if (!pfifo_data) {
+			LOGE("pfifo_data is NULL, break.\n");
+			break;
+		}
 		list_del(&pfifo_data->next);
 		kfree(pfifo_data->fifo_data);
 		mb();/* memory barrier */
@@ -1443,6 +1496,11 @@ static int syna_cdev_ioctl_get_frame(struct syna_tcm *tcm,
 	/* get the waiting duration */
 	timeout = syna_pal_le4_to_uint(&timeout_data[0]);
 	LOGD("Wait time: %dms\n", timeout);
+
+	if (tcm->use_short_frame_waiting != 0) {
+		timeout = MINIMUM_WAITING_TIME;
+		LOGE("Updated the frame waiting to %dms\n", timeout);
+	}
 
 	if (list_empty(&tcm->frame_fifo_queue)) {
 		LOGD("The queue is empty, wait for the frame\n");
@@ -1571,7 +1629,7 @@ static int syna_cdev_ioctl_set_reports(struct syna_tcm *tcm,
 		}
 	}
 
-	LOGI("Forward %d types of reports to the Queue.\n", report_set);
+	LOGE("Forward %d types of reports to the Queue.\n", report_set);
 
 	retval = report_set;
 
@@ -1658,7 +1716,7 @@ exit:
 		/* enable the report to queue */
 		syna_cdev_clean_queue(tcm);
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_ENABLE, (STATUS_ERROR + 1));*/
-		LOGI("enable response to report_to_queue for touch_and_hold\n");
+		LOGE("enable response to report_to_queue for touch_and_hold\n");
 		tcm->hbp_enabled = true;
 	}
 	return retval;
@@ -1685,13 +1743,13 @@ static int syna_sysfs_set_fingerprint_post(struct syna_tcm *tcm)
 
 	if((tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) && (tcm->pwr_state == PWR_ON)) {
 		//screen on, nothing to do
-		LOGI("Enable all Report and Response to report_to_queue\n");
+		LOGE("Enable all Report and Response to report_to_queue\n");
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_ENABLE, REPORT_TYPES);*/
 		tcm->hbp_enabled = true;
 		goto exit;
 	} else if (tcm->sub_pwr_state == SUB_PWR_SUSPEND_DONE){
 		/* do not fill any report/response to queue */
-		LOGI("Disable all Report and response to report_to_queue\n");
+		LOGE("Disable all Report and response to report_to_queue\n");
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_DISABLE, REPORT_TYPES);*/
 		tcm->hbp_enabled = false;
 
@@ -1789,10 +1847,30 @@ retry:
 			if(retryCnt <= 0) {
 				LOGE("retryCnt is too small, Please Incress the retryCnt\n");
 			}
+			if (IS_REMOVE == tcm->driver_current_state) {
+				LOGE("%s:driver is remove!!\n", __func__);
+				return -EINVAL;
+			};
+		}
+	}
+
+	retryCnt = 0;
+	if ((tcm->is_fp_down == true) && (tcm->sub_pwr_state != SUB_PWR_RESUME_DONE)) {
+		while (tcm->sub_pwr_state != SUB_PWR_RESUME_DONE) {
+			syna_pal_sleep_ms(20);
+			retryCnt += 1;
+			if (retryCnt > 5) {
+				LOGE("%s:Wait resume time out..\n", __func__);
+				break;
+			}
 		}
 	}
 
 	mutex_lock(&tcm->mutex);
+
+	/* init a buffer for the response data */
+	syna_tcm_buf_init(&resp_data_buf);
+
 	syna_tcm_buf_lock(&g_cdev_cbuf);
 
 	retval = syna_tcm_buf_alloc(&g_cdev_cbuf, buf_size);
@@ -1812,11 +1890,8 @@ retry:
 	}
 
 	payload_length = syna_pal_le2_to_uint(&data[1]);
-	LOGI("Command = 0x%02x, payload length = %d\n",
+	LOGE("Command = 0x%02x, payload length = %d\n",
 		data[0], payload_length);
-
-	/* init a buffer for the response data */
-	syna_tcm_buf_init(&resp_data_buf);
 
 	if (g_sysfs_io_polling_interval == RESP_IN_ATTN)
 		delay_ms_resp = RESP_IN_ATTN;
@@ -1828,12 +1903,12 @@ retry:
 			tcm->gesture_type = (unsigned short)syna_pal_le2_to_uint(&data[4]);
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
-			LOGI("HBP set gesture_type(0x%04x)\n", tcm->gesture_type);
+			LOGE("HBP set gesture_type(0x%04x)\n", tcm->gesture_type);
 		} else if (data[3] == DC_TOUCH_AND_HOLD) {
 			tcm->touch_and_hold = (unsigned short)syna_pal_le2_to_uint(&data[4]);
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
-			LOGI("HBP set touch_and_hold(0x%04x)\n", tcm->touch_and_hold);
+			LOGE("HBP set touch_and_hold(0x%04x)\n", tcm->touch_and_hold);
 		}
 	}
 
@@ -1854,8 +1929,16 @@ retry:
 
 	if ((data[0] == CMD_SET_DYNAMIC_CONFIG) && (payload_length == 3)) {
 		if ((data[3] == DC_GESTURE_TYPE_ENABLE) || (data[3] == DC_TOUCH_AND_HOLD)) {
-			syna_pal_sleep_ms(50);
-			syna_sysfs_set_fingerprint_post(tcm);
+			if (!tcm->fp_active) {
+				syna_pal_sleep_ms(50);
+				syna_sysfs_set_fingerprint_post(tcm);
+			} else {
+				if((tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) && (tcm->pwr_state == PWR_ON)) {
+					tcm->hbp_enabled = true;
+				} else if (tcm->sub_pwr_state == SUB_PWR_SUSPEND_DONE){
+					tcm->hbp_enabled = false;
+				}
+			}
 			if (!tcm->touch_and_hold) {
 				tcm->is_fp_down = false;
 			}
@@ -1869,7 +1952,7 @@ retry:
 	data[1] = (unsigned char)(resp_data_buf.data_length & 0xff);
 	data[2] = (unsigned char)((resp_data_buf.data_length >> 8) & 0xff);
 
-	LOGI("resp data: 0x%02x 0x%02x 0x%02x\n",
+	LOGE("resp data: 0x%02x 0x%02x 0x%02x\n",
 		data[0], data[1], data[2]);
 
 	/* response data */
@@ -1961,7 +2044,8 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if ((buf_size < sizeof(data)) || (data_size < sizeof(data))) {
+	if ((buf_size < sizeof(data)) || (buf_size > PAGE_SIZE)
+                || (data_size < sizeof(data)) || (data_size > PAGE_SIZE)) {
 		LOGE("Invalid sync data size, buf_size:%d, data_size:%d\n",
 		    buf_size, data_size);
 		return -EINVAL;
@@ -1972,7 +2056,7 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		return -EFAULT;
 	}
 
-	retval = copy_from_user(&data, ubuf_ptr, buf_size);
+	retval = copy_from_user(&data, ubuf_ptr, sizeof(data));
 	if (retval) {
 		LOGE("Fail to copy data from user space, size:%d\n", retval);
 		return -EBADE;
@@ -1989,7 +2073,7 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		g_sysfs_io_polling_interval =
 			tcm->tcm_dev->msg_data.default_resp_reading;
 
-		LOGI("IRQ is disabled by userspace application\n");
+		LOGE("IRQ is disabled by userspace application\n");
 
 		break;
 	case SYSFS_ENABLED_INTERRUPT:
@@ -2001,7 +2085,7 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 
 		g_sysfs_io_polling_interval = RESP_IN_ATTN;
 
-		LOGI("IRQ is enabled by userspace application\n");
+		LOGE("IRQ is enabled by userspace application\n");
 
 		break;
 	default:
@@ -2016,8 +2100,8 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		if (g_sysfs_io_polling_interval < RESP_IN_POLLING)
 			g_sysfs_io_polling_interval = RESP_IN_POLLING;
 
-		LOGI("IRQ is enabled by userspace application\n");
-		LOGI("Polling interval is set to %d ms\n",
+		LOGE("IRQ is enabled by userspace application\n");
+		LOGE("Polling interval is set to %d ms\n",
 			g_sysfs_io_polling_interval);
 
 		break;
@@ -2051,12 +2135,12 @@ static int syna_cdev_ioctl_store_pid(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if (buf_size < 4) {
+	if (buf_size < 4 || buf_size > PAGE_SIZE) {
 		LOGE("Invalid sync data size, buf_size:%d\n", buf_size);
 		return -EINVAL;
 	}
 
-	if (data_size < 4) {
+	if (data_size < 4 || data_size > PAGE_SIZE) {
 		LOGE("Invalid data_size\n");
 		return -EINVAL;
 	}
@@ -2127,7 +2211,7 @@ static int syna_cdev_ioctl_raw_read(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if ((buf_size < 0) || (rd_size > buf_size)) {
+	if (rd_size > buf_size) {
 		LOGE("Invalid sync data size, buf_size:%d, rd_size:%d\n",
 			buf_size, rd_size);
 		return -EINVAL;
@@ -2201,7 +2285,7 @@ static int syna_cdev_ioctl_raw_write(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if ((buf_size < 0) || (wr_size > buf_size)) {
+	if (wr_size > buf_size) {
 		LOGE("Invalid sync data size, buf_size:%d, wr_size:%d\n",
 			buf_size, wr_size);
 		return -EINVAL;
@@ -2275,13 +2359,8 @@ static int syna_cdev_ioctl_get_config_params(struct syna_tcm *tcm,
 	struct syna_hw_bus_data *bdata_io = &tcm->hw_if->bdata_io;
 	struct drv_param *param;
 
-	if (buf_size < 0) {
-		LOGE("Invalid sync data size, out of range\n");
-		return -EINVAL;
-	}
-
 	if (size < sizeof(struct drv_param)) {
-		LOGE("Invalid data input, size: %d (expected: %d)\n",
+		LOGE("Invalid data input, size: %u (expected: %lu)\n",
 			size, sizeof(struct drv_param));
 		return -EINVAL;
 	}
@@ -2290,7 +2369,7 @@ static int syna_cdev_ioctl_get_config_params(struct syna_tcm *tcm,
 
 	retval = syna_tcm_buf_alloc(&g_cdev_cbuf, sizeof(struct drv_param));
 	if (retval < 0) {
-		LOGE("Fail to allocate memory for g_cdev_cbuf, size: %d\n",
+		LOGE("Fail to allocate memory for g_cdev_cbuf, size: %lu\n",
 			sizeof(struct drv_param));
 		goto exit;
 	}
@@ -2348,13 +2427,8 @@ static int syna_cdev_ioctl_config(struct syna_tcm *tcm,
 	int extra_bytes = 0;
 	struct syna_hw_bus_data *ptr = &tcm->hw_if->bdata_io;
 
-	if (buf_size < 0) {
-		LOGE("Invalid sync data size, out of range\n");
-		return -EINVAL;
-	}
-
 	if (in_size < sizeof(struct drv_param)) {
-		LOGE("Invalid data input, size: %d (expected: %d)\n",
+		LOGE("Invalid data input, size: %u (expected: %lu)\n",
 			in_size, sizeof(struct drv_param));
 		return -EINVAL;
 	}
@@ -2363,7 +2437,7 @@ static int syna_cdev_ioctl_config(struct syna_tcm *tcm,
 
 	retval = syna_tcm_buf_alloc(&g_cdev_cbuf, sizeof(struct drv_param));
 	if (retval < 0) {
-		LOGE("Fail to allocate memory for g_cdev_cbuf, size: %d\n",
+		LOGE("Fail to allocate memory for g_cdev_cbuf, size: %lu\n",
 			sizeof(struct drv_param));
 		goto exit;
 	}
@@ -2378,34 +2452,36 @@ static int syna_cdev_ioctl_config(struct syna_tcm *tcm,
 	param = (struct drv_param *)&g_cdev_cbuf.buf[0];
 
 	/* update the config based on given data */
-	if ((tcm->tcm_dev) && (tcm->is_connected)) {
-		/* config the read/write chunk, if user provided */
-		if (param->bus_chunk_size > 0) {
-			if (tcm->tcm_dev->max_rd_size != param->bus_chunk_size)
-				tcm->tcm_dev->max_rd_size = param->bus_chunk_size;
-			if (tcm->tcm_dev->max_wr_size != param->bus_chunk_size)
-				tcm->tcm_dev->max_wr_size = param->bus_chunk_size;
+	if (tcm->tcm_dev) {
+		if (tcm->is_connected) {
+			/* config the read/write chunk, if user provided */
+			if (param->bus_chunk_size > 0) {
+				if (tcm->tcm_dev->max_rd_size != param->bus_chunk_size)
+					tcm->tcm_dev->max_rd_size = param->bus_chunk_size;
+				if (tcm->tcm_dev->max_wr_size != param->bus_chunk_size)
+					tcm->tcm_dev->max_wr_size = param->bus_chunk_size;
+			}
+			/* config the feature of predict reading */
+			enable = (param->feature_predict_reads == 1);
+			if (tcm->tcm_dev->msg_data.predict_reads != enable) {
+				LOGE("request to %s predict reading\n", (enable) ? "enable":"disable");
+				syna_tcm_enable_predict_reading(tcm->tcm_dev, enable);
+			}
+			/* config the feature of extra bytes reading */
+			extra_bytes = param->feature_extra_reads;
+			if (g_sysfs_extra_bytes_read != extra_bytes) {
+				g_sysfs_extra_bytes_read = extra_bytes;
+				LOGE("request to read in %d extra bytes\n", extra_bytes);
+			}
+		} else {
+			/* restore the features */
+			if (tcm->tcm_dev->max_wr_size != ptr->wr_chunk_size)
+				tcm->tcm_dev->max_wr_size = ptr->wr_chunk_size;
+			if (tcm->tcm_dev->max_rd_size != ptr->rd_chunk_size)
+				tcm->tcm_dev->max_rd_size = ptr->rd_chunk_size;
+			g_sysfs_extra_bytes_read = 0;
+			tcm->tcm_dev->msg_data.predict_reads = false;
 		}
-		/* config the feature of predict reading */
-		enable = (param->feature_predict_reads == 1);
-		if (tcm->tcm_dev->msg_data.predict_reads != enable) {
-			LOGI("request to %s predict reading\n", (enable) ? "enable":"disable");
-			syna_tcm_enable_predict_reading(tcm->tcm_dev, enable);
-		}
-		/* config the feature of extra bytes reading */
-		extra_bytes = param->feature_extra_reads;
-		if (g_sysfs_extra_bytes_read != extra_bytes) {
-			g_sysfs_extra_bytes_read = extra_bytes;
-			LOGI("request to read in %d extra bytes\n", extra_bytes);
-		}
-	} else {
-		/* restore the features */
-		if (tcm->tcm_dev->max_wr_size != ptr->wr_chunk_size)
-			tcm->tcm_dev->max_wr_size = ptr->wr_chunk_size;
-		if (tcm->tcm_dev->max_rd_size != ptr->rd_chunk_size)
-			tcm->tcm_dev->max_rd_size = ptr->rd_chunk_size;
-		g_sysfs_extra_bytes_read = 0;
-		tcm->tcm_dev->msg_data.predict_reads = false;
 	}
 
 exit:
@@ -2501,7 +2577,7 @@ static int syna_cdev_ioctl_get_driver_status(struct syna_tcm *tcm,
 	info.hw_resetting    = (rst->reset_on_state == level) ? 1 : 0;
 
 	info.lpwg_enabled    = tcm->lpwg_enabled;
-	if((tcm->tcm_dev != NULL) && (tcm->tcm_dev->hw_if != NULL)) {
+	if(tcm->tcm_dev->hw_if != NULL) {
 		info.irq_enabled = tcm->tcm_dev->hw_if->bdata_attn.irq_enabled;
 	} else {
 		info.irq_enabled = 0;
@@ -2539,26 +2615,40 @@ static int syna_cdev_ioctl_set_driver_status(struct syna_tcm *tcm,
 		unsigned int data_size)
 {
 	int retval = 0;
-	unsigned int param = 0;
-	unsigned char data[4] = {0};
+	unsigned char *data;
+	hbp_driver_info_t *drv_info;
 
-	if (buf_size < sizeof(data) || data_size < sizeof(data)) {
+	if (buf_size < sizeof(hbp_driver_info_t) || data_size < sizeof(hbp_driver_info_t)) {
 		LOGE("Invalid sync data size, buf_size:%d, expected:%d; data_size:%d, expected:%d\n",
-			buf_size, (unsigned int)sizeof(data), data_size, (unsigned int)sizeof(data));
+			buf_size, (unsigned int)sizeof(hbp_driver_info_t), data_size, (unsigned int)sizeof(hbp_driver_info_t));
 		return -EINVAL;
 	}
 
-	retval = copy_from_user(data, ubuf_ptr, sizeof(data));
+	LOGE("Daemon data size: %u\n", data_size);
+
+	data = kmalloc(sizeof(hbp_driver_info_t), GFP_KERNEL);
+	if (!(data)) {
+		LOGE("Failed to allocate memory for driver info, size = %lu\n", sizeof(hbp_driver_info_t));
+		retval = -ENOMEM;
+		goto exit;
+	}
+	retval = copy_from_user(data, ubuf_ptr, sizeof(hbp_driver_info_t));
 	if (retval) {
 		LOGE("Fail to copy data from user space, size:%d\n", retval);
 		retval = -EBADE;
+		kfree(data);
 		goto exit;
 	}
 
-	// convert to int
-	param = syna_pal_le4_to_uint(&data[0]);
-	LOGI("Daemon Set: %u\n", param);
+	/* do the application for the received data from daemon */
 
+	drv_info = (hbp_driver_info_t *)data;
+
+	/* set the usage of frame waiting */
+	tcm->use_short_frame_waiting = drv_info->short_frame_waiting;
+	kfree(data);
+
+	LOGE("use_short_frame_waiting: %d\n", tcm->use_short_frame_waiting);
 exit:
 	return retval;
 }
@@ -2755,11 +2845,39 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 	struct syna_ioctl_data ioc_data;
 	unsigned char *ptr = NULL;
 
+	if (g_sysfs_has_remove == 1) {
+		LOGE("%s:driver is remove!!\n", __func__);
+		return -EINVAL;
+	}
+
+	IF_ARG_NULL_OUT(g_sysfs_dir);
 	p_kobj = g_sysfs_dir->parent;
+	IF_ARG_NULL_OUT(p_kobj);
 	p_dev = container_of(p_kobj, struct device, kobj);
+	IF_ARG_NULL_OUT(p_dev);
 	tcm = dev_get_drvdata(p_dev);
+	IF_ARG_NULL_OUT(tcm);
+
+	if (IS_REMOVE == tcm->driver_current_state) {
+		LOGE("%s:driver is remove!! do not use any ioctl\n", __func__);
+		return -EINVAL;
+	};
+	LOGD("syna_cdev_ioctls Enter, IOC_ID:0x%02X\n", (unsigned int)_IOC_NR(cmd));
+	if ((_IOC_NR(cmd) == CUS_SET_DRIVER_STATUS_ID)/* && tcm->waiting_frame == 1*/) {
+		LOGE("IOC_ID:0x%02X CUS received\n", (unsigned int)_IOC_NR(cmd));
+		/* instert one report to wakeup wait_frame */
+		tcm->use_short_frame_waiting = 1;
+		syna_cdev_update_doze_state_report_queue(tcm);
+		LOGE("Pre set short_frame_waiting = 1 \n");
+	}
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
+
+	if (IS_REMOVE == tcm->driver_current_state) {
+		LOGE("%s:driver is remove!! do not use any ioctl\n", __func__);
+		syna_pal_mutex_unlock(&tcm->extif_mutex);
+		return -EINVAL;
+	};
 
 	retval = 0;
 
@@ -2775,6 +2893,9 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 		retval = 1;
 		goto exit;
 	}
+
+	if (_IOC_NR(cmd) == STD_CHECK_FRAMES_ID)
+		tcm->waiting_frame = 1;
 
 	retval = copy_from_user(&ioc_data,
 			(void __user *) arg,
@@ -2808,6 +2929,8 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 
 exit:
 	syna_pal_mutex_unlock(&tcm->extif_mutex);
+	tcm->waiting_frame = 0;
+	LOGD("syna_cdev_ioctls Exit\n");
 
 	return retval;
 }
@@ -2933,14 +3056,28 @@ static ssize_t syna_cdev_read(struct file *filp,
 	struct kobject *p_kobj;
 	struct syna_tcm *tcm;
 
+	if (g_sysfs_has_remove == 1) {
+		LOGE("%s:driver is remove!!\n", __func__);
+		return -EINVAL;
+	}
+	IF_ARG_NULL_OUT(g_sysfs_dir);
 	p_kobj = g_sysfs_dir->parent;
+	IF_ARG_NULL_OUT(p_kobj);
 	p_dev = container_of(p_kobj, struct device, kobj);
+	IF_ARG_NULL_OUT(p_dev);
 	tcm = dev_get_drvdata(p_dev);
+	IF_ARG_NULL_OUT(tcm);
 
 	if (count == 0)
 		return 0;
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
+
+	if (IS_REMOVE == tcm->driver_current_state) {
+		LOGE("%s:driver is remove!! do not use any ioctl\n", __func__);
+		syna_pal_mutex_unlock(&tcm->extif_mutex);
+		return -EINVAL;
+	};
 
 	retval = syna_cdev_ioctl_raw_read(tcm,
 			(const unsigned char *)buf, count, count);
@@ -2976,15 +3113,27 @@ static ssize_t syna_cdev_write(struct file *filp,
 	struct kobject *p_kobj;
 	struct syna_tcm *tcm;
 
+	if (g_sysfs_has_remove == 1) {
+		LOGE("%s:driver is remove!!\n", __func__);
+		return -EINVAL;
+	}
+
 	p_kobj = g_sysfs_dir->parent;
+	IF_ARG_NULL_OUT(p_kobj);
 	p_dev = container_of(p_kobj, struct device, kobj);
+	IF_ARG_NULL_OUT(p_dev);
 	tcm = dev_get_drvdata(p_dev);
+	IF_ARG_NULL_OUT(tcm);
 
 	if (count == 0)
 		return 0;
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
-
+	if (IS_REMOVE == tcm->driver_current_state) {
+		LOGE("%s:driver is remove!! do not use any ioctl\n", __func__);
+		syna_pal_mutex_unlock(&tcm->extif_mutex);
+		return -EINVAL;
+	};
 	retval = syna_cdev_ioctl_raw_write(tcm,
 			(const unsigned char *)buf, count, count);
 	if (retval != count) {
@@ -3015,9 +3164,17 @@ static int syna_cdev_open(struct inode *inp, struct file *filp)
 	struct kobject *p_kobj;
 	struct syna_tcm *tcm;
 
+	if (g_sysfs_has_remove == 1) {
+		LOGE("%s:driver is remove!!\n", __func__);
+		return -EINVAL;
+	}
+
 	p_kobj = g_sysfs_dir->parent;
+	IF_ARG_NULL_OUT(p_kobj);
 	p_dev = container_of(p_kobj, struct device, kobj);
+	IF_ARG_NULL_OUT(p_dev);
 	tcm = dev_get_drvdata(p_dev);
+	IF_ARG_NULL_OUT(tcm);
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
 
@@ -3039,7 +3196,7 @@ static int syna_cdev_open(struct inode *inp, struct file *filp)
 #endif
 	syna_pal_mutex_unlock(&tcm->extif_mutex);
 
-	LOGI("cdev open\n");
+	LOGE("cdev open\n");
 
 	return 0;
 }
@@ -3062,16 +3219,37 @@ static int syna_cdev_release(struct inode *inp, struct file *filp)
 	struct kobject *p_kobj;
 	struct syna_tcm *tcm;
 
-	p_kobj = g_sysfs_dir->parent;
-	p_dev = container_of(p_kobj, struct device, kobj);
-	tcm = dev_get_drvdata(p_dev);
+	if (g_sysfs_has_remove == 1) {
+		LOGE("%s:driver is remove!!\n", __func__);
+		return -EINVAL;
+	}
 
+
+	LOGE("%s:Enter\n", __func__);
+	IF_ARG_NULL_OUT(g_sysfs_dir);
+
+	p_kobj = g_sysfs_dir->parent;
+	IF_ARG_NULL_OUT(p_kobj);
+	p_dev = container_of(p_kobj, struct device, kobj);
+	IF_ARG_NULL_OUT(p_dev);
+	tcm = dev_get_drvdata(p_dev);
+	IF_ARG_NULL_OUT(tcm);
+
+	mutex_lock(&tcm->mutex);
 	syna_pal_mutex_lock(&tcm->extif_mutex);
+
+	if (IS_REMOVE == tcm->driver_current_state) {
+		LOGE("%s:driver is remove!! do not use any ioctl\n", __func__);
+		syna_pal_mutex_unlock(&tcm->extif_mutex);
+		mutex_unlock(&tcm->mutex);
+		return -EINVAL;
+	};
 
 	if (tcm->char_dev_ref_count <= 0) {
 		LOGN("cdev already closed, %d\n",
 			tcm->char_dev_ref_count);
 		syna_pal_mutex_unlock(&tcm->extif_mutex);
+		mutex_unlock(&tcm->mutex);
 		return 0;
 	}
 
@@ -3089,13 +3267,13 @@ static int syna_cdev_release(struct inode *inp, struct file *filp)
 	syna_cdev_clean_queue(tcm);
 #endif
 	syna_pal_mutex_unlock(&tcm->extif_mutex);
+	mutex_unlock(&tcm->mutex);
 
 	g_sysfs_io_polling_interval = 0;
 
 	g_sysfs_extra_bytes_read = 0;
 
-	LOGI("cdev close\n");
-
+	LOGE("cdev close\n");
 	return 0;
 }
 
@@ -3326,6 +3504,71 @@ void syna_cdev_update_power_state_report_queue(struct syna_tcm *tcm, bool wakeup
 exit:
 	syna_pal_mem_free((void *)frame_buffer);
 }
+
+/**
+ * syna_cdev_update_doze_state_report_queue()
+ *
+ * Push the driver doze info to the queue.
+ *
+ * @param
+ *    [ in] tcm:         the driver handle
+ *
+ * @return
+ *    none.
+ */
+void syna_cdev_update_doze_state_report_queue(struct syna_tcm *tcm)
+{
+	int retval;
+	unsigned char *frame_buffer = NULL;
+	unsigned int frame_length = 0;
+	struct tcm_power_state_info info;
+	unsigned int data_length = sizeof(info);
+
+	info.power_state     = tcm->pwr_state;
+	info.driver_req_mode = DRIVER_REQ_MODE_NONE;
+
+	info.lpwg_enabled    = tcm->lpwg_enabled;
+	if((tcm->tcm_dev != NULL) && (tcm->tcm_dev->hw_if != NULL)) {
+		info.irq_enabled = tcm->tcm_dev->hw_if->bdata_attn.irq_enabled;
+	} else {
+		info.irq_enabled = 0;
+	}
+
+	frame_length = data_length + 3;
+	LOGD("The queuing data length = %d\n", frame_length);
+	frame_buffer = (unsigned char *)syna_pal_mem_alloc(frame_length,
+					sizeof(unsigned char));
+	if (!frame_buffer) {
+		LOGE("Fail to allocate buffer for the report, size: %d, data_length: %d\n",
+			data_length + 3, data_length);
+		return;
+	}
+
+	frame_buffer[0] = REPORT_POWER_STATE_INFO;
+	frame_buffer[1] = (unsigned char)data_length;
+	frame_buffer[2] = (unsigned char)(data_length >> 8);
+
+	if (data_length > 0) {
+		retval = syna_pal_mem_cpy(&frame_buffer[3],
+				(frame_length - 3),
+				&info,
+				data_length,
+				data_length);
+		if (retval < 0) {
+			LOGE("Fail to copy data to the report buffer, size: %d\n", data_length);
+			goto exit;
+		}
+	}
+	retval = syna_cdev_insert_fifo(tcm, frame_buffer, frame_length);
+	if (retval < 0) {
+		LOGE("Fail to insert the report data to fifo\n");
+		goto exit;
+	}
+	wake_up_interruptible(&(tcm->wait_frame));
+exit:
+	syna_pal_mem_free((void *)frame_buffer);
+}
+
 #endif
 /**
  * syna_cdev_devnode()
@@ -3448,6 +3691,7 @@ int syna_cdev_create_sysfs(struct syna_tcm *tcm,
 		goto err_create_dir;
 	}
 
+	g_sysfs_has_remove = 0;
 	return 0;
 
 err_create_dir:
@@ -3503,6 +3747,7 @@ void syna_cdev_remove_sysfs(struct syna_tcm *tcm)
 	tcm->device_class = NULL;
 
 	tcm->device = NULL;
+	g_sysfs_has_remove = 1;
 }
 
 

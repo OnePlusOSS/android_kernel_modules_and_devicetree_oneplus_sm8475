@@ -1496,7 +1496,7 @@ int syna_tcm_romboot_do_multichip_reflash(struct tcm_dev *tcm_dev,
 		if (block->size == 0)
 			continue;
 
-		if (erase_delay_ms == DEFAULT_FLASH_ERASE_DELAY)
+		if (erase_delay_ms == 0xFFFF)
 			erase_delay_ms = ROMBOOT_DELAY_MS;
 
 		retval = syna_tcm_romboot_erase_flash(tcm_dev,
@@ -1537,7 +1537,7 @@ int syna_tcm_romboot_do_multichip_reflash(struct tcm_dev *tcm_dev,
 		if (block->size == 0)
 			continue;
 
-		if (wr_delay_ms == DEFAULT_FLASH_WRITE_DELAY)
+		if (wr_delay_ms == 0xFFFF)
 			wr_delay_ms = ROMBOOT_DELAY_MS;
 
 		retval = syna_tcm_romboot_write_flash(tcm_dev,

@@ -1,6 +1,11 @@
 #include "oplus_chg_22623.h"
 
 &soc {
+	oplus_battery_log: oplus,battery_log {
+		compatible = "oplus,battery_log";
+		oplus,battery_log_support;
+	};
+
 	oplus,adsp-voocphy {
 		status = "disabled";
 		compatible = "oplus,adsp-voocphy";

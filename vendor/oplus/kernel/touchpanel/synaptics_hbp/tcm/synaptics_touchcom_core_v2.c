@@ -36,6 +36,7 @@
  */
 
 #include "synaptics_touchcom_core_dev.h"
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
 
 #define BITS_IN_MESSAGE_HEADER (MESSAGE_HEADER_SIZE * 8)
 
@@ -294,6 +295,7 @@ static void syna_tcm_v2_dispatch_report(struct tcm_dev *tcm_dev)
 		if (0x0b == tcm_dev->dev_mode) {
 			tcm_dev->firmware_mode_count++;
 			if (!tcm_dev->upload_flag && tcm_dev->firmware_mode_count >= FIRMWARE_MODE_BL_MAX) {
+				tp_healthinfo_report(tcm_dev->monitor_data, HEALTH_REPORT, "firmware mode = 0x0b");
 				tcm_dev->upload_flag = 1;
 			}
 		}
@@ -948,7 +950,7 @@ static int syna_tcm_v2_execute_cmd_request(struct tcm_dev *tcm_dev,
 	int retval;
 	unsigned int idx;
 	unsigned int offset;
-	unsigned int chunks;
+	unsigned int chunks = 0;
 	unsigned int xfer_length;
 	unsigned int remaining_length;
 	int retry_cnt = 0;
@@ -971,7 +973,8 @@ static int syna_tcm_v2_execute_cmd_request(struct tcm_dev *tcm_dev,
 	else
 		chunk_space = chunk_space - (MESSAGE_HEADER_SIZE + 2);
 
-	chunks = syna_pal_ceil_div(remaining_length, chunk_space);
+	if (chunk_space)
+		chunks = syna_pal_ceil_div(remaining_length, chunk_space);
 
 	chunks = chunks == 0 ? 1 : chunks;
 

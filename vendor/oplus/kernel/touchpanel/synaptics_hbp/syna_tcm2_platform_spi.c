@@ -1327,6 +1327,8 @@ static int syna_spi_probe(struct spi_device *spi)
 	case 3:
 		spi->mode = SPI_MODE_3;
 		break;
+	default:
+		break;
 	}
 
 	/* keep the i/o device */
@@ -1395,7 +1397,11 @@ static int syna_spi_probe(struct spi_device *spi)
  * @return
  *    on success, 0; otherwise, negative value on error.
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+static void syna_spi_remove(struct spi_device *spi)
+#else
 static int syna_spi_remove(struct spi_device *spi)
+#endif
 {
 	struct syna_hw_attn_data *attn = &syna_spi_hw_if.bdata_attn;
 	struct syna_hw_bus_data *bus = &syna_spi_hw_if.bdata_io;
@@ -1416,7 +1422,10 @@ static int syna_spi_remove(struct spi_device *spi)
 	syna_spi_device->dev.platform_data = NULL;
 	platform_device_unregister(syna_spi_device);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+#else
 	return 0;
+#endif
 }
 
 /**

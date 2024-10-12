@@ -19,7 +19,7 @@
 #include <linux/version.h>
 #include <linux/iio/consumer.h>
 #include <linux/alarmtimer.h>
-#include "touchpanel_common.h"
+#include "../touchpanel_common.h"
 /****************trusted_touch********************/
 #ifdef CONFIG_TOUCHPANEL_TRUSTED_TOUCH
 #include <linux/atomic.h>
@@ -874,7 +874,9 @@ static void touchpanel_bus_put(struct touchpanel_data *ts)
 		touchpanel_clk_disable_unprepare(ts);
 	pm_runtime_put_sync(dev);
 	mutex_unlock(&ts->clk_io_ctrl_mutex);
-	complete(&ts->trusted_touch_powerdown);
+
+	/* must use complete_all to wake up all the process on waiting queue */
+	complete_all(&ts->trusted_touch_powerdown);
 
 	TP_INFO(ts->tp_index, "%s exit\n", __func__);
 }
@@ -1495,10 +1497,12 @@ void touchpanel_trusted_touch_init(struct touchpanel_data *ts)
 
 void touchpanel_trusted_touch_completion(struct touchpanel_data *ts)
 {
-    if(!ts->trusted_touch_support)
+	if(!ts->trusted_touch_support) {
 		return;
+	}
 #ifdef CONFIG_TOUCHPANEL_TRUSTED_TOUCH
-	if (atomic_read(&ts->trusted_touch_transition) || atomic_read(&ts->trusted_touch_enabled))
+	if (atomic_read(&ts->trusted_touch_transition) || atomic_read(&ts->trusted_touch_enabled)) {
 		wait_for_completion_interruptible(&ts->trusted_touch_powerdown);
+	}
 #endif
 }
