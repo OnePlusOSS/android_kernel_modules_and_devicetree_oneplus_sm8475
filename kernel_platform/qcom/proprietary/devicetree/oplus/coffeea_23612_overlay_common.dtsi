@@ -1,0 +1,36 @@
+#include "tp/coffee_23611_extra_config.dtsi"
+
+
+/* Cape configurations for PM8010I and PM8010J connected via SPMI */
+
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+&soc {
+    devinfo {
+        status = "disabled";
+    };
+
+    devinfo_coffee {
+        compatible = "oplus-devinfo";
+
+        pinctrl-names = "default", "sleep", "active", "idle";
+        pinctrl-0 = <&hw_pins_default>;
+        pinctrl-1 = <&aboard_pin_gpio0_sleep>;
+        pinctrl-2 = <&aboard_pin_gpio0_active>;
+        pinctrl-3 = <&aboard_pin_gpio0_idle>;
+
+
+        // coffee  platelets
+        main-sub {
+            compatible = "hw-match, main-sub";
+            use_tristate_gpio;
+            aboard-gpio0 = <&tlmm 34 0>;
+            aboard-patterns = <0 1 2>;  // defult
+
+            /*main board*/
+            match-projects = <23612 23685 23684>;
+        };
+
+    };  
+};
+

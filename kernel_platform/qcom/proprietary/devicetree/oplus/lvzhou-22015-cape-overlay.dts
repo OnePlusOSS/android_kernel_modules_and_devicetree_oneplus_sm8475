@@ -1,0 +1,210 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/oplus/hw-id.h>
+#include "../qcom/cape-mtp-pm8010-overlay.dts"
+#include "cape_overlay_common.dtsi"
+#include "oplus_chg/oplus-chg-22015.dtsi"
+#include "lvzhou_22015_overlay_common.dtsi"
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include "nfc/whiteswan-22001-nfc-sn110t.dtsi"
+#include "oplus_sensor/lvzhou-22015-cape-oplus-sensor.dtsi"
+#include "oplus_uff/oplus_uff_22015.dtsi"
+#include "../qcom/cape-dma-heaps.dtsi"
+
+/ {
+        model = "Qualcomm Technologies, Inc. Cape MTP, Lvzhou";
+        oplus,project-id = <22015 22214>;
+        oplus,hw-id = <OPLUS_EVB1 OPLUS_T0 OPLUS_EVT1 OPLUS_DVT1 OPLUS_PVT1 OPLUS_PVT2 OPLUS_MP1>;
+};
+
+&tlmm {
+  rf_cable0_active: rf_cable0_active {
+    mux {
+      pins = "gpio89";
+      function = "gpio";
+    };
+    config {
+      pins = "gpio89";
+      drive-strength = <2>;
+      input-enable;
+      bias-pull-up;
+    };
+  };
+	cd_pin_pulldown: cd_pin_pulldown {
+		mux {
+			pins = "gpio99";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio99";
+			drive-strength = <2>;
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	explorer_int0: explorer_int0 {
+		mux {
+			pins = "gpio150";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio150";
+			bias-pull-down;
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+
+	explorer_int1: explorer_int1 {
+		mux {
+			pins = "gpio154";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio154";
+			bias-pull-down;
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+
+	explorer_int2: explorer_int2 {
+		mux {
+			pins = "gpio187";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio187";
+			bias-pull-down;
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+
+	pmic_pon_1: pmic_pon_1 {
+		mux {
+			pins = "gpio116";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio116";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	pmic_resin_n: pmic_resin_n {
+		mux {
+			pins = "gpio119";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio119";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	sdc2_on: sdc2_on {
+		clk {
+			pins = "sdc2_clk";
+			bias-disable;
+			drive-strength = <8>;
+		};
+
+		cmd {
+			pins = "sdc2_cmd";
+			bias-pull-up;
+			drive-strength = <6>;
+		};
+
+		data {
+			pins = "sdc2_data";
+			bias-pull-up;
+			drive-strength = <6>;
+		};
+	};
+
+	sdc2_off: sdc2_off {
+		clk {
+			pins = "sdc2_clk";
+			bias-disable;
+			drive-strength = <2>;
+		};
+
+		cmd {
+			pins = "sdc2_cmd";
+			bias-pull-up;
+			drive-strength = <2>;
+		};
+
+		data {
+			pins = "sdc2_data";
+			bias-pull-up;
+			drive-strength = <2>;
+		};
+	};
+};
+
+&sdhc_2 {
+	cd-debounce-delay-ms = <1>;
+	cd-gpios = <&tlmm 99 GPIO_ACTIVE_HIGH>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc2_on &cd_pin_pulldown>;
+	pinctrl-1 = <&sdc2_off>;
+	filter-enable;
+	no-sd;
+	no-mmc;
+	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	status = "ok";
+        vdd-supply = <&L6C>;
+        qcom,vdd-voltage-level = <1800000 1800000>;
+        qcom,vdd-current-level = <0 125000>;
+};
+&L6C {
+	regulator-always-on;
+};
+
+&soc {
+  oplus_rf_cable {
+    compatible = "oplus,rf_cable";
+    interrupt-parent = <&tlmm>;
+    rf_cable_support_num = <1>;
+    rf,cable0-gpio = <&tlmm 89 0>;
+    rf,cable-support-timer = <0>;
+    pinctrl-names = "rf_cable_active";
+    pinctrl-0 = <&rf_cable0_active>;
+  };
+	preisp: zeku,explorer@0 {
+		compatible = "zeku,explorer";
+		interrupt-parent = <&tlmm>;
+		bsp_irq_gpio = <&tlmm 150 0>;
+		bsp_int1_gpio = <&tlmm 154 0>;
+		bsp_int2_gpio = <&tlmm 187 0>;
+		ignore-dsleep;
+		pmic_pon_gpio = <&tlmm 116 0>;
+		pmic_reset_gpio = <&tlmm 119 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&explorer_int0 &explorer_int1 &explorer_int2 &pmic_pon_1 &pmic_resin_n>;
+		clock-names = "clk_ref";
+		clocks = <&clock_rpmh RPMH_LN_BB_CLK3>;
+		vcc_sdio-supply = <&L6C>;
+		explorer,clk-drive-strength = <4>;
+		explorer,cmd-drive-strength = <4>;
+		explorer,data-drive-strength = <4>;
+	};
+};
+
+&soc {
+	qcom,dma-heaps {
+		qcom,qseecom {
+			qcom,dma-heap-name = "qcom,qseecom";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			qcom,uncached-heap;
+			memory-region = <&qseecom_mem>;
+		};
+	};
+};
