@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/oplus/hw-id.h>
+#include "../qcom/cape-mtp-pm8010-overlay.dts"
+#include "cape_overlay_common.dtsi"
+#include "kunpeng_overlay_common.dtsi"
+
+#include "oplus_uff/oplus_uff_sm8475.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Cape MTP, Kunpeng";
+        oplus,project-id = <21009>;
+        oplus,hw-id = <OPLUS_EVB1 OPLUS_T0 OPLUS_EVT1 OPLUS_EVT2 OPLUS_DVT1 OPLUS_PVT1 OPLUS_MP1>;
+};
+

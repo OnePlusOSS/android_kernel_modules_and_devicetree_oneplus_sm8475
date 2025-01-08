@@ -1,0 +1,41 @@
+/**********************************************************************************
+* Copyright (c)  2008-2022  Guangdong oplus Mobile Comm Corp., Ltd
+* Description: oplus sn110t nfc dtsi
+*
+* Version: 1.0
+* Date: 2022-07-16
+* Author: DengWeiwei
+*
+* ------------------------------ Revision History: --------------------------------
+* <version>           <date>                <author>                            <desc>
+* Revision 1.0       2022-07-16              DengWeiwei         Created for lantian-nfc-sn110t.dtsi
+***********************************************************************************/
+&soc {
+	//add for nfc_chipset
+	nfc_chipset {
+		compatible = "oplus-nfc-chipset";
+		chipset-23023 = "THN31";
+                manifest = "/odm/etc/vintf/manifest_nfc_thn31.xml";
+	};
+};
+
+&qupv3_se9_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	tms_thn31@28 {
+		compatible = "tms,nfc";
+		reg = <0x28>;
+		tms,irq-gpio = <&tlmm 46 0x00>;
+		tms,ven-gpio = <&tlmm 34 0x01>;
+		tms,download-gpio = <&tlmm 45 0x00>;
+		//qcom,nq-clkreq = <&tlmm 35 0x00>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <46 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend>;
+	};
+};
+
+

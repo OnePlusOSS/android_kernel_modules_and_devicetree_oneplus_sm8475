@@ -1,0 +1,190 @@
+/* Cape configurations for PM8010I and PM8010J connected via SPMI */
+
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+/ {
+	qcom,pmic-id = <0x2f 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x41 0x41>;
+	qcom,pmic-id-size = <10>;
+};
+&L1I {
+  regulator-min-microvolt = <1104000>;
+  regulator-max-microvolt = <1204000>;
+  qcom,init-voltage = <1150000>;
+};
+
+&L2I {
+  regulator-min-microvolt = <1056000>;
+  regulator-max-microvolt = <1260000>;
+  qcom,init-voltage = <1056000>;
+};
+
+&L3I {
+  regulator-min-microvolt = <2700000>;
+  regulator-max-microvolt = <2904000>;
+  qcom,init-voltage = <2800000>;
+};
+
+&L4I {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <3304000>;
+  qcom,init-voltage = <3150000>;
+};
+
+&L5I {
+  regulator-min-microvolt = <1800000>;
+  regulator-max-microvolt = <2800000>;
+  qcom,init-voltage = <1800000>;
+};
+
+&L6I {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <3304000>;
+  qcom,init-voltage = <3150000>;
+};
+
+&L7I {
+  regulator-min-microvolt = <1800000>;
+  regulator-max-microvolt = <2960000>;
+  qcom,init-voltage = <1800000>;
+};
+
+&L1J {
+  regulator-min-microvolt = <1104000>;
+  regulator-max-microvolt = <1204000>;
+  qcom,init-voltage = <1104000>;
+};
+
+&L2J {
+  regulator-min-microvolt = <800000>;
+  regulator-max-microvolt = <1056000>;
+  qcom,init-voltage = <810000>;
+};
+
+&L3J {
+  regulator-min-microvolt = <1800000>;
+  regulator-max-microvolt = <2904000>;
+  qcom,init-voltage = <2800000>;
+};
+
+&L4J {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <3008000>;
+  qcom,init-voltage = <2904000>;
+};
+
+&L5J {
+  regulator-min-microvolt = <1800000>;
+  regulator-max-microvolt = <2800000>;
+  qcom,init-voltage = <1800000>;
+};
+
+&L6J {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <2800000>;
+  qcom,init-voltage = <2800000>;
+};
+
+&L7J {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <3504000>;
+  qcom,init-voltage = <2800000>;
+};
+&L9C {
+  regulator-min-microvolt = <2800000>;
+  regulator-max-microvolt = <3008000>;
+  qcom,init-voltage = <2800000>;
+};
+
+&pm8350c_torch0 {
+	qcom,ires-ua = <5000>;
+};
+
+&pm8350c_torch1 {
+	qcom,ires-ua = <5000>;
+};
+&soc {
+    devinfo {
+        status = "disabled";
+    };
+
+	devinfo_oplus {
+		compatible = "oplus-devinfo";
+
+		//pinctrl-names = "active", "sleep";
+		//pinctrl-0 = <&hw_id_active>;
+		//pinctrl-1 = <&hw_id_sleep>;
+
+		io-channels= <&pmk8350_vadc PM8350_ADC7_AMUX_THM5>;
+		io-channel-names= "vph_pwr_voltage_sub";
+
+		main-sub {
+			compatible = "hw-match, main-sub";
+			use_pmic_adc;
+			adc_ranges = <0 80
+					81 180
+					181 300
+					301 420
+					421 550
+					551 650
+					651 760
+					761 850
+					851 950
+					951 1050
+					1051 1150
+					1151 1300>;
+			aboard-patterns = <0 0>;
+
+			/*main board*/
+			match-projects = <21605 21736>;
+		};
+	};
+	//#ifdef OPLUS_FEATURE_THERMAL_HORAE
+	shell_front {
+			compatible = "oplus,shell-temp";
+	};
+
+	shell_frame {
+			compatible = "oplus,shell-temp";
+	};
+
+	shell_back {
+			compatible = "oplus,shell-temp";
+	};
+	//#endif
+};
+
+
+
+&pmk8350_vadc {
+
+        gpio1b_v {
+                reg = <PM8350_ADC7_AMUX_THM5>;
+                label = "gpio1b_v";
+	        qcom,pre-scaling = <1 1>;
+        };
+};
+
+&pmr735a_gpios {
+	pmr735a_pa3_therm {
+         pmr735a_pa3_therm_default: pmr735a_pa3_therm_default {
+               pins = "gpio3";
+               bias-high-impedance;
+         };
+      };
+};
+
+
+/*
+&xo_config2 {
+	temperature = <125000>;
+	hysteresis = <10000>;
+	type = "passive";
+};
+*/
+&usb3phy_portselect_default {
+	config {
+		pins = "gpio91";
+		bias-pull-down;
+		drive-strength = <2>;
+	};
+};

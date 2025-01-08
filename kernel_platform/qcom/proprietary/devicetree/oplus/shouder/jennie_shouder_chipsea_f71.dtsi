@@ -1,0 +1,84 @@
+&qupv3_se2_i2c {
+	status = "ok";
+	 csa37f71@50 {
+		compatible = "chipsea,csa37f71";
+		reg = <0x50>;
+		/* Interrupt && Irq-gpio */
+		interrupt-parent = <&tlmm>;
+		interrupts = <153 0x2008>;
+
+		/* Power Config */
+		enable1v8_gpio = <&tlmm 155 0x1>;
+		vdd_2v8-supply = <&BOB>;
+
+		/* Other HW Resource */
+		irq-gpio = <&tlmm 153 0x2008>;
+		reset-gpio = <&tlmm 175 0>;
+		wake-gpio = <&tlmm 98 0>;
+		status = "okay";
+		scene@game {
+			scene,name = "scene-game";
+			press,left-geat   = <70 120 200>;
+			press,right-geat   = <70 120 200>;
+			press,charge-right-geat   = <240 260 280>;
+			press,samplemode = <3>;
+			press,priority =  <3>;
+		};
+		scene@camera {
+			scene,name = "scene-camera";
+			press,left-geat = <180 240 360>;
+			press,right-geat = <180 240 360>;
+			press,samplemode = <2>;
+			press,priority =  <2>;
+		};
+		scene@normal {
+			scene,name = "scene-normal";
+			press,left-geat = <400 600 800>;
+			press,right-geat = <400 600 800>;
+			press,samplemode = <2>;
+			press,priority =  <1>;
+		};
+	};
+};
+&tlmm {
+	shoulder_state_key_active:shoulder_state_key_active{
+		mux {
+			pins = "gpio174", "gpio176";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio174", "gpio176";
+			drive-strength = <6>;
+			bias-pull-up = <00>;
+		};
+	};
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&shoulder_state_key_active>;
+		shoulder_up {
+			label = "shoulder_up";
+			gpios = <&tlmm 174 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <753>;
+			gpio-key,wakeup;
+			debounce-interval = <5>;
+			linux,can-disable;
+		};
+		shoulder_down {
+			label = "shoulder_down";
+			gpios = <&tlmm 176 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <752>;
+			gpio-key,wakeup;
+			debounce-interval = <5>;
+			linux,can-disable;
+		};
+	};
+};
