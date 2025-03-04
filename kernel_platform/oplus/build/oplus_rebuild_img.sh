@@ -32,7 +32,7 @@ function init_image_environment() {
 }
 
 function is_intranet() {
-    ping -c1 -i1 gerrit.scm.adc.com > /dev/null 2>&1
+    ping -c1 -i1 gerrit_url > /dev/null 2>&1
     if [ $? -eq 0 ]; then
         echo "This is an internal network"
         IS_INTRANET="yes"

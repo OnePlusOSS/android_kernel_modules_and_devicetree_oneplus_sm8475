@@ -653,6 +653,11 @@ struct oplus_voocphy_manager {
 	unsigned int current_bcc;
 	unsigned int current_batt_temp;
 	unsigned int current_slow_chg;
+	unsigned int current_full_limit;
+	unsigned int pre_current_full_limit;
+	bool dchg;
+	bool full_limit_curr;
+	unsigned int full_limit_count;
 	unsigned char ap_need_change_current;
 	unsigned char adjust_curr;
 	unsigned char adjust_fail_cnt;
@@ -814,6 +819,8 @@ struct oplus_voocphy_manager {
 	int batt_fake_temp;
 	int batt_fake_soc;
 
+	bool full_limit_curr_support;
+
 	//adsp some status
 	int adsp_voocphy_rx_data;
 	int parallel_charge_support;
@@ -840,6 +847,7 @@ struct oplus_voocphy_manager {
 	unsigned int vooc_ntime_full_voltage;
 	int ovp_reg;
 	int ocp_reg;
+	int reg_ctrl_1;
 	int adapter_check_vooc_head_count;
 	int adapter_check_cmd_data_count;
 

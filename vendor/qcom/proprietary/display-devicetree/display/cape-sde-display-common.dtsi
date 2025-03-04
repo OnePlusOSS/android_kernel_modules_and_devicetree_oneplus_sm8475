@@ -28,24 +28,10 @@
 #include "dsi-panel-oplus-samsung-s6e3xa2-1792-1920-dsc-cmd.dtsi"
 #include "dsi-panel-oplus-samsung-s6e3fac-1080-2120-dsc-cmd.dtsi"
 #include "dsi-panel-oplus-samsung-s6e3fac-1080-2120-dsc-cmd-wdte.dtsi"
-#include "dsi_panel_oplus_lvzhou_ab241_ili7838a_1080_2412_dsc_cmd.dtsi"
 #include "dsi_panel_oplus_boe_rm692e5_1080_2412_dsc_cmd.dtsi"
 #include "dsi-panel-oplus-ovaltine_boe_nt37705_1080_2412_dsc_cmd.dtsi"
 #include "dsi_panel_oplus_tianma_ab389_ili7838a_1080_2412_dsc_cmd.dtsi"
-#include "dsi-panel-oplus21606-nt37701b-1080-2412-dsc-cmd-udc.dtsi"
-#include "dsi-panel-oplus21605-nt37701a-1080-2412-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-senna-bc-nt37705-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-senna-bc-nt37705-1240-2772-dsc-cmd-04.dtsi"
-#include "dsi-panel-oplus-senna-bc-nt37705-06-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-senna-bc-nt37705-1240-2772-dsc-cmd-evt.dtsi"
-#include "dsi-panel-oplus-senna22623-nt37705-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-senna22623-nt37705-1240-2772-dsc-cmd-04.dtsi"
-#include "dsi-panel-oplus-senna22623-nt37705-06-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-senna22623-nt37705-1240-2772-dsc-cmd-evt.dtsi"
 #include "dsi-panel-oplus22803-nt37705-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-monroe-nt37705-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-monroe-boe-nt37705-1240-2772-dsc-cmd.dtsi"
-#include "dsi-panel-oplus-monroe-boe-nt37705-1240-2772-dsc-cmd_evt.dtsi"
 #include "dsi-panel-BF185-P-3-A0001-dsc-cmd.dtsi"
 
 &soc {
@@ -57,22 +43,8 @@
 			&dsi_oplus_samsung_s6e3xa2_1792_1920_dsc_cmd
 			&dsi_oplus_boe_rm692e5_1080_2412_dsc_cmd
 			&dsi_oplus_ovaltine_boe_nt37705_1080_2412_dsc_cmd
-			&dsi_panel_lvzhou_ab241_ili7838a_1080_2412_dsc_cmd
 			&dsi_panel_tianma_ab389_ili7838a_1080_2412_dsc_cmd
-			&dsi_oplus21606_nt37701b_1080_2412_dsc_cmd_udc
-			&dsi_oplus21605_nt37701a_1080_2412_dsc_cmd
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd_04
-			&dsi_oplus_senna_bc_nt37705_06_1240_2772_dsc_cmd
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd_evt
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd_04
-			&dsi_oplus_senna22623_nt37705_06_1240_2772_dsc_cmd
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd_evt
 			&dsi_oplus22803_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_boe_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_boe_nt37705_1240_2772_dsc_cmd_evt
 			&dsi_panel_BF185_P_3_A0001_dsc_cmd
 		>;
 		oplus,dsi-panel-secondary = <
@@ -92,20 +64,8 @@
 			&dsi_oplus_samsung_s6e3xa2_1792_1920_dsc_cmd
 			&dsi_oplus_boe_rm692e5_1080_2412_dsc_cmd
 			&dsi_oplus_ovaltine_boe_nt37705_1080_2412_dsc_cmd
-			&dsi_panel_lvzhou_ab241_ili7838a_1080_2412_dsc_cmd
 			&dsi_panel_tianma_ab389_ili7838a_1080_2412_dsc_cmd
-			&dsi_oplus21606_nt37701b_1080_2412_dsc_cmd_udc
-			&dsi_oplus21605_nt37701a_1080_2412_dsc_cmd
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd_evt
-			&dsi_oplus_senna_bc_nt37705_1240_2772_dsc_cmd_04
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd_04
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_senna22623_nt37705_1240_2772_dsc_cmd_evt
 			&dsi_oplus22803_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_boe_nt37705_1240_2772_dsc_cmd
-			&dsi_oplus_monroe_boe_nt37705_1240_2772_dsc_cmd_evt
 			&dsi_oplus_samsung_s6e3fac_1080_2120_dsc_cmd
 			&dsi_oplus_samsung_s6e3fac_1080_2120_dsc_cmd_wdte
 			&dsi_panel_BF185_P_3_A0001_dsc_cmd
@@ -177,100 +137,6 @@
 			qcom,supply-enable-load = <200000>;
 			qcom,supply-disable-load = <80>;
 			qcom,supply-post-on-sleep = <0>;
-		};
-	};
-	dsi_panel_oplus_optimization_pwr_supply_lvzhou: dsi_panel_oplus_optimization_pwr_supply_lvzhou {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <200000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <0>;
-		};
-
-		qcom,panel-supply-entry@1 {
-			reg = <1>;
-			qcom,supply-name = "vci";
-			qcom,supply-min-voltage = <3000000>;
-			qcom,supply-max-voltage = <3000000>;
-			qcom,supply-enable-load = <2000>;
-			qcom,supply-disable-load = <0>;
-			qcom,supply-post-on-sleep = <0>;
-		};
-
-		qcom,panel-supply-entry@4 {
-			reg = <4>;
-			qcom,supply-name = "extvdd";
-			qcom,supply-min-voltage = <1200000>;
-			qcom,supply-max-voltage = <1200000>;
-			qcom,supply-enable-load = <60700>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <10>;
-			qcom,supply-pre-off-sleep = <1>;
-			qcom,supply-post-off-sleep = <2>;
-		};
-	};
-	dsi_panel_oplus_optimization_pwr_supply_senna: dsi_panel_oplus_optimization_pwr_supply_senna {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <200000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <1>;
-		};
-
-		qcom,panel-supply-entry@1 {
-			reg = <1>;
-			qcom,supply-name = "extvdd";
-			qcom,supply-min-voltage = <1200000>;
-			qcom,supply-max-voltage = <1200000>;
-			qcom,supply-enable-load = <60700>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <1>;
-		};
-
-		qcom,panel-supply-entry@2 {
-			reg = <2>;
-			qcom,supply-name = "vci";
-			qcom,supply-min-voltage = <3000000>;
-			qcom,supply-max-voltage = <3000000>;
-			qcom,supply-enable-load = <2000>;
-			qcom,supply-disable-load = <0>;
-			qcom,supply-post-on-sleep = <1>;
-		};
-	};
-	dsi_panel_oplus_jennie_pwr_supply: dsi_panel_oplus_jennie_pwr_supply {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <200000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <0>;
-		};
-
-		qcom,panel-supply-entry@1 {
-			reg = <1>;
-			qcom,supply-name = "vci";
-			qcom,supply-min-voltage = <3000000>;
-			qcom,supply-max-voltage = <3000000>;
-			qcom,supply-enable-load = <2000>;
-			qcom,supply-disable-load = <0>;
-			qcom,supply-post-on-sleep = <10>;
 		};
 	};
 

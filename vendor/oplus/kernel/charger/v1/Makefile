@@ -35,7 +35,12 @@ subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/pmic/include
 endif
 
 ifeq ($(CONFIG_OPLUS_CHARGER_MTK6835T),y)
-subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+subdir-ccflags-y+= -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+else
+subdir-ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+endif
+
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 subdir-ccflags-y += -I$(srctree)/drivers/usb/mtu3
@@ -49,10 +54,6 @@ subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 endif
 
-ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
-endif
-
 ifeq (y, $(filter y, $(CONFIG_OPLUS_CHARGER_MTK6877) $(CONFIG_OPLUS_CHARGER_MTK6833)))
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/typec/tcpc/inc
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/include
@@ -63,7 +64,11 @@ ccflags-y += -I$(srctree)/include
 endif
 
 ifeq ($(CONFIG_OPLUS_CHARGER_MTK6769R),y)
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/typec/tcpc/inc
+else
+ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+endif
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/include
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/include/mt-plat
 ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/misc/mediatek/include/mt-plat/v1
@@ -71,8 +76,20 @@ ccflags-y += -I$(srctree)/../kernel_device_modules-6.6/drivers/power/supply
 ccflags-y += -I$(srctree)/include
 endif
 
-ifeq ($(CONFIG_OPLUS_AUDIO_SWITCH_GLINK),y)
+ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+else
 ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+endif
+endif
+
+ifeq ($(CONFIG_OPLUS_AUDIO_SWITCH_GLINK),y)
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+else
+ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+endif
 oplus_chg-y += oplus_chg_audio_switch.o
 endif
 
@@ -397,11 +414,19 @@ obj-y	   += oplus_pps_ops_manager.o
 obj-y      += voocphy/
 
 ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc/
+else
+ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc/
+endif
 endif
 
 ifeq ($(CONFIG_OPLUS_AUDIO_SWITCH_GLINK),y)
-ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc/
+else
+ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc/
+endif
 obj-y   += oplus_chg_audio_switch.o
 endif
 

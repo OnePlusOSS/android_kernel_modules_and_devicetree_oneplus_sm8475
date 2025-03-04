@@ -37,6 +37,7 @@
 #include "../oplus_gauge.h"
 #include "../oplus_charger.h"
 #include "oplus_sc8517.h"
+#include "../oplus_chg_module.h"
 
 static struct oplus_voocphy_manager *oplus_voocphy_mg = NULL;
 static struct mutex i2c_rw_lock;
@@ -324,24 +325,16 @@ static void sc8517_track_i2c_err_load_trigger_work(struct work_struct *work)
 static int sc8517_dump_reg_info(struct oplus_voocphy_manager *chip,
 				char *dump_info, int len)
 {
-	int ret;
-	u8 data[6] = {0};
 	int index = 0;
 
-	if(!chip || !dump_info)
+	if (!chip || !dump_info)
 		return 0;
 
-	ret = sc8517_read_i2c_block(chip->client, SC8517_REG_09, 6, data);
-	if (ret < 0) {
-		pr_err("read SC8517_REG_09 6 bytes failed\n");
-		return -EINVAL;
-	}
-
 	index += snprintf(&(dump_info[index]), len - index,
-			"REG_09~REG_0E:[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
-			data[0], data[1], data[2], data[3], data[4], data[5]);
-
-	return 0;
+			  "REG_09~REG_0E:[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
+			  chip->int_column_pre[0], chip->int_column_pre[1], chip->int_column_pre[2],
+			  chip->int_column_pre[3], chip->int_column_pre[4], chip->int_column_pre[5]);
+	return index;
 }
 
 static int sc8517_track_upload_cp_err_info(struct oplus_voocphy_manager *chip,
@@ -1527,6 +1520,9 @@ void sc8517_subsys_exit(void)
 {
 	i2c_del_driver(&sc8517_charger_driver);
 }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+oplus_chg_module_register(sc8517_subsys);
+#endif
 #endif /*LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)*/
 
 //module_i2c_driver(sc8517_charger_driver);

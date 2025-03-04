@@ -44,6 +44,7 @@
 #define PPS_START_DEF_CURR_MA		1500
 #define PPS_START_DEF_VOL_MV		5500
 #define PPS_MONITOR_TIME_MS		500
+#define PD_SVOOC_WAIT_MS		300
 #define OPLUS_FIXED_PDO_CURR_MA		3000
 #define OPLUS_FIXED_PDO_DEF_VOL		5000
 #define OPLUS_PPS_UW_MV_TRANSFORM	1000
@@ -285,6 +286,7 @@ struct oplus_pps {
 	struct votable *pps_disable_votable;
 	struct votable *pps_not_allow_votable;
 	struct votable *wired_suspend_votable;
+	struct votable *chg_disable_votable;
 	struct votable *pps_boot_votable;
 	struct votable *wired_icl_votable;
 
@@ -309,6 +311,7 @@ struct oplus_pps {
 	struct mutex read_lock;
 	struct mutex cmd_data_lock;
 	struct completion cmd_ack;
+	struct completion pd_svooc_wait_ack;
 	struct pps_dev_cmd cmd;
 	bool cmd_data_ok;
 
@@ -424,6 +427,13 @@ static const struct current_level g_pps_cp_current_table[] = {
 	{ 22, 15000 }, { 23, 16000 }, { 24, 17000 }, { 25, 18000 }, { 26, 19000 }, { 27, 20000 },
 };
 
+__maybe_unused static bool
+is_disable_charger_vatable_available(struct oplus_pps *chip)
+{
+	if (!chip->chg_disable_votable)
+		chip->chg_disable_votable = find_votable("WIRED_CHARGING_DISABLE");
+	return !!chip->chg_disable_votable;
+}
 
 __maybe_unused static bool
 is_wired_suspend_votable_available(struct oplus_pps *chip)
@@ -1381,8 +1391,15 @@ static void oplus_pps_switch_check_work(struct work_struct *work)
 		return;
 	}
 
+	if (!chip->pdsvooc_id_adapter) {
+		reinit_completion(&chip->pd_svooc_wait_ack);
+		rc = wait_for_completion_timeout(&chip->pd_svooc_wait_ack,
+			msecs_to_jiffies(PD_SVOOC_WAIT_MS));
+		if (rc)
+			chg_info("svid wait timeout\n");
+	}
 	rc = oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_REAL_CHG_TYPE,
-				&data, false);
+				&data, true);
 	if (rc < 0)
 		wired_type = OPLUS_CHG_USB_TYPE_UNKNOWN;
 	else
@@ -3148,8 +3165,11 @@ exit:
 			oplus_cpa_request(chip->cpa_topic, CHG_PROTOCOL_PD);
 	} else {
 		oplus_pps_soft_exit(chip);
-		if (switch_to_ffc)
+		if (switch_to_ffc) {
+			if (is_disable_charger_vatable_available(chip))
+				vote(chip->chg_disable_votable, FASTCHG_VOTER, true, 1, false);
 			oplus_comm_switch_ffc(chip->comm_topic);
+		}
 		if (chip->pps_fastchg_batt_temp_status == PPS_BAT_TEMP_SWITCH_CURVE) {
 			chg_info("pps switch_curve, need retry start pps\n");
 			chip->pps_fastchg_batt_temp_status = PPS_BAT_TEMP_NATURAL;
@@ -3264,6 +3284,8 @@ static void oplus_pps_wired_online_work(struct work_struct *work)
 			vote(chip->wired_icl_votable, BTB_TEMP_OVER_VOTER,
 			     false, 0, true);
 		chip->wired_type = OPLUS_CHG_USB_TYPE_UNKNOWN;
+		chip->pdsvooc_id_adapter = false;
+		complete_all(&chip->pd_svooc_wait_ack);
 	} else {
 		chip->retention_state_ready = false;
 		if (READ_ONCE(chip->disconnect_change) && !chip->pps_online &&
@@ -3555,6 +3577,8 @@ static void oplus_pps_wired_subs_callback(struct mms_subscribe *subs,
 			oplus_mms_get_item_data(chip->wired_topic, id, &data,
 						false);
 			chip->pdsvooc_id_adapter = !!data.intval;
+			if (chip->pdsvooc_id_adapter)
+				complete(&chip->pd_svooc_wait_ack);
 			break;
 		case WIRED_ITEM_PRESENT:
 			oplus_mms_get_item_data(chip->wired_topic, id, &data, false);
@@ -4660,6 +4684,13 @@ static int oplus_pps_parse_charge_strategy(struct oplus_pps *chip)
 		 low_curr_temp_tmp[0], low_curr_temp_tmp[1],
 		 low_curr_temp_tmp[2], low_curr_temp_tmp[3]);
 
+	rc = of_property_read_u32(node, "oplus,pps_low_temp", &chip->limits.pps_low_temp);
+	if (rc < 0) {
+		chip->limits.pps_low_temp = rang_temp_tmp[0];
+	} else {
+		chip->limits.pps_batt_over_low_temp = chip->limits.pps_low_temp - PPS_COLD_TEMP_RANGE_THD;
+		chg_info("oplus,pps_low_temp is %d %d\n", chip->limits.pps_low_temp, chip->limits.pps_batt_over_low_temp);
+	}
 	return rc;
 }
 
@@ -5052,6 +5083,7 @@ static int oplus_pps_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->gauge_update_work, oplus_pps_gauge_update_work);
 	INIT_WORK(&chip->close_cp_work, oplus_pps_close_cp_work);
 	INIT_WORK(&chip->retention_disconnect_work, oplus_pps_retention_disconnect_work);
+	init_completion(&chip->pd_svooc_wait_ack);
 
 	rc = oplus_pps_init_imp_node(chip);
 	if (rc < 0)

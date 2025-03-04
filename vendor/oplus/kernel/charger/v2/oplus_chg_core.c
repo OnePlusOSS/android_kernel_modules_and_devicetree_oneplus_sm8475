@@ -308,6 +308,30 @@ unsigned int oplus_chg_get_nvid_support_flags(void)
 	return nvid_support_flags;
 }
 
+bool oplus_chg_get_common_charge_icl_support_flags(void)
+{
+	struct device_node *node;
+	static int common_charge_icl_support = -EINVAL;
+
+	if (common_charge_icl_support == -EINVAL) {
+		node = of_find_node_by_path("/soc/oplus_chg_core");
+		if (node != NULL) {
+			if (!of_property_read_bool(node, "oplus,common-charge-icl-support")) {
+				common_charge_icl_support = 0;
+				chg_err("get oplus,vooc_spec_version property error\n");
+			} else {
+				common_charge_icl_support = 1;
+				chg_info("common_charge_icl_support = %d\n", common_charge_icl_support);
+			}
+		} else {
+			chg_err("not found oplus_chg_core node\n");
+			common_charge_icl_support = 0;
+		}
+	}
+
+	return ((common_charge_icl_support == 1) ? true : false);
+}
+
 static struct oplus_chg_module *oplus_chg_find_first_module(void)
 {
 	size_t start_addr = (size_t)&__oplus_chg_module_start;

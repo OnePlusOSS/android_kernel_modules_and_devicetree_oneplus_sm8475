@@ -77,6 +77,7 @@
 #define OPLUS_MIN_PDO_VOL	5000
 #define OPLUS_MIN_PDO_CUR	3000
 #define TEMP_25C 250
+#define OTG_VBUS_CURRENT_LIMIT_DEFAULT	1100000
 
 int oplus_mtk_hv_flashled_plug(int plug);
 int oplus_chg_get_mmi_status(void);
@@ -1179,6 +1180,7 @@ int charger_manager_get_charger_temperature(struct charger_consumer *consumer,
 	}
 	return -EBUSY;
 }
+EXPORT_SYMBOL(charger_manager_get_charger_temperature);
 
 int charger_manager_force_charging_current(struct charger_consumer *consumer,
 	int idx, int charging_current)
@@ -2830,31 +2832,27 @@ static int charger_pm_event(struct notifier_block *notifier,
 {
 	ktime_t ktime_now;
 	struct timespec64 now;
-	struct mtk_charger *info;
-
-	info = container_of(notifier,
-		struct mtk_charger, pm_notifier);
 
 	switch (pm_event) {
 	case PM_SUSPEND_PREPARE:
-		info->is_suspend = true;
+		pinfo->is_suspend = true;
 		chr_debug("%s: enter PM_SUSPEND_PREPARE\n", __func__);
 		break;
 	case PM_POST_SUSPEND:
-		info->is_suspend = false;
+		pinfo->is_suspend = false;
 		chr_debug("%s: enter PM_POST_SUSPEND\n", __func__);
 		ktime_now = ktime_get_boottime();
 		now = ktime_to_timespec64(ktime_now);
 
-		if (timespec64_compare(&now, &info->endtime) >= 0 &&
-			info->endtime.tv_sec != 0 &&
-			info->endtime.tv_nsec != 0) {
+		if (timespec64_compare(&now, &pinfo->endtime) >= 0 &&
+			pinfo->endtime.tv_sec != 0 &&
+			pinfo->endtime.tv_nsec != 0) {
 			chr_err("%s: alarm timeout, wake up charger\n",
 				__func__);
-			__pm_relax(info->charger_wakelock);
-			info->endtime.tv_sec = 0;
-			info->endtime.tv_nsec = 0;
-			_wake_up_charger(info);
+			__pm_relax(pinfo->charger_wakelock);
+			pinfo->endtime.tv_sec = 0;
+			pinfo->endtime.tv_nsec = 0;
+			_wake_up_charger(pinfo);
 		}
 		break;
 	default:
@@ -2872,19 +2870,17 @@ static struct notifier_block charger_pm_notifier_func = {
 static enum alarmtimer_restart
 	mtk_charger_alarm_timer_func(struct alarm *alarm, ktime_t now)
 {
-	struct mtk_charger *info =
-	container_of(alarm, struct mtk_charger, charger_timer);
 	unsigned long flags;
 
-	if (info->is_suspend == false) {
+	if (pinfo->is_suspend == false) {
 		chr_err("%s: not suspend, wake up charger\n", __func__);
-		_wake_up_charger(info);
+		_wake_up_charger(pinfo);
 	} else {
 		chr_err("%s: alarm timer timeout\n", __func__);
-		spin_lock_irqsave(&info->slock, flags);
-		if (!info->charger_wakelock->active)
-			__pm_stay_awake(info->charger_wakelock);
-		spin_unlock_irqrestore(&info->slock, flags);
+		spin_lock_irqsave(&pinfo->slock, flags);
+		if (!pinfo->charger_wakelock->active)
+			__pm_stay_awake(pinfo->charger_wakelock);
+		spin_unlock_irqrestore(&pinfo->slock, flags);
 	}
 
 	return ALARMTIMER_NORESTART;
@@ -3849,6 +3845,12 @@ static void mtk_charger_parse_dt(struct mtk_charger *info,
 	info->support_ntc_01c_precision = of_property_read_bool(np, "qcom,support_ntc_01c_precision");
 	chr_debug("%s: support_ntc_01c_precision: %d\n",
 		__func__, info->support_ntc_01c_precision);
+
+	if (of_property_read_u32(np, "oplus,otg_current_limit", &val)>= 0)
+		info->otg_current_limit = val;
+	else
+		info->otg_current_limit = OTG_VBUS_CURRENT_LIMIT_DEFAULT;
+
 #endif
 }
 
@@ -8448,8 +8450,9 @@ int oplus_pps_pd_exit(void)
 int oplus_chg_get_charger_subtype(void)
 {
 	int charg_subtype = CHARGER_SUBTYPE_DEFAULT;
+	struct oplus_chg_chip *chip = g_oplus_chip;
 
-	if (!pinfo)
+	if (!pinfo || !chip)
 		return CHARGER_SUBTYPE_DEFAULT;
 
 	if (!oplus_chg_is_support_qcpd())
@@ -8462,12 +8465,19 @@ int oplus_chg_get_charger_subtype(void)
 
 	if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK ||
 		pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_PD30) {
-		return CHARGER_SUBTYPE_PD;
+		if (chip->pd_svooc || mt_power_supply_type_check() == POWER_SUPPLY_TYPE_USB_PD_SDP)
+			return CHARGER_SUBTYPE_DEFAULT;
+		else
+			return CHARGER_SUBTYPE_PD;
 	} else if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO) {
 		if (oplus_pps_check_third_pps_support())
 			return CHARGER_SUBTYPE_PPS;
-		else
-			return CHARGER_SUBTYPE_PD;
+		else {
+			if (chip->pd_svooc || mt_power_supply_type_check() == POWER_SUPPLY_TYPE_USB_PD_SDP)
+				return CHARGER_SUBTYPE_DEFAULT;
+			else
+				return CHARGER_SUBTYPE_PD;
+		}
 	}
 
 #ifdef CONFIG_OPLUS_HVDCP_SUPPORT
@@ -9378,7 +9388,6 @@ void oplus_wd0_detect_work(struct work_struct *work)
 	/*schedule_delayed_work(&wd0_detect_work, msecs_to_jiffies(CCDETECT_DELAY_MS));*/
 }
 
-#define OTG_VBUS_CURRENT_LIMIT	1800000
 struct delayed_work wd0_detect_work;
 static int pd_tcp_notifier_call(struct notifier_block *nb,
 				unsigned long event, void *data)
@@ -9418,7 +9427,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 			} else {
 				charger_dev_enable_otg(primary_charger, true);
 				charger_dev_set_boost_current_limit(primary_charger,
-						OTG_VBUS_CURRENT_LIMIT);
+						pinfo->otg_current_limit);
 			}
 		} else {
 			/* Modify for OTG */

@@ -1398,6 +1398,26 @@ static int oplus_voocphy_init_vooc(struct oplus_voocphy_manager *chip)
 	return rc;
 }
 
+static int oplus_voocphy_upload_cp_error(struct oplus_voocphy_manager *chip, int err_type)
+{
+	int rc = 0;
+
+	if (!chip) {
+		voocphy_err("oplus_voocphy_manager chip null\n");
+		return rc;
+	}
+
+	if (chip->ops && chip->ops->upload_cp_error) {
+		rc = chip->ops->upload_cp_error(chip, err_type);
+		if (rc < 0) {
+			voocphy_info("upload cp error failed, rc=%d.\n", rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
 static int oplus_voocphy_print_dbg_info(struct oplus_voocphy_manager *chip)
 {
 	int i = 0;
@@ -1405,6 +1425,8 @@ static int oplus_voocphy_print_dbg_info(struct oplus_voocphy_manager *chip)
 	bool fg_dump_reg = false;
 	bool fg_send_info = false;
 	int report_flag = 0;
+	int error_type = 0;
+	int rc = 0;
 
 	if (chip->ops && chip->ops->check_cp_int_happened &&
 	    chip->ops->check_cp_int_happened(chip, &fg_dump_reg, &fg_send_info))
@@ -1454,6 +1476,15 @@ chg_exception:
 		}
 		if (fg_send_info) {
 			report_flag |= (1 << 4);
+			if (chip->ops && chip->ops->get_cp_error_type) {
+				rc = chip->ops->get_cp_error_type(chip, &error_type);
+				if (0 == rc) {
+					voocphy_err("upload cp err, error_type = %d\n", error_type);
+					oplus_voocphy_upload_cp_error(chip, error_type);
+				} else {
+					voocphy_err("get cp err type failed, rc = %d\n", rc);
+				}
+			}
 		}
 	}
 
@@ -4890,13 +4921,13 @@ static int oplus_voocphy_ap_event_handle(struct device *dev, unsigned long data)
 	return status;
 }
 
-static void oplus_voocphy_set_chg_pmid2out(bool enable)
+static void oplus_voocphy_set_chg_pmid2out(bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->ops && g_voocphy_chip->ops->set_chg_pmid2out) {
-		g_voocphy_chip->ops->set_chg_pmid2out(enable);
+		g_voocphy_chip->ops->set_chg_pmid2out(enable, reason);
 	} else {
 		return;
 	}
@@ -4914,13 +4945,13 @@ static bool oplus_voocphy_get_chg_pmid2out(void)
 	}
 }
 
-static void oplus_voocphy_set_slave_chg_pmid2out(bool enable)
+static void oplus_voocphy_set_slave_chg_pmid2out(bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->slave_ops && g_voocphy_chip->slave_ops->set_chg_pmid2out) {
-		g_voocphy_chip->slave_ops->set_chg_pmid2out(enable);
+		g_voocphy_chip->slave_ops->set_chg_pmid2out(enable, reason);
 	} else {
 		return;
 	}
@@ -5055,14 +5086,20 @@ static int oplus_voocphy_curr_event_handle(struct device *dev, unsigned long dat
 			pmid2out_status = oplus_voocphy_get_chg_pmid2out();
 			voocphy_err("pmid2out master = %d, chip->master_cp_ichg = %d\n", pmid2out_status, chip->master_cp_ichg);
 			if (pmid2out_status == false && chip->master_cp_ichg > 500) {
-				voocphy_err("IBUS > 500mA set 0x5 to 0x33!\n");
-				oplus_voocphy_set_chg_pmid2out(true);
+				voocphy_err("IBUS > 500mA set 0x5 !\n");
+				if (chip->adapter_type == ADAPTER_SVOOC)
+					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_SVOOC);
+				else
+					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_VOOC);
 			}
 			pmid2out_status = oplus_voocphy_get_slave_chg_pmid2out();
 			voocphy_err("pmid2out slave = %d, chip->cp_ichg = %d\n", pmid2out_status, chip->cp_ichg);
 			if (pmid2out_status == false && (chip->cp_ichg - chip->master_cp_ichg)> 500) {
-				voocphy_err("slave cp IBUS > 500mA set 0x5 to 0x33!\n");
-				oplus_voocphy_set_slave_chg_pmid2out(true);
+				voocphy_err("slave cp IBUS > 500mA set 0x5 !\n");
+				if (chip->adapter_type == ADAPTER_SVOOC)
+					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_SVOOC);
+				else
+					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_VOOC);
 			}
 		}
 	}

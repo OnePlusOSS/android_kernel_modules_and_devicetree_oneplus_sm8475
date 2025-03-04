@@ -180,3 +180,42 @@ static int oplus_get_audio_switch_status(void)
 #endif
 }
 
+__maybe_unused static int oplus_check_audio_switch_ready(void)
+{
+#if (IS_ENABLED(CONFIG_TCPC_CLASS) || IS_ENABLED(CONFIG_OPLUS_AUDIO_SWITCH_GLINK))
+	int ret = 0;
+	int wait = 0;
+	unsigned long switch_cnt = 0;
+
+#if IS_ENABLED(CONFIG_OPLUS_AUDIO_SWITCH_GLINK)
+	switch_cnt = g_audio_switch.audio_switch_ack_cnt;
+	ret = raw_notifier_call_chain(&chg_glink_notifier, TYPEC_AUDIO_SWITCH_STATE_AUDIO, NULL);
+	if (ret != TYPEC_AUDIO_SWITCH_STATE_INVALID_PARAM)
+		oplus_get_audio_switch_callback(ret);
+#else
+	struct tcpc_device *tcpc = tcpc_dev_get_by_name("type_c_port0");
+	if (tcpc == NULL) {
+		chg_err("get type_c_port0 fail\n");
+		return -EFAULT;
+	}
+	switch_cnt = g_audio_switch.audio_switch_ack_cnt;
+	ret = tcpci_notify_switch_get_state(tcpc, &oplus_get_audio_switch_callback);
+#endif
+	if (g_audio_switch.audio_switch_ack_cnt > 0) {
+		chg_info("get the audio_state = %d, wait = %d ms, audio_switch_ack_cnt = %ld!\n",
+				wait, g_audio_switch.audio_switch_state, g_audio_switch.audio_switch_ack_cnt);
+		ret = g_audio_switch.audio_switch_state;
+	} else {
+		ret = -EFAULT;
+	}
+
+	return ret;
+#else
+#if IS_ENABLED(CONFIG_SND_SOC_OPLUS_TYPEC_SWITCH)
+	return typec_switch_status0();
+#else
+	return 0; /*TODO: not realized now.*/
+#endif
+#endif
+}
+

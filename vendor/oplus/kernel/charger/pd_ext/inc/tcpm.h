@@ -1,14 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (C) 2020 Richtek Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * Copyright (c) 2020 MediaTek Inc.
  */
 
 #ifndef TCPM_H_
@@ -144,10 +136,15 @@ enum {
 	TCP_NOTIFY_STATUS,
 	TCP_NOTIFY_REQUEST_BAT_INFO,
 	TCP_NOTIFY_WD_STATUS,
+	TCP_NOTIFY_FOD_STATUS,
 	TCP_NOTIFY_CABLE_TYPE,
-	TCP_NOTIFY_MISC_END = TCP_NOTIFY_CABLE_TYPE,
-
-#ifdef OPLUS_FEATURE_CHG_BASIC
+	TCP_NOTIFY_TYPEC_OTP,
+	TCP_NOTIFY_PLUG_OUT,
+#ifndef OPLUS_FEATURE_CHG_BASIC
+/* oplus add for uvlo */
+	TCP_NOTIFY_WD0_STATE,
+	TCP_NOTIFY_MISC_END = TCP_NOTIFY_WD0_STATE,
+#else
 	TCP_NOTIFY_SWITCH_GET_STATE,
 	TCP_NOTIFY_SWITCH_SET_STATE,
 	TCP_NOTIFY_WD0_STATE,
@@ -155,6 +152,7 @@ enum {
 	TCP_NOTIFY_CHRDET_STATE,
 	TCP_NOTIFY_BC12_COMPLETE_STATE,
 	TCP_NOTIFY_HVDCP_DETECT_DN,
+	TCP_NOTIFY_MISC_END = TCP_NOTIFY_HVDCP_DETECT_DN,
 #endif
 };
 
@@ -303,6 +301,20 @@ struct tcp_ny_wd_status {
 	bool water_detected;
 };
 
+enum tcpc_fod_status {
+	TCPC_FOD_NONE = 0,
+	TCPC_FOD_NORMAL,
+	TCPC_FOD_OV,
+	TCPC_FOD_DISCHG_FAIL,
+	TCPC_FOD_LR,
+	TCPC_FOD_HR,
+	TCPC_FOD_STAT_MAX,
+};
+
+struct tcp_ny_fod_status {
+	enum tcpc_fod_status fod;
+};
+
 enum tcpc_cable_type {
 	TCPC_CABLE_TYPE_NONE = 0,
 	TCPC_CABLE_TYPE_A2C,
@@ -349,7 +361,6 @@ struct tcp_ny_bc12_complete_state {
 struct tcp_ny_hvdcp_detect_dn {
 	bool hvdcp_detect_dn;
 };
-
 #endif
 
 struct tcp_notify {
@@ -369,15 +380,17 @@ struct tcp_notify {
 		struct tcp_ny_status status_msg;
 		struct tcp_ny_request_bat request_bat;
 		struct tcp_ny_wd_status wd_status;
+		struct tcp_ny_fod_status fod_status;
 		struct tcp_ny_cable_type cable_type;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 		struct tcp_ny_typec_otp typec_otp;
 		struct tcp_ny_wd0_state wd0_state;
+#ifdef OPLUS_FEATURE_CHG_BASIC
+/* oplus add for uvlo */
+		struct tcp_ny_switch_set_status switch_set_status;
+		struct tcp_ny_switch_get_status switch_get_status;
 		struct tcp_ny_chrdet_state chrdet_state;
   		struct tcp_ny_bc12_complete_state bc12_complete_state;
   		struct tcp_ny_hvdcp_detect_dn hvdcp_detect;
-		struct tcp_ny_switch_set_status switch_set_status;
-		struct tcp_ny_switch_get_status switch_get_status;
 #endif
 	};
 };
@@ -906,6 +919,8 @@ extern int tcpm_inquire_typec_remote_rp_curr(struct tcpc_device *tcpc);
 extern bool tcpm_inquire_cc_polarity(struct tcpc_device *tcpc);
 extern uint8_t tcpm_inquire_typec_attach_state(struct tcpc_device *tcpc);
 extern uint8_t tcpm_inquire_typec_role(struct tcpc_device *tcpc);
+extern uint8_t tcpm_inquire_typec_role_def(struct tcpc_device *tcpc);
+extern bool tcpm_is_floating_ground(struct tcpc_device *tcpc);
 extern uint8_t tcpm_inquire_typec_local_rp(struct tcpc_device *tcpc);
 
 extern int tcpm_typec_set_usb_sink_curr(
@@ -966,6 +981,11 @@ extern uint32_t tcpm_inquire_dpm_caps(
 extern void tcpm_set_dpm_caps(
 	struct tcpc_device *tcpc, uint32_t caps);
 
+/* Request TCPM to send PD Request */
+
+extern int tcpm_put_tcp_dpm_event(
+	struct tcpc_device *tcpc, struct tcp_dpm_event *event);
+
 /* TCPM DPM PD I/F */
 
 extern int tcpm_inquire_pd_contract(
@@ -1018,6 +1038,7 @@ extern int tcpm_dpm_pd_request_ex(struct tcpc_device *tcpc,
 	const struct tcp_dpm_event_cb_data *data);
 extern int tcpm_dpm_pd_bist_cm2(struct tcpc_device *tcpc,
 	const struct tcp_dpm_event_cb_data *data);
+extern bool tcpm_is_comm_capable(struct tcpc_device *tcpc);
 
 #ifdef CONFIG_USB_PD_REV30
 extern int tcpm_dpm_pd_get_source_cap_ext(struct tcpc_device *tcpc,

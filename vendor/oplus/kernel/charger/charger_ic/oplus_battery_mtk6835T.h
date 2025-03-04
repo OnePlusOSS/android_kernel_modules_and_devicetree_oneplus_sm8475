@@ -25,7 +25,11 @@
 #include "../op_wlchg_v2/hal/oplus_chg_ic.h"
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+#ifdef CONFIG_OPLUS_PD_EXT_SUPPORT
+#include "../../../../kernel-5.15/drivers/power/oplus/pd_ext/inc/tcpm.h"
+#else
 #include "../../../../kernel-5.15/drivers/misc/mediatek/typec/tcpc/inc/tcpm.h"
+#endif
 #endif
 #endif
 #define RT9471D 0

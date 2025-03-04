@@ -7,6 +7,7 @@
 #define __OPLUS_HAL_GAUGE_MT6375_H__
 
 #include <oplus_chg_ic.h>
+#include <linux/workqueue.h>
 
 #define OPLUS_USE_FAST_CHARGER
 #define DRIVER_VERSION			"1.1.0"
@@ -47,9 +48,30 @@
 #define U_DELAY_5_MS	5000
 #define M_DELAY_10_S	10000
 
+#define OPLUS_CHG_TRACK_MTK_CALI_INFO_LEN	300
+
+#ifndef OPLUS_FEATURE_GAUGE_CALI_TRACK /*define in mtk_battery.h*/
+struct gauge_track_cali_info_s{};
+enum oplus_gauge_track_type {
+	GAUGE_TRACK_CALI_FLAG_ZCV = 1,
+	GAUGE_TRACK_CALI_FLAG_AGING = 2,
+	GAUGE_TRACK_CALI_FLAG_PLUGOUT = 4,
+	GAUGE_TRACK_CALI_FLAG_CHG_FULL = 5
+};
+#endif
+
 struct chip_mt6375_gauge{
 	struct device *dev;
 	struct oplus_chg_ic_dev *ic_dev;
+
+	struct oplus_mms *wired_topic;
+	struct oplus_mms *comm_topic;
+
+	struct mms_subscribe *wired_subs;
+	struct mms_subscribe *comm_subs;
+
+	struct work_struct gauge_cali_track_by_plug_work;
+	struct work_struct gauge_cali_track_by_full_work;
 
 	atomic_t locked;
 
@@ -97,6 +119,8 @@ struct chip_mt6375_gauge{
 	bool modify_soc_smooth;
 	bool modify_soc_calibration;
 
+	bool wired_online;
+
 	bool battery_full_param; /* only for wite battery full param in guage dirver probe on 7250 platform */
 	int sha1_key_index;
 	struct delayed_work afi_update;
@@ -119,6 +143,7 @@ struct chip_mt6375_gauge{
 	atomic_t i2c_err_count;
 	bool i2c_err;
 	bool mtk_gauge_power_sel_support;
+	bool mtk_gauge_cali_track_support;
 	struct file_operations *authenticate_ops;
 
 	struct delayed_work check_iic_recover;

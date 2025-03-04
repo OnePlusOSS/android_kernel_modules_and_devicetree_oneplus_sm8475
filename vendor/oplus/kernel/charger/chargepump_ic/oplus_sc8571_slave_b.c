@@ -592,9 +592,12 @@ static int sc8571_slave_b_parse_dt(struct chip_sc8571 *chip)
 	return 0;
 }
 
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int sc8571_slave_b_probe(struct i2c_client *client)
+#else
 static int sc8571_slave_b_probe(struct i2c_client *client,
                                 const struct i2c_device_id *id)
+#endif
 {
 	struct chip_sc8571 *chip;
 

@@ -411,10 +411,28 @@ static void oplus_retention_online_check_work(struct work_struct *work)
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct oplus_retention_charge *chip = container_of(dwork, struct oplus_retention_charge,
 						   online_check_work);
+	struct mms_msg *msg;
+	bool connect_status;
+	int rc;
 
-	chip->connect_status = oplus_state_retention(chip->retention_topic);
-	if (chip->cc_detect == CC_DETECT_NOTPLUG || chip->detect_flag == CC_DETECT_NOTPLUG)
-		chip->connect_status = 0;
+	connect_status = oplus_state_retention(chip->retention_topic);
+	if (chip->cc_detect == CC_DETECT_NOTPLUG || chip->detect_flag == CC_DETECT_NOTPLUG) {
+		connect_status = 0;
+
+		if (chip->connect_status == connect_status)
+			return;
+		chip->connect_status = connect_status;
+		msg = oplus_mms_alloc_msg(MSG_TYPE_ITEM, MSG_PRIO_HIGH, RETENTION_ITEM_CONNECT_STATUS);
+		if (msg == NULL) {
+			chg_err("alloc msg error\n");
+			return;
+		}
+		rc = oplus_mms_publish_msg_sync(chip->retention_topic, msg);
+		if (rc < 0) {
+			chg_err("publish retention connect status msg error, rc=%d\n", rc);
+			kfree(msg);
+		}
+	}
 }
 
 static void oplus_retention_wired_type_change_work(struct work_struct *work)
@@ -422,6 +440,23 @@ static void oplus_retention_wired_type_change_work(struct work_struct *work)
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct oplus_retention_charge *chip = container_of(dwork, struct oplus_retention_charge,
 						   wired_type_change_work);
+	struct mms_msg *msg;
+	int rc;
+
+	if (chip->wired_type == OPLUS_CHG_USB_TYPE_PD_SDP || chip->wired_type == OPLUS_CHG_USB_TYPE_SDP ||
+		chip->wired_type == OPLUS_CHG_USB_TYPE_CDP) {
+		chip->connect_status = 0;
+		msg = oplus_mms_alloc_msg(MSG_TYPE_ITEM, MSG_PRIO_HIGH, RETENTION_ITEM_CONNECT_STATUS);
+		if (msg == NULL) {
+			chg_err("alloc msg error\n");
+		} else {
+			rc = oplus_mms_publish_msg_sync(chip->retention_topic, msg);
+			if (rc < 0) {
+				chg_err("publish retention connect status msg error, rc=%d\n", rc);
+				kfree(msg);
+			}
+		}
+	}
 
 	if (!chip->connect_status)
 		chip->pre_cpa_current_type = chip->cpa_current_type;
@@ -448,7 +483,7 @@ static void oplus_retention_present_check_work(struct work_struct *work)
 	int ret = 0;
 
 	oplus_state_retention_notify(chip->retention_topic, chip->irq_plugin);
-	chip->cc_detect = oplus_wired_get_hw_detect();
+	chip->cc_detect = oplus_wired_get_hw_detect_recheck();
 	chip->detect_flag = chip->cc_detect;
 	schedule_delayed_work(&chip->update_work, 0);
 	chip->connect_status_flag = oplus_state_retention(chip->retention_topic);

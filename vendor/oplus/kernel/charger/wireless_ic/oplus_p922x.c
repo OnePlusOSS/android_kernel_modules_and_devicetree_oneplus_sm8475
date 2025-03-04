@@ -175,7 +175,7 @@ static int p922x_test_charging_status(void)
 		return -1;
 	}
 
-	chg_err("<~WPC~>[-TEST-]charging time: %ds\n", now_seconds - records_seconds);
+	chg_err("<~WPC~>[-TEST-]charging time: %lds\n", now_seconds - records_seconds);
 	if((now_seconds - records_seconds) >  270) {   //3min
 		return 4;
 	} if((now_seconds - records_seconds) >  180) {   //3min
@@ -5807,14 +5807,18 @@ static ssize_t proc_wireless_current_out_write(struct file *file, const char __u
 	char cur_string[8] = {0};
 	int cur = 0;
 	int len = count < 8 ? count : 8;
+	int rc;
 
 	if (p922x_chip == NULL) {
 		chg_err("%s: p922x_chip is not ready\n", __func__);
 		return -ENODEV;
 	}
 
-	copy_from_user(cur_string, buf, len);
-	kstrtoint(cur_string, 0, &cur);
+	if (copy_from_user(cur_string, buf, len)) {
+		chg_err("wireless_cur_out_write error.\n");
+		return -EFAULT;
+	}
+	rc = kstrtoint(cur_string, 0, &cur);
 	chg_err("set current: cur_string = %s, cur = %d.", cur_string, cur);
 	p922x_chip->p922x_chg_status.iout_stated_current = cur;
 
@@ -5915,7 +5919,8 @@ static ssize_t proc_wireless_rx_voltage_read(struct file *file,
 	len = snprintf(vol_string, 8, "%d",
 		       p922x_chip->p922x_chg_status.charge_voltage);
 
-	copy_to_user(buf, vol_string, len);
+	if (copy_to_user(buf, vol_string, len))
+		return -EFAULT;
 
 	return 0;
 }
@@ -5926,14 +5931,18 @@ static ssize_t proc_wireless_rx_voltage_write(struct file *file,
 	char vol_string[8] = {0};
 	int vol = 0;
 	int len = count < 8 ? count : 8;
+	int rc;
 
 	if (p922x_chip == NULL) {
 		chg_err("%s: p922x_chip is not ready\n", __func__);
 		return -ENODEV;
 	}
 
-	copy_from_user(vol_string, buf, len);
-	kstrtoint(vol_string, 0, &vol);
+	if (copy_from_user(vol_string, buf, len)) {
+		chg_err("wireless_rx_volt_write error.\n");
+		return -EFAULT;
+	}
+	rc = kstrtoint(vol_string, 0, &vol);
 	chg_err("set voltage: vol_string = %s, vol = %d.", vol_string, vol);
 	p922x_set_rx_charge_voltage(p922x_chip, vol);
 
@@ -5990,7 +5999,7 @@ static ssize_t proc_wireless_tx_write(struct file *file, const char __user *buf,
 {
 	char buffer[5] = { 0 };
 	struct oplus_p922x_ic *chip = p922x_chip;
-	int val;
+	int val, rc;
 
 	if (chip == NULL) {
 		chg_err("%s: p922x driver is not ready\n", __func__);
@@ -6012,7 +6021,7 @@ static ssize_t proc_wireless_tx_write(struct file *file, const char __user *buf,
 	}
 
 	chg_err("buffer=%s", buffer);
-	kstrtoint(buffer, 0, &val);
+	rc = kstrtoint(buffer, 0, &val);
 	chg_err("val = %d", val);
 
 	if (val == 1) {
@@ -6088,6 +6097,7 @@ static ssize_t proc_wireless_epp_write(struct file *file,
 #ifdef oplus_wireless
 	char buffer[5] = { 0 };
 	int val = 0;
+	int rc;
 
 	chg_err("%s: len[%d] start.\n", __func__, count);
 	if (count > 5) {
@@ -6099,7 +6109,7 @@ static ssize_t proc_wireless_epp_write(struct file *file,
 		return -EFAULT;
 	}
 	chg_err("buffer=%s", buffer);
-	kstrtoint(buffer, 0, &val);
+	rc = kstrtoint(buffer, 0, &val);
 	chg_err("val=%d", val);
 	if (val == 1) {
 		force_bpp = true;
@@ -6262,6 +6272,7 @@ static ssize_t proc_wireless_bat_mult_write(struct file *file,
 #ifdef oplus_wireless
 	char buffer[5] = { 0 };
 	int val = 0;
+	int rc;
 
 	chg_err("%s: len[%d] start.\n", __func__, count);
 	if (count > 5) {
@@ -6273,7 +6284,7 @@ static ssize_t proc_wireless_bat_mult_write(struct file *file,
 		return -EFAULT;
 	}
 	chg_err("buffer=%s", buffer);
-	kstrtoint(buffer, 0, &val);
+	rc = kstrtoint(buffer, 0, &val);
 	chg_err("val=%d", val);
 	test_bat_val = val;
 #endif
@@ -6359,7 +6370,7 @@ static ssize_t proc_wireless_rx_write(struct file *file, const char __user *buf,
 {
 	char buffer[5] = { 0 };
 	struct oplus_p922x_ic *chip = p922x_chip;
-	int val;
+	int val, rc;
 
 	if (chip == NULL) {
 		chg_err("%s: p922x driver is not ready\n", __func__);
@@ -6376,7 +6387,7 @@ static ssize_t proc_wireless_rx_write(struct file *file, const char __user *buf,
 	}
 
 	chg_err("buffer=%s", buffer);
-	kstrtoint(buffer, 0, &val);
+	rc = kstrtoint(buffer, 0, &val);
 	chg_err("val = %d", val);
 
 	if (val == 0) {
@@ -6442,7 +6453,7 @@ start:
 			return -EINVAL;
 		}
 		memset(temp_buf, 0, sizeof(struct idt_fw_head));
-		copy_from_user(temp_buf, buf, sizeof(struct idt_fw_head));
+		rc = copy_from_user(temp_buf, buf, sizeof(struct idt_fw_head));
 		fw_head = (struct idt_fw_head *)temp_buf;
 		if (fw_head->magic[0] == 0x02 && fw_head->magic[1] == 0x00 &&
 		    fw_head->magic[2] == 0x03 && fw_head->magic[3] == 0x00) {
@@ -6453,7 +6464,7 @@ start:
 				return -ENOMEM;
 			}
 			chg_err("<IDT UPDATE>image header verification succeeded, fw_size=%d\n", fw_size);
-			copy_from_user(fw_buf, buf + sizeof(struct idt_fw_head), count - sizeof(struct idt_fw_head));
+			rc = copy_from_user(fw_buf, buf + sizeof(struct idt_fw_head), count - sizeof(struct idt_fw_head));
 			fw_index = count - sizeof(struct idt_fw_head);
 			chg_info("<IDT UPDATE>Receiving image, fw_size=%d, fw_index=%d\n", fw_size, fw_index);
 			if (fw_index >= fw_size) {
@@ -6468,7 +6479,7 @@ start:
 		}
 		break;
 	case UPGRADE_FW:
-		copy_from_user(fw_buf + fw_index, buf, count);
+		rc = copy_from_user(fw_buf + fw_index, buf, count);
 		fw_index += count;
 		chg_info("<IDT UPDATE>Receiving image, fw_size=%d, fw_index=%d\n", fw_size, fw_index);
 		if (fw_index >= fw_size) {
@@ -6540,6 +6551,7 @@ static ssize_t proc_wireless_rx_freq_write(struct file *file,
 {
 	char string[16];
 	int freq = 0;
+	int rc;
 	struct oplus_p922x_ic *chip = p922x_chip;
 
 	if (chip == NULL) {
@@ -6548,9 +6560,12 @@ static ssize_t proc_wireless_rx_freq_write(struct file *file,
 	}
 
 	memset(string, 0, 16);
-	copy_from_user(string, buf, count);
+	if (copy_from_user(string, buf, count)) {
+		chg_err("wireless_rx_freq_write error.\n");
+		return -EFAULT;
+	}
 	chg_err("buf = %s, len = %zu\n", string, count);
-	kstrtoint(string, 0, &freq);
+	rc = kstrtoint(string, 0, &freq);
 	chg_err("set freq threshold to %d\n", freq);
 	chip->p922x_chg_status.freq_threshold = freq;
 
@@ -6600,6 +6615,7 @@ static ssize_t proc_wireless_w30w_time_write(struct file *file,
 #ifdef oplus_wireless
 	char buffer[4] = { 0 };
 	int timeminutes = 0;
+	int rc;
 	struct op_chg_chip *chip = g_op_chip;
 
 	if (chip == NULL) {
@@ -6617,7 +6633,7 @@ static ssize_t proc_wireless_w30w_time_write(struct file *file,
 		return -EFAULT;
 	}
 	chg_err("buffer=%s", buffer);
-	kstrtoint(buffer, 0, &timeminutes);
+	rc = kstrtoint(buffer, 0, &timeminutes);
 	chg_err("set w30w_time = %dm", timeminutes);
 	if (timeminutes >= 0 && timeminutes <= 60)
 		chip->w30w_time = timeminutes;
@@ -6693,7 +6709,7 @@ static ssize_t proc_wireless_user_sleep_mode_write(struct file *file, const char
 	}
 
 	chg_err("user mode: buffer=%s\n", buffer);
-	kstrtoint(buffer, 0, &pmw_pulse);
+	rc = kstrtoint(buffer, 0, &pmw_pulse);
 	if (chip->cep_timeout_ack == false)
 		return -EBUSY;
 	if (pmw_pulse == FASTCHG_MODE) {
@@ -6779,6 +6795,7 @@ static ssize_t proc_wireless_idt_adc_test_write(struct file *file, const char __
 {
 	char buffer[4] = {0};
 	int idt_adc_cmd = 0;
+	int rc;
 	struct oplus_p922x_ic *chip = p922x_chip;
 
 	if (chip == NULL) {
@@ -6796,7 +6813,7 @@ static ssize_t proc_wireless_idt_adc_test_write(struct file *file, const char __
 		return -EFAULT;
 	}
 
-	kstrtoint(buffer, 0, &idt_adc_cmd);
+	rc = kstrtoint(buffer, 0, &idt_adc_cmd);
 	if (idt_adc_cmd == 0) {
 		chg_err("<~WPC~> idt_adc_test: set 0.\n");
 		chip->p922x_chg_status.idt_adc_test_enable = false;
@@ -7428,18 +7445,24 @@ static int p922x_driver_probe(struct i2c_client *client, const struct i2c_device
 #endif
 	chg_debug( " call end\n");
 
-	return 0;                                                                                       
+	return 0;
 
 }
 
 
 static struct i2c_driver p922x_i2c_driver;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static void p922x_driver_remove(struct i2c_client *client)
+{
+	return;
+}
+#else
 static int p922x_driver_remove(struct i2c_client *client)
-{    
+{
 	return 0;
 }
-
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static int p922x_pm_resume(struct device *dev)

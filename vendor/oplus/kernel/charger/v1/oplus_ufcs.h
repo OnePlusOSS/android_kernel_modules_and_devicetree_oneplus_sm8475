@@ -8,8 +8,10 @@
 #include <linux/time.h>
 #include <linux/list.h>
 #ifndef CONFIG_OPLUS_CHARGER_MTK
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 #include <linux/usb/typec.h>
 #include <linux/usb/usbpd.h>
+#endif
 #endif
 #include <linux/random.h>
 #include <linux/device.h>

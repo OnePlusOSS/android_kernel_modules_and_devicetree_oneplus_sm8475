@@ -749,8 +749,12 @@ static int init_da9313_proc(struct chip_da9313 *da)
     return 0;
 }
 
-static int da9313_driver_probe(struct i2c_client *client, const struct i2c_device_id *id) 
-{             
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int da9313_driver_probe(struct i2c_client *client)
+#else
+static int da9313_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
+#endif
+{
     struct chip_da9313 *divider_ic;
 
     divider_ic = devm_kzalloc(&client->dev, sizeof(struct chip_da9313), GFP_KERNEL);
@@ -815,12 +819,20 @@ static int da9313_suspend(struct i2c_client *client, pm_message_t mesg)
 
 static struct i2c_driver da9313_i2c_driver;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static void da9313_driver_remove(struct i2c_client *client)
+#else
 static int da9313_driver_remove(struct i2c_client *client)
+#endif
 {
     int ret=0;
 
     chg_debug( "  ret = %d\n", ret);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+    return;
+#else
     return 0;
+#endif
 }
 
 static void da9313_shutdown(struct i2c_client *client)

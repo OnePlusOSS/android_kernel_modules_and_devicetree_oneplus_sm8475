@@ -390,6 +390,7 @@ error:
 	return rc;
 }
 
+#define I2C_SMBUS_BLOCK_MAX	32
 static int sc8547a_read_data(struct sc8547a_device *chip, u8 addr, u8 *buf,
 			     int len)
 {
@@ -397,11 +398,27 @@ static int sc8547a_read_data(struct sc8547a_device *chip, u8 addr, u8 *buf,
 	int rc = 0;
 
 	mutex_lock(&chip->i2c_rw_lock);
-	rc = i2c_smbus_read_i2c_block_data(chip->client, addr_buf, len,
-					    buf);
-	if (rc < 0) {
-		chg_err("read 0x%04x error, rc=%d\n", addr, rc);
-		goto error;
+	if (len <= I2C_SMBUS_BLOCK_MAX) {
+		rc = i2c_smbus_read_i2c_block_data(chip->client, addr_buf, len, buf);
+		if (rc < 0) {
+			chg_err("read 0x%04x error, rc=%d\n", addr, rc);
+			goto error;
+		}
+	} else {
+		chg_info("read 0x%04x len = %d \n", addr, len);
+		rc = i2c_master_send(chip->client, &addr_buf, 1);
+		if (rc < 1) {
+			chg_err("write 0x%04x error, rc=%d\n", addr, rc);
+			rc = rc < 0 ? rc : -EIO;
+			goto error;
+		}
+
+		rc = i2c_master_recv(chip->client, buf, len);
+		if (rc < len) {
+			chg_err("read 0x%04x error, rc=%d\n", addr, rc);
+			rc = rc < 0 ? rc : -EIO;
+			goto error;
+		}
 	}
 	mutex_unlock(&chip->i2c_rw_lock);
 	return rc;
@@ -535,7 +552,6 @@ static int sc8547_voocphy_get_adapter_info(struct oplus_voocphy_manager *chip)
 static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 {
 	u8 data_block[4] = { 0 };
-	int i = 0;
 	u8 data = 0;
 	s32 ret = 0;
 
@@ -552,10 +568,10 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 4; i++) {
-		chg_info("read vsys vbat data_block[%d] = %u\n", i,
-			data_block[i]);
-	}
+
+	chg_info("read vsys vbat data_block[0] = %u, read vsys vbat data_block[1] = %u,"
+		"read vsys vbat data_block[2] = %u, read vsys vbat data_block[3] = %u\n",
+		data_block[0], data_block[1], data_block[2], data_block[3]);
 
 	chip->cp_vsys = ((data_block[0] << 8) | data_block[1]) * SC8547_VOUT_ADC_LSB;
 	chip->cp_vbat = ((data_block[2] << 8) | data_block[3]) * SC8547_VOUT_ADC_LSB;
@@ -570,10 +586,10 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 4; i++) {
-		chg_info("read ichg vbus data_block[%d] = %u\n", i,
-			data_block[i]);
-	}
+
+	chg_info("read ichg vbus data_block[0] = %u, read ichg vbus data_block[1] = %u,"
+		"read ichg vbus data_block[2] = %u, read ichg vbus data_block[3] = %u\n",
+		data_block[0], data_block[1], data_block[2], data_block[3]);
 
 	chip->cp_ichg =
 		((data_block[0] << 8) | data_block[1]) * SC8547_IBUS_ADC_LSB;
@@ -591,9 +607,9 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 2; i++) {
-		chg_info("read vac data_block[%d] = %u\n", i, data_block[i]);
-	}
+
+	chg_info("read vac data_block[0] = %u, read vac data_block[1] = %u\n",
+		data_block[0], data_block[1]);
 
 	chip->cp_vac = (((data_block[0] & SC8547_VAC_POL_H_MASK) << 8) |
 			data_block[1]) *

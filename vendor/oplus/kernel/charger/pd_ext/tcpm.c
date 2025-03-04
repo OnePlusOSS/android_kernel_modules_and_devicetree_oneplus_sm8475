@@ -168,6 +168,18 @@ uint8_t tcpm_inquire_typec_role(struct tcpc_device *tcpc)
 }
 EXPORT_SYMBOL(tcpm_inquire_typec_role);
 
+uint8_t tcpm_inquire_typec_role_def(struct tcpc_device *tcpc)
+{
+	return tcpc->desc.role_def;
+}
+EXPORT_SYMBOL(tcpm_inquire_typec_role_def);
+
+bool tcpm_is_floating_ground(struct tcpc_device *tcpc)
+{
+	return (tcpc->tcpc_flags & TCPC_FLAGS_FLOATING_GROUND);
+}
+EXPORT_SYMBOL(tcpm_is_floating_ground);
+
 uint8_t tcpm_inquire_typec_local_rp(struct tcpc_device *tcpc)
 {
 	return tcpc->typec_local_rp_level;
@@ -722,15 +734,12 @@ EXPORT_SYMBOL(tcpm_inquire_select_source_cap);
 #define TCPM_BK_PR_SWAP_TOUT		2500
 #define TCPM_BK_HARD_RESET_TOUT	3500
 
-static int tcpm_put_tcp_dpm_event(
-	struct tcpc_device *tcpc, struct tcp_dpm_event *event);
-
 static int tcpm_put_tcp_dpm_event_bk(
 	struct tcpc_device *tcpc, struct tcp_dpm_event *event,
 	uint32_t tout_ms, uint8_t *data, uint8_t size);
 #endif	/* CONFIG_USB_PD_BLOCK_TCPM */
 
-static inline int tcpm_put_tcp_dpm_event_cb(struct tcpc_device *tcpc,
+int tcpm_put_tcp_dpm_event_cb(struct tcpc_device *tcpc,
 	struct tcp_dpm_event *event,
 	const struct tcp_dpm_event_cb_data *cb_data)
 {
@@ -1335,7 +1344,7 @@ EXPORT_SYMBOL(tcpm_dpm_send_custom_vdm);
 #endif	/* CONFIG_USB_PD_CUSTOM_VDM */
 
 #ifdef CONFIG_USB_PD_TCPM_CB_2ND
-static void tcpm_replace_curr_tcp_event(
+void tcpm_replace_curr_tcp_event(
 	struct pd_port *pd_port, struct tcp_dpm_event *event)
 {
 	int reason = TCP_DPM_RET_DENIED_UNKNOWN;
@@ -1356,9 +1365,10 @@ static void tcpm_replace_curr_tcp_event(
 	memcpy(&pd_port->tcp_event, event, sizeof(struct tcp_dpm_event));
 	mutex_unlock(&pd_port->pd_lock);
 }
+EXPORT_SYMBOL(tcpm_replace_curr_tcp_event);
 #endif	/* CONFIG_USB_PD_TCPM_CB_2ND */
 
-static int tcpm_put_tcp_dpm_event(
+int tcpm_put_tcp_dpm_event(
 	struct tcpc_device *tcpc, struct tcp_dpm_event *event)
 {
 	int ret;
@@ -1385,6 +1395,7 @@ static int tcpm_put_tcp_dpm_event(
 
 	return TCPM_SUCCESS;
 }
+EXPORT_SYMBOL(tcpm_put_tcp_dpm_event);
 
 int tcpm_notify_vbus_stable(struct tcpc_device *tcpc)
 {
@@ -1874,6 +1885,13 @@ EXPORT_SYMBOL(tcpm_update_pd_status_event);
 
 #endif	/* CONFIG_USB_PD_REV30_STATUS_LOCAL */
 
+bool tcpm_is_comm_capable(struct tcpc_device *tcpc)
+{
+	struct pd_port *pd_port = &tcpc->pd_port;
+
+	return pd_port->pe_data.dpm_flags & DPM_FLAGS_PARTNER_USB_COMM;
+}
+EXPORT_SYMBOL(tcpm_is_comm_capable);
 #ifdef CONFIG_USB_PD_BLOCK_TCPM
 
 #if TCPM_DBG_ENABLE

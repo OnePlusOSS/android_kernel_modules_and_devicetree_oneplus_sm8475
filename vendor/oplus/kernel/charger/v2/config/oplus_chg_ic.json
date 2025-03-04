@@ -726,6 +726,13 @@
                     "str": "lifetime_info"
                 },
                 {
+                    "lable": "TRACK_GAGUE_MTK_CALI_INFO",
+                    "desc": {
+                        "zh": "MTK平台电量计校准信息"
+                    },
+                    "str": "mtk_cali_info"
+                },
+                {
                     "lable": "TRACK_GAGUE_ERR_MAX",
                     "desc": {
                         "zh": "异常上限"
@@ -848,6 +855,56 @@
             ]
         },
         {
+            "name": "track_not_record_reason",
+            "desc":{
+                "zh": "埋点不需要记录的原因"
+            },
+            "list": [
+                {
+                    "lable": "NOT_RECORD_ENGINEER",
+                    "desc": {
+                        "zh": "工模dis808放电"
+                    },
+                    "str": "dis808"
+                },
+                {
+                    "lable": "NOT_RECORD_SAFETY",
+                    "desc": {
+                        "zh": "新安规user_disable放电"
+                    },
+                    "str": "user_disable"
+                },
+                {
+                    "lable": "NOT_RECORD_MMI",
+                    "desc": {
+                        "zh": "夜间充电等停充接口"
+                    },
+                    "str": "mmi"
+                },
+                {
+                    "lable": "NOT_RECORD_SLOW_CHG",
+                    "desc": {
+                        "zh": "智能充电-缓速充电"
+                    },
+                    "str": "slow_chg"
+                },
+                {
+                    "lable": "NOT_RECORD_PLC",
+                    "desc": {
+                        "zh": "旁路充电"
+                    },
+                    "str": "plc"
+                },
+                {
+                    "lable": "NOT_RECORD_MAX",
+                    "desc": {
+                        "zh": "unknown"
+                    },
+                    "str": "unknown"
+                }
+            ]
+        },
+        {
             "name": "batt_bal_ic_exit_reason",
             "desc":{
                 "zh": "电池均衡IC故障类型"
@@ -922,6 +979,56 @@
                         "zh": "均衡触发看门狗"
                     },
                     "str": "wdg_timeout"
+                }
+            ]
+        },
+        {
+            "name": "plc_enable_status",
+            "desc":{
+                "zh": "旁路状态"
+            },
+            "list": [
+                {
+                    "lable": "PLC_STATUS_NOT_SUPPORT",
+                    "desc": {
+                        "zh": "旁路不支持"
+                    },
+                    "str": "plc not support"
+                },
+                {
+                    "lable": "PLC_STATUS_NOT_ALLOW",
+                    "desc": {
+                        "zh": "旁路不允许"
+                    },
+                    "str": "plc not allow"
+                },
+                {
+                    "lable": "PLC_STATUS_DISABLE",
+                    "desc": {
+                        "zh": "旁路关闭"
+                    },
+                    "str": "plc disable"
+                },
+                {
+                    "lable": "PLC_STATUS_ENABLE",
+                    "desc": {
+                        "zh": "旁路使能"
+                    },
+                    "str": "plc enable"
+                },
+                {
+                    "lable": "PLC_STATUS_WAIT",
+                    "desc": {
+                        "zh": "旁路等待"
+                    },
+                    "str": "plc wait"
+                },
+                {
+                    "lable": "PLC_STATUS_MAX",
+                    "desc": {
+                        "zh": "旁路未知状态"
+                    },
+                    "str": "plc unknown"
                 }
             ]
         }

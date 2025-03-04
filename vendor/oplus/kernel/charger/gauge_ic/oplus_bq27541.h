@@ -221,7 +221,11 @@
 #define DEVICE_ZY0602				3
 #define DEVICE_ZY0603				4
 
-#define DEVICE_TYPE_BQ27426			0x0426
+#define DEVICE_TYPE_BQ27426_0		0x0426
+#define DEVICE_TYPE_BQ27426_1		0x8426
+#define DEVICE_TYPE_BQ27426_2		0x4426
+#define DEVICE_TYPE_BQ27426_3		0x04A6
+#define DEVICE_TYPE_BQ27426_4		0x0466
 #define DEVICE_BQ27426				5
 
 #define DEVICE_TYPE_FOR_VOOC_BQ27541		0
@@ -581,14 +585,19 @@ struct gauge_track_mode_info {
 	bool track_init_done;
 };
 
-#define BQFS_INFO_LEN 128
+#define BQFS_INFO_LEN 192
+#define BQFS_DATA_LEN 64
 struct bqfs_para_info {
+	bool force_upgrade;
+	bool upgrade_ing;
 	bool bqfs_status;
 	bool bqfs_ship;
 	int batt_type;
 	int bqfs_dm;
 	int fw_lenth;
+	int err_code;
 	char track_info[BQFS_INFO_LEN];
+	char data_err[BQFS_DATA_LEN];
 	const u8 *firmware_data;
 };
 
@@ -722,6 +731,15 @@ struct chip_bq27541 {
 	bool gauge_check_model;
 	bool gauge_check_por;
 
+	int gauge_abnormal_vbatt_max;
+	int gauge_abnormal_vbatt_min;
+	int cp_abnormal_fcc_max;
+	int cp_abnormal_fcc_min;
+	int cp_abnormal_soh_max;
+	int cp_abnormal_soh_min;
+	int cp_abnormal_qmax_max;
+	int cp_abnormal_qmax_min;
+
 	struct bqfs_para_info bqfs_info;
 	struct mutex track_upload_lock;
 	struct mutex track_bqfs_err_lock;
@@ -730,6 +748,12 @@ struct chip_bq27541 {
 	oplus_chg_track_trigger *bqfs_err_load_trigger;
 	struct delayed_work bqfs_err_load_trigger_work;
 	struct delayed_work bqfs_track_update_work;
+	struct delayed_work bqfs_data_check_work;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+	struct wake_lock suspend_lock;
+#else
+	struct wakeup_source *suspend_ws;
+#endif
 };
 
 struct gauge_track_info_reg {

@@ -574,8 +574,40 @@
                     }
                 }
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_CP_SET_UCP_DISABLE",
+            "desc": {
+                "zh": "关闭ucp"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1:关闭, 0:开启"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "开关UCP"
+                    }
+                },
+                 "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "使用val覆盖传入的开启状态"
+                    }
+                }
+            }
         }
     ],
 
-    "version": "V2.0:16:755258e761e261f7a9391f5aea297e5e7724f4cadca8d36e5d21bc175f9357a5"
+    "version": "V2.1:17:5cfefedeabd4e3130fc656e8e49d971dc2bc20a2f5acb5038a83107d5461e310"
 }

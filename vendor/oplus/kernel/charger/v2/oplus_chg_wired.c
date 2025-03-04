@@ -126,6 +126,7 @@ struct oplus_chg_wired {
 	struct delayed_work switch_end_recheck_work;
 	struct delayed_work pd_config_work;
 	struct delayed_work qc_config_work;
+	struct delayed_work pd_boost_icl_disable_work;
 
 	struct power_supply *usb_psy;
 	struct power_supply *batt_psy;
@@ -821,6 +822,15 @@ static int oplus_qc_cpa_switch_end(struct oplus_chg_wired *chip)
 	return 0;
 }
 
+#define PD_BOOST_DISABLE_ICL_DELAY msecs_to_jiffies(3000)
+#define PD_BOOST_ICL_MA 1500
+static void oplus_wired_pd_boost_icl_disable_work(struct work_struct *work)
+{
+	struct oplus_chg_wired *chip = container_of(work, struct oplus_chg_wired, pd_boost_icl_disable_work.work);
+
+	vote(chip->icl_votable, BOOST_VOTER, false, 0, true);
+}
+
 #define PD_RETRY_DELAY msecs_to_jiffies(1000)
 #define PD_RETRY_COUNT_MAX 3
 static void oplus_wired_pd_config_work(struct work_struct *work)
@@ -895,6 +905,9 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 			/* Set the current to 500ma before PD before boost ot 9V */
 			vote(chip->icl_votable, SPEC_VOTER, true, PDQC_BUCK_DEF_CURR_MA,
 			     true);
+			cancel_delayed_work_sync(&chip->pd_boost_icl_disable_work);
+			vote(chip->icl_votable, BOOST_VOTER, true, PD_BOOST_ICL_MA, true);
+			schedule_delayed_work(&chip->pd_boost_icl_disable_work, PD_BOOST_DISABLE_ICL_DELAY);
 			mutex_lock(&chip->icl_lock);
 			rc = oplus_wired_set_pd_config(OPLUS_PD_9V_PDO);
 			mutex_unlock(&chip->icl_lock);
@@ -934,6 +947,8 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 		/* Set the current to 500ma before stepping down */
 		vote(chip->icl_votable, SPEC_VOTER, true, PDQC_BUCK_DEF_CURR_MA,
 		     true);
+		vote(chip->icl_votable, BOOST_VOTER, false, 0, true);
+		cancel_delayed_work_sync(&chip->pd_boost_icl_disable_work);
 		mutex_lock(&chip->icl_lock);
 		rc = oplus_wired_set_pd_config(OPLUS_PD_5V_PDO);
 		mutex_unlock(&chip->icl_lock);
@@ -1278,6 +1293,7 @@ static void oplus_wired_plugin_work(struct work_struct *work)
 		vote(chip->icl_votable, HIDL_VOTER, false, 0, true);
 		vote(chip->icl_votable, MAX_VOTER, false, 0, true);
 		vote(chip->icl_votable, STRATEGY_VOTER, false, 0, true);
+		vote(chip->icl_votable, PD_PDO_ICL_VOTER, false, 0, true);
 		chip->pd_retry_count = 0;
 		chip->qc_retry_count = 0;
 		chip->qc_action = OPLUS_ACTION_NULL;
@@ -1288,6 +1304,8 @@ static void oplus_wired_plugin_work(struct work_struct *work)
 		complete_all(&chip->pd_check_ack);
 		cancel_delayed_work_sync(&chip->qc_config_work);
 		cancel_delayed_work_sync(&chip->pd_config_work);
+		vote(chip->icl_votable, BOOST_VOTER, false, 0, true);
+		cancel_delayed_work_sync(&chip->pd_boost_icl_disable_work);
 		cancel_delayed_work_sync(&chip->switch_end_recheck_work);
 		cancel_work_sync(&chip->qc_check_work);
 		cancel_work_sync(&chip->pd_check_work);
@@ -1501,7 +1519,7 @@ static void oplus_pdqc_retention_disconnect_work(struct work_struct *work)
 
 	oplus_mms_get_item_data(chip->retention_topic, RETENTION_ITEM_DISCONNECT_COUNT, &data, true);
 	chip->pdqc_connect_error_count = data.intval;
-	chg_info("cpa_current_type= %d, pdqc_connect_error_count =%d\n",
+	chg_debug("cpa_current_type= %d, pdqc_connect_error_count =%d\n",
 		chip->cpa_current_type, chip->pdqc_connect_error_count);
 	if (chip->pdqc_connect_error_count > DPQC_CONNECT_ERROR_COUNT_LEVEL) {
 		if (chip->cpa_current_type == CHG_PROTOCOL_QC) {
@@ -1885,7 +1903,6 @@ static void oplus_wired_subscribe_cpa_topic(struct oplus_mms *topic,
 		schedule_work(&chip->pd_check_work);
 
 	if (chip->cpa_support) {
-		oplus_cpa_protocol_ready(chip->cpa_topic, CHG_PROTOCOL_BC12);
 		oplus_cpa_protocol_ready(chip->cpa_topic, CHG_PROTOCOL_PD);
 		oplus_cpa_protocol_ready(chip->cpa_topic, CHG_PROTOCOL_QC);
 	}
@@ -2448,6 +2465,7 @@ static int oplus_wired_probe(struct platform_device *pdev)
 		  oplus_wired_temp_region_update_work);
 	INIT_WORK(&chip->gauge_update_work, oplus_wired_gauge_update_work);
 	INIT_DELAYED_WORK(&chip->switch_end_recheck_work, oplus_pdqc_switch_end_recheck_work);
+	INIT_DELAYED_WORK(&chip->pd_boost_icl_disable_work, oplus_wired_pd_boost_icl_disable_work);
 	INIT_DELAYED_WORK(&chip->qc_config_work, oplus_wired_qc_config_work);
 	INIT_DELAYED_WORK(&chip->pd_config_work, oplus_wired_pd_config_work);
 	INIT_DELAYED_WORK(&chip->retention_disconnect_work,

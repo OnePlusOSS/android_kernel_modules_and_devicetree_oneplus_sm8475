@@ -211,7 +211,11 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
-		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		ifndef CONFIG_OPLUS_PD_EXT_SUPPORT
+		ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		else
+		ccflags-y += -I$(srctree)/drivers/power/oplus/pd_ext/inc
+		endif
 		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		obj-y   += oplus_battery_mtk6853R.o
 		obj-y	+= oplus_bq25910.o

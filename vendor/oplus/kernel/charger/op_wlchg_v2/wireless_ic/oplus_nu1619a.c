@@ -3289,8 +3289,12 @@ static struct regmap_config nu1619_regmap_config = {
 	.max_register	= 0xFFFF,
 };
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int nu1619_driver_probe(struct i2c_client *client)
+#else
 static int nu1619_driver_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
+#endif
 {
 	struct oplus_nu1619 *chip;
 	struct device_node *node = client->dev.of_node;
@@ -3386,7 +3390,11 @@ reg_ic_err:
 	return rc;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static void nu1619_driver_remove(struct i2c_client *client)
+#else
 static int nu1619_driver_remove(struct i2c_client *client)
+#endif
 {
 	struct oplus_nu1619 *chip = i2c_get_clientdata(client);
 
@@ -3403,7 +3411,11 @@ static int nu1619_driver_remove(struct i2c_client *client)
 	devm_oplus_chg_ic_unregister(chip->dev, chip->ic_dev);
 	i2c_set_clientdata(client, NULL);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+	return;
+#else
 	return 0;
+#endif
 }
 
 static const struct of_device_id nu1619_match[] = {

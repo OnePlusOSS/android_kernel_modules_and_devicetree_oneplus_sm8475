@@ -144,6 +144,7 @@ struct oplus_mms_wired {
 	struct work_struct data_role_changed_handler_work;
 	struct work_struct back_ui_soc_work;
 	struct work_struct otg_enable_pending_work;
+	struct work_struct cpa_protocol_ready_work;
 
 	struct wakeup_source *usbtemp_wakelock;
 	struct adc_vol_temp_info *adc_vol_temp_info;
@@ -189,6 +190,7 @@ struct oplus_mms_wired {
 	bool charging_disable;
 	bool bc12_completed;
 	bool cc_detect_support;
+	bool wait_rerun_bc12;
 	unsigned int vooc_sid;
 	unsigned int usb_status;
 	bool abnormal_adapter;
@@ -3599,6 +3601,25 @@ static void oplus_wired_subscribe_comm_topic(struct oplus_mms *topic,
 	chip->shell_temp = data.intval;
 }
 
+static void oplus_wired_cpa_protocol_ready_work(struct work_struct *work)
+{
+	struct oplus_mms_wired *chip =
+		container_of(work, struct oplus_mms_wired, cpa_protocol_ready_work);
+	union mms_msg_data data = { 0 };
+	unsigned int not_ready_protocol;
+
+	oplus_mms_get_item_data(chip->cpa_topic, CPA_ITEM_NOT_READY_PROTOCOL, &data, false);
+	not_ready_protocol = (unsigned int)data.intval;
+
+	if (not_ready_protocol != BIT(CHG_PROTOCOL_BC12))
+		return;
+
+	if (chip->wait_rerun_bc12)
+		oplus_wired_rerun_bc12();
+
+	oplus_cpa_protocol_ready(chip->cpa_topic, CHG_PROTOCOL_BC12);
+}
+
 static void oplus_wired_cpa_subs_callback(struct mms_subscribe *subs,
 					  enum mms_msg_type type, u32 id, bool sync)
 {
@@ -3609,6 +3630,10 @@ static void oplus_wired_cpa_subs_callback(struct mms_subscribe *subs,
 		switch (id) {
 		case CPA_ITEM_CHG_TYPE:
 			schedule_work(&chip->cpa_chg_type_change_handler_work);
+			break;
+		case CPA_ITEM_NOT_READY_PROTOCOL:
+			if (chip->wait_rerun_bc12)
+				schedule_work(&chip->cpa_protocol_ready_work);
 			break;
 		default:
 			break;
@@ -3633,6 +3658,11 @@ static void oplus_wired_subscribe_cpa_topic(struct oplus_mms *topic,
 			PTR_ERR(chip->cpa_subs));
 		return;
 	}
+
+	if (!chip->wait_rerun_bc12)
+		oplus_cpa_protocol_ready(chip->cpa_topic, CHG_PROTOCOL_BC12);
+	else
+		schedule_work(&chip->cpa_protocol_ready_work);
 }
 
 static void oplus_wired_ufcs_subs_callback(struct mms_subscribe *subs,
@@ -5466,6 +5496,7 @@ static void oplus_mms_wired_parse_dt(struct oplus_mms_wired *chip)
 	if (chip->support_usbtemp_protect_v2)
 		oplus_mms_wired_usbtemp_v2_parse_dt(chip);
 	chip->high_temp_scheme = of_property_read_bool(node, "high-temp-scheme");
+	chip->wait_rerun_bc12 = of_property_read_bool(node, "oplus,wait_rerun_bc12");
 }
 
 static int oplus_wired_otg_disable_vote_callback(struct votable *votable,
@@ -5578,6 +5609,7 @@ static int oplus_mms_wired_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->back_ui_soc_work, oplus_back_ui_soc_work);
 	INIT_WORK(&chip->otg_enable_pending_work, oplus_wired_otg_enable_pending_work);
 	INIT_WORK(&chip->wls_upgrading_work, oplus_wls_upgrading_work);
+	INIT_WORK(&chip->cpa_protocol_ready_work, oplus_wired_cpa_protocol_ready_work);
 
 	chip->dischg_flag = false;
 	chip->cpa_support = oplus_cpa_support();

@@ -959,6 +959,35 @@ static int oplus_chg_vc_set_work_start(struct oplus_chg_ic_dev *ic_dev, bool sta
 	return err;
 }
 
+static int oplus_chg_vc_set_ucp_disable(struct oplus_chg_ic_dev *ic_dev, bool disable)
+{
+	struct oplus_virtual_cp_ic *vc;
+	int i;
+	int rc = 0;
+	int err = -ENOTSUPP;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vc = oplus_chg_ic_get_drvdata(ic_dev);
+
+	/* TODO */
+	for (i = 0; i < vc->child_num; i++) {
+		rc = oplus_chg_ic_func(vc->child_list[i].ic_dev,
+			OPLUS_IC_FUNC_CP_SET_UCP_DISABLE, disable);
+		if (rc < 0 && rc != -ENOTSUPP) {
+			chg_err("child ic[%d] %s error, rc=%d\n", i, disable ? "disable" : "enable", rc);
+			err = rc;
+		} else if (rc >= 0) {
+			err = rc;
+		}
+	}
+
+	return err;
+}
+
 static int oplus_chg_vc_get_work_status(struct oplus_chg_ic_dev *ic_dev, bool *start)
 {
 	struct oplus_virtual_cp_ic *vc;
@@ -1123,6 +1152,9 @@ static void *oplus_chg_vc_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 		break;
 	case OPLUS_IC_FUNC_CP_GET_TEMP:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_TEMP, oplus_chg_vc_get_cp_temp);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_UCP_DISABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_UCP_DISABLE, oplus_chg_vc_set_ucp_disable);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
