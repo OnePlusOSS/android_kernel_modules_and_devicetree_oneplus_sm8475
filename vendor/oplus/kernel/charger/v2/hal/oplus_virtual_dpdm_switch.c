@@ -67,7 +67,8 @@ struct oplus_dpdm_switch_ic {
 };
 
 #define AUDIO_SWITCH_RETRY_MAX			3
-#define OPLUS_AUDIO_SWITCH_READY_RETRY_MAX	20
+#define OPLUS_AUDIO_SWITCH_READY_RETRY_MAX	50
+#define OPLUS_AUDIO_SWITCH_READY_DELAY_TIME_MS	5
 
 static int oplus_switch_to_ap(struct oplus_dpdm_switch_ic *chip)
 {
@@ -498,12 +499,13 @@ static int oplus_virtual_dpdm_switch_probe(struct platform_device *pdev)
 
 	/* fix the issue of audio switch is not ready */
 	if (use_audio_switch) {
-		status = oplus_get_audio_switch_status();
+		status = oplus_check_audio_switch_ready();
 		if (status >= 0 || retry > OPLUS_AUDIO_SWITCH_READY_RETRY_MAX) {
 			chg_info("the audio switch is ready now, retry= %d!", retry);
 		} else {
 			chg_info("the audio switch is not ready now, retry = %d!", retry);
 			retry++;
+			msleep(OPLUS_AUDIO_SWITCH_READY_DELAY_TIME_MS);
 			return -EPROBE_DEFER;
 		}
 	}

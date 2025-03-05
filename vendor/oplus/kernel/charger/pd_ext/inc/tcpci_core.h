@@ -89,7 +89,27 @@ struct tcpc_desc {
 	uint8_t role_def;
 	uint8_t rp_lvl;
 	uint8_t vconn_supply;
-	char *name;
+	const char *name;
+	bool en_wd;
+	bool en_wd_sbu_polling;
+	bool en_wd_polling_only;
+	bool en_ctd;
+	bool en_fod;
+	bool en_typec_otp;
+	bool en_floatgnd;
+#ifdef OPLUS_FEATURE_CHG_BASIC
+	bool oplus_dis_typec_otp;
+#endif
+	u32 wd_sbu_calib_init;
+	u32 wd_sbu_pl_bound;
+	u32 wd_sbu_pl_lbound_c2c;
+	u32 wd_sbu_pl_ubound_c2c;
+	u32 wd_sbu_ph_auddev;
+	u32 wd_sbu_ph_lbound;
+	u32 wd_sbu_ph_lbound1_c2c;
+	u32 wd_sbu_ph_ubound1_c2c;
+	u32 wd_sbu_ph_ubound2_c2c;
+	u32 wd_sbu_aud_ubound;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -163,7 +183,12 @@ struct tcpc_desc {
 #define TCPC_FLAGS_WATER_DETECTION		(1<<9)
 #define TCPC_FLAGS_CABLE_TYPE_DETECTION		(1<<10)
 #define TCPC_FLAGS_VCONN_SAFE5V_ONLY		(1<<11)
-#define TCPC_FLAGS_ALERT_V10			(1<<12)
+#define TCPC_FLAGS_ALERT_V10                    (1<<12)
+#define TCPC_FLAGS_FOREIGN_OBJECT_DETECTION	(1<<13)
+#define TCPC_FLAGS_TYPEC_OTP			(1<<14)
+#define TCPC_FLAGS_FLOATING_GROUND		(1<<15)
+#define TCPC_FLAGS_SBU_POLLING			(1<<16)
+#define TCPC_FLAGS_WD_POLLING_ONLY		(1<<17)
 
 #define TYPEC_CC_PULL(rp_lvl, res)	((rp_lvl & 0x03) << 3 | (res & 0x07))
 
@@ -209,9 +234,11 @@ struct tcpc_ops {
 	int (*alert_status_clear)(struct tcpc_device *tcpc, uint32_t mask);
 	int (*fault_status_clear)(struct tcpc_device *tcpc, uint8_t status);
 	int (*set_alert_mask)(struct tcpc_device *tcpc, uint32_t mask);
+#ifdef OPLUS_FEATURE_CHG_BASIC
 	int (*get_chip_id)(struct tcpc_device *tcpc,uint32_t *chip_id);
 	int (*get_chip_pid)(struct tcpc_device *tcpc,uint32_t *chip_pid);
 	int (*get_chip_vid)(struct tcpc_device *tcpc,uint32_t *chip_vid);
+#endif
 	int (*get_alert_mask)(struct tcpc_device *tcpc, uint32_t *mask);
 	int (*get_alert_status)(struct tcpc_device *tcpc, uint32_t *alert);
 	int (*get_power_status)(struct tcpc_device *tcpc, uint16_t *pwr_status);
@@ -223,6 +250,8 @@ struct tcpc_ops {
 	int (*set_vconn)(struct tcpc_device *tcpc, int enable);
 	int (*deinit)(struct tcpc_device *tcpc);
 	int (*alert_vendor_defined_handler)(struct tcpc_device *tcpc);
+	int (*set_auto_dischg_discnt)(struct tcpc_device *tcpc, bool en);
+	int (*get_vbus_voltage)(struct tcpc_device *tcpc, u32 *vbus);
 
 	int (*is_vsafe0v)(struct tcpc_device *tcpc);
 
@@ -231,7 +260,11 @@ struct tcpc_ops {
 	int (*set_water_protection)(struct tcpc_device *tcpc, bool en);
 	int (*set_usbid_polling)(struct tcpc_device *tcpc, bool en);
 #endif /* CONFIG_WATER_DETECTION */
+	int (*set_cc_hidet)(struct tcpc_device *tcpc, bool en);
 
+	int (*set_floating_ground)(struct tcpc_device *tcpc, bool en);
+
+	int (*set_otp_fwen)(struct tcpc_device *tcpc, bool en);
 #ifdef CONFIG_TCPC_LOW_POWER_MODE
 	int (*is_low_power_mode)(struct tcpc_device *tcpc);
 	int (*set_low_power_mode)(struct tcpc_device *tcpc, bool en, int pull);
@@ -504,10 +537,12 @@ struct tcpc_device {
 	/* TypeC Shield Protection */
 #ifdef CONFIG_WATER_DETECTION
 	int usbid_calib;
+	enum tcpc_fod_status typec_fod;
 #endif /* CONFIG_WATER_DETECTION */
 #ifdef CONFIG_CABLE_TYPE_DETECTION
 	enum tcpc_cable_type typec_cable_type;
 #endif /* CONFIG_CABLE_TYPE_DETECTION */
+	bool typec_otp;
 };
 
 #define to_tcpc_device(obj) container_of(obj, struct tcpc_device, dev)

@@ -32,7 +32,6 @@
 #include "mtk_battery.h"
 #endif /* CONFIG_RECV_BAT_ABSENT_NOTIFY */
 #endif /* CONFIG_USB_POWER_DELIVERY */
-
 #define TCPC_CORE_VERSION		"2.0.18_G"
 
 static ssize_t tcpc_show_property(struct device *dev,
@@ -776,13 +775,7 @@ static void tcpc_init_attrs(struct device_type *dev_type)
 	for (i = 0; i < ARRAY_SIZE(tcpc_device_attributes); i++)
 		__tcpc_attrs[i] = &tcpc_device_attributes[i].attr;
 }
-/*
-#ifndef OPLUS_CHG_SEPARATE_MUSE_TCPC
-extern int rt1711_driver_init(void);
-#else
-extern int et7303_driver_init(void);
-#endif
-*/
+
 static int __init tcpc_class_init(void)
 {
 	pr_info("%s (%s)\n", __func__, TCPC_CORE_VERSION);
@@ -802,33 +795,12 @@ static int __init tcpc_class_init(void)
 		return PTR_ERR(tcpc_class);
 	}
 	tcpc_init_attrs(&tcpc_dev_type);
-/*
-#ifndef OPLUS_CHG_SEPARATE_MUSE_TCPC
-	rt1711_driver_init();
-#else
-	et7303_driver_init();
-#endif
-*/
 	pr_info("TCPC class init OK\n");
 	return 0;
 }
 
-/* #ifndef OPLUS_CHG_SEPARATE_MUSE_TCPC
-extern void rt1711_driver_exit(void);
-#else
-extern void et7303_driver_exit(void);
-#endif
-*/
-
 static void __exit tcpc_class_exit(void)
 {
-/*
-#ifndef OPLUS_CHG_SEPARATE_MUSE_TCPC
-	rt1711_driver_exit();
-#else
-	et7303_driver_exit();
-#endif
-*/
 	class_destroy(tcpc_class);
 	pr_info("TCPC class un-init OK\n");
 }

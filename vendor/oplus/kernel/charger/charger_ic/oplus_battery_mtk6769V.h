@@ -22,7 +22,11 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
-#include "../../../misc/mediatek/typec/tcpc/inc/tcpm.h"
+#ifdef CONFIG_OPLUS_PD_EXT_SUPPORT
+#include "../pd_ext/inc/tcpm.h"
+#else
+#include <tcpm.h>
+#endif
 struct mtk_charger;
 /*#include "../../../power/supply/mtk_pe.h"
 #include "../../../power/supply/mtk_pe2.h"
@@ -42,7 +46,10 @@ struct mtk_charger;
 #define PORT_A 1
 #define PORT_PD_WITH_USB 2
 #define PORT_PD_WITHOUT_USB 3
-
+#define CCDETECT_DELAY_MS 50
+#define OPLUS_TRACK_CHG_PLUGIN 1
+#define OPLUS_TRACK_CHG_PLUGOUT 0
+#define UNIT_TRANS 1000
 
 #ifdef __KERNEL__
 #ifndef _STRUCT_TIMESPEC

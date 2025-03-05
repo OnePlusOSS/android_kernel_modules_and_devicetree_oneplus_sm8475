@@ -19,6 +19,10 @@
 #include <linux/mutex.h>
 #include <linux/regmap.h>
 #include <linux/list.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 6, 0))
+#include <linux/pinctrl/consumer.h>
+#endif
 #ifdef CONFIG_OPLUS_CHG_OOS
 #include <linux/oem/oplus_chg.h>
 #else
@@ -541,8 +545,11 @@ free_int_gpio:
 		gpio_free(chip->cp_int_gpio);
 	return rc;
 }
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int hl7227_driver_probe(struct i2c_client *client)
+#else
 static int hl7227_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
+#endif
 {
 	struct oplus_hl7227 *chip;
 	struct device_node *node = client->dev.of_node;
@@ -648,12 +655,21 @@ static const struct dev_pm_ops hl7227_pm_ops = {
         .suspend = hl7227_pm_suspend,
 };
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static void hl7227_driver_remove(struct i2c_client *client)
+#else
 static int hl7227_driver_remove(struct i2c_client *client)
+#endif
 {
 	struct oplus_hl7227 *chip = i2c_get_clientdata(client);
 
-	if(chip == NULL)
+	if(chip == NULL) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+		return;
+#else
 		return -ENODEV;
+#endif
+	}
 
 	if (!gpio_is_valid(chip->cp_en_gpio))
 		gpio_free(chip->cp_en_gpio);
@@ -663,7 +679,11 @@ static int hl7227_driver_remove(struct i2c_client *client)
 	devm_oplus_chg_ic_unregister(chip->dev, chip->ic_dev);
 	devm_kfree(&client->dev, chip);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+	return;
+#else
 	return 0;
+#endif
 }
 
 static void hl7227_shutdown(struct i2c_client *chip_client)

@@ -691,6 +691,7 @@
 		//qcom,charging_switch1_ctr1-gpio = <&tlmm 163 0x00>;
 
 		qcom,external_gauge_support;
+		oplus,full_limit_curr_support;
 		qcom,voocphy_bidirect_cp_support;
 		qcom,voocphy_current_default = <91>;
 

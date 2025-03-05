@@ -39,6 +39,9 @@ enum gauge_topic_item {
 	GAUGE_ITEM_LIFETIME_STATUS,
 	GAUGE_ITEM_RATIO_VALUE,
 	GAUGE_ITEM_RATIO_TRANGE,
+	GAUGE_ITEM_QMAX,
+	GAUGE_ITEM_CAR_C,
+	GAUGE_ITEM_RATIO_LIMIT_CURR,
 };
 
 enum gauge_type_id {
@@ -104,6 +107,7 @@ int oplus_gauge_get_batt_mvolts_2cell_min(void);
 
 int oplus_gauge_get_batt_soc(void);
 int oplus_gauge_get_batt_current(void);
+int oplus_gauge_get_real_time_current(void);
 int oplus_gauge_get_remaining_capacity(void);
 int oplus_gauge_get_device_type(void);
 int oplus_gauge_get_device_type_for_vooc(void);
@@ -172,4 +176,5 @@ int oplus_gauge_set_ui_soh(struct oplus_mms *topic, int ui_soh);
 int oplus_gauge_get_used_flag(struct oplus_mms *topic);
 int oplus_gauge_set_used_flag(struct oplus_mms *topic, int flag);
 int oplus_gauge_show_batt_chem_id(struct oplus_mms *topic, char *buf, int len);
+int oplus_gauge_set_seal_flag(struct oplus_mms *topic, int seal_flag);
 #endif /* __OPLUS_MMS_GAUGE_H__ */

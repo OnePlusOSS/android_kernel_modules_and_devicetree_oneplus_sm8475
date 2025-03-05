@@ -110,6 +110,8 @@ struct oplus_gauge_operations {
 	void (*cal_model_check)(bool ffc_state);
 	bool (*get_bqfs_status)(void);
 	int (*bqfs_fw_check)(void);
+	int (*bqfs_data_check)(void);
+	int (*get_gauge_car_c)(int *car_c);
 };
 
 /****************************************
@@ -214,6 +216,7 @@ int oplus_gauge_get_soh(int *soh1, int *soh2);
 int oplus_gauge_get_calib_time(int *dod_calib_time, int *qmax_calib_time, int gauge_index);
 void oplus_gauge_cal_model_check(bool ffc_state);
 int oplus_gauge_check_bqfs_fw(void);
+int oplus_gauge_bqfs_data_check(void);
 
 #if defined(CONFIG_OPLUS_CHARGER_MTK6763) ||                                   \
 	defined(CONFIG_OPLUS_CHARGER_MTK6771)

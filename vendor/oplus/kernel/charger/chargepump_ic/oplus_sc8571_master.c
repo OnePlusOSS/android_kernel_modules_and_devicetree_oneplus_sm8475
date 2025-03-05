@@ -1130,8 +1130,12 @@ static void register_pps_devinfo(void)
 #endif
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int sc8571_master_probe(struct i2c_client *client)
+#else
 static int sc8571_master_probe(struct i2c_client *client,
 			       const struct i2c_device_id *id)
+#endif
 {
 	struct chip_sc8571 *chip;
 

@@ -150,6 +150,13 @@ do {                                    \
 #define IRQ_EVNET_NUM_HL7138	16
 #define BIDIRECT_IRQ_EVNET_NUM	12
 
+struct voocphy_full_limit_curr_table {
+	int volt_diff;
+	int curr_dec;
+	int dchg_curr;
+	int no_dchg_curr;
+};
+
 struct voocphy_log_buf *g_voocphy_log_buf = NULL;
 static struct oplus_voocphy_manager *g_voocphy_chip = NULL;
 ktime_t calltime, rettime;
@@ -163,6 +170,12 @@ static struct pm_qos_request pm_qos_req;
 #endif
 static int disable_sub_cp_count = 0;
 static int slave_trouble_count = 0;
+
+static struct voocphy_full_limit_curr_table full_limit_curr_table[] = {
+	{0, 10, 15, 10},
+	{20, 5, 15, 10},
+	{40, 0, 15, 10}
+};
 
 extern int oplus_chg_get_battery_btb_temp_cal(void);
 extern int oplus_chg_get_usb_btb_temp_cal(void);
@@ -2009,6 +2022,11 @@ int oplus_voocphy_reset_variables(struct oplus_voocphy_manager *chip)
 		return VOOCPHY_EFATAL;
 	}
 
+	chip->dchg = false;
+	chip->full_limit_curr = false;
+	chip->full_limit_count = 0;
+	chip->pre_current_full_limit = 0;
+	chip->current_full_limit = 0;
 	chip->voocphy_rx_buff = 0;
 	chip->voocphy_tx_buff[0] = 0;
 	chip->voocphy_tx_buff[1] = 0;
@@ -4785,14 +4803,17 @@ unsigned char oplus_voocphy_set_fastchg_current(struct oplus_voocphy_manager *ch
 {
 	unsigned char current_expect_temp = chip->current_expect;
 
-	voocphy_info("max_curr[%d] ap_curr[%d] temp_curr[%d] bcc_curr[%d] slow_chg[%d]",
+	voocphy_info("max_curr[%d] ap_curr[%d] temp_curr[%d] bcc_curr[%d] slow_chg[%d] full_limit[%d]",
 	              chip->current_max, chip->current_ap, chip->current_batt_temp,
-	              chip->current_bcc, chip->current_slow_chg);
+	              chip->current_bcc, chip->current_slow_chg, chip->current_full_limit);
 
 	chip->current_expect = chip->current_max > chip->current_ap ? chip->current_ap : chip->current_max;
 	if (chip->current_bcc > 0) {
 		chip->current_expect = chip->current_expect > chip->current_bcc ? chip->current_bcc : chip->current_expect;
 	}
+
+	if (chip->current_full_limit > 0)
+		chip->current_expect = chip->current_expect > chip->current_full_limit ? chip->current_full_limit : chip->current_expect;
 
 	chip->current_expect = chip->current_expect > chip->current_batt_temp ? chip->current_batt_temp : chip->current_expect;
 	if (oplus_switching_support_parallel_chg() == PARALLEL_MOS_CTRL) {
@@ -5707,6 +5728,97 @@ void oplus_voocphy_request_fastchg_curv(struct oplus_voocphy_manager *chip)
 	voocphy_info( "curv info [%d %d %d %d]\n", chip->gauge_vbatt, chip->cp_ichg, chip->current_max, cc_cnt);
 }
 
+static int oplus_voocphy_check_dchg(struct oplus_voocphy_manager *chip)
+{
+	struct oplus_chg_chip *charger_chip = oplus_chg_get_chg_struct();
+
+	if (!chip || !charger_chip)
+		return -EINVAL;
+
+	if (chip->parallel_charge_support || charger_chip->vbatt_num == 1) {
+		if (chip->adapter_type == ADAPTER_SVOOC)
+			chip->dchg = false;
+		else
+			chip->dchg = true;
+	} else {
+		chip->dchg = true;
+	}
+
+	chg_info("dchg=%d\n", chip->dchg);
+
+	return 0;
+}
+
+static int oplus_voocphy_cal_full_limit_curr(struct oplus_voocphy_manager *chip)
+{
+	int i;
+	int volt_diff = 0;
+	int len = ARRAY_SIZE(full_limit_curr_table);
+	int batt_curr_limit = 0;
+	int vbat_temp_cur = chip->icharging;
+	int batt_temp = oplus_chg_get_chg_temperature();
+
+	for (i = 0; i < len; i++) {
+		if (i == 0)
+			volt_diff = (int)chip->vooc_1time_full_voltage - (int)chip->gauge_vbatt;
+		else
+			volt_diff = (int)chip->vooc_ntime_full_voltage - (int)chip->gauge_vbatt;
+
+		if (full_limit_curr_table[i].volt_diff > volt_diff)
+			break;
+	}
+
+	if (i != len) {
+		if (chip->dchg) {
+			batt_curr_limit = vbat_temp_cur /100 - full_limit_curr_table[i].curr_dec;
+			chip->current_full_limit = batt_curr_limit > full_limit_curr_table[i].dchg_curr ?
+				batt_curr_limit : full_limit_curr_table[i].dchg_curr;
+		} else {
+			batt_curr_limit = vbat_temp_cur /200 - full_limit_curr_table[i].curr_dec;
+			chip->current_full_limit = batt_curr_limit > full_limit_curr_table[i].no_dchg_curr ?
+				batt_curr_limit : full_limit_curr_table[i].no_dchg_curr;
+		}
+		chip->full_limit_curr = true;
+
+		if (i == 0)
+			oplus_chg_track_set_fcl_info(
+				TRACK_1_TIME_FULL_CURR_LIMIT, chip->gauge_vbatt, vbat_temp_cur, batt_temp);
+		else
+			oplus_chg_track_set_fcl_info(
+				TRACK_N_TIME_FULL_CURR_LIMIT, chip->gauge_vbatt, vbat_temp_cur, batt_temp);
+	}
+
+	chg_info("gauge_vbatt_ichg[%d,%d], volt_diff:%d, batt_curr_limit:%d,%d, rc:%d\n",
+		chip->gauge_vbatt, vbat_temp_cur, volt_diff, batt_curr_limit, chip->current_full_limit, chip->full_limit_curr);
+
+	return 0;
+}
+
+static int oplus_voocphy_check_full_limit_curr(struct oplus_voocphy_manager *chip)
+{
+	if (!chip || !chip->full_limit_curr_support)
+		return -EINVAL;
+
+	if (!chip->full_limit_curr) {
+		chip->pre_current_full_limit = 0;
+		chip->full_limit_count = 0;
+		oplus_voocphy_cal_full_limit_curr(chip);
+	} else {
+		chip->full_limit_count++;
+		 if (chip->full_limit_count > 3) { /*TODO: wait count for 3 equ 2ms*/
+		 	chip->full_limit_count = 3;
+			if (chip->pre_current_full_limit && chip->current_expect > chip->pre_current_full_limit)
+				chip->full_limit_curr = false;
+			chip->pre_current_full_limit = chip->current_expect;
+		}
+	}
+
+	chg_info("current_full_limit:%d,%d, full_limit_count:%d,full_limit_curr:%d\n",
+		chip->pre_current_full_limit, chip->current_full_limit, chip->full_limit_count, chip->full_limit_curr);
+
+	return 0;
+}
+
 int oplus_voocphy_vol_event_handle(unsigned long data)
 {
 	struct oplus_voocphy_manager *chip = g_voocphy_chip;
@@ -5733,11 +5845,15 @@ int oplus_voocphy_vol_event_handle(unsigned long data)
 	}
 
 	voocphy_info( "[oplus_voocphy_vol_event_handle] vbatt: %d",chip->gauge_vbatt);
-	if ((chip->fastchg_notify_status & 0xFF) == FAST_NOTIFY_PRESENT)
+	if ((chip->fastchg_notify_status & 0xFF) == FAST_NOTIFY_PRESENT) {
 		fast_full_count = 0;
+		oplus_voocphy_check_dchg(chip);
+	}
 
 	if (!chip->btb_temp_over) {
 		oplus_voocphy_request_fastchg_curv(chip);
+
+		oplus_voocphy_check_full_limit_curr(chip);
 		//set above calculate max current
 		if (!chip->ap_need_change_current)
 			chip->ap_need_change_current
@@ -5753,7 +5869,7 @@ int oplus_voocphy_vol_event_handle(unsigned long data)
 		    || (chip->batt_temp_plugin == VOOCPHY_BATT_TEMP_WARM				/*43-52 chg to 4130mV*/
 		    	&& chip->vooc_warm_full_voltage != -EINVAL
 		        && chip->gauge_vbatt > chip->vooc_warm_full_voltage)
-		    || (chip->gauge_vbatt > chip->vooc_1time_full_voltage)) {
+		    || (chip->gauge_vbatt > chip->vooc_1time_full_voltage && !chip->full_limit_curr_support)) {
 			voocphy_info( "vbatt 1time fastchg full: %d",chip->gauge_vbatt);
 			oplus_voocphy_set_status_and_notify_ap(g_voocphy_chip, FAST_NOTIFY_FULL);
 		} else if (chip->gauge_vbatt > chip->vooc_ntime_full_voltage) {
@@ -8042,6 +8158,8 @@ int oplus_voocphy_parse_batt_curves(struct oplus_voocphy_manager *chip)
 		voocphy_info("parse vooc_warm_full_voltage failed, rc=%d\n", rc);
 		chip->vooc_warm_full_voltage = -EINVAL;
 	}
+
+	chip->full_limit_curr_support = of_property_read_bool(node, "oplus,full_limit_curr_support");
 
 	rc = of_property_read_u32(node, "qcom,vooc_1time_full_voltage",
 	                                &chip->vooc_1time_full_voltage);

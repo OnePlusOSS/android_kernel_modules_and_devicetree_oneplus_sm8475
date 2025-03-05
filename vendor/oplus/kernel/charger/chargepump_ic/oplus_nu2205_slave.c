@@ -467,8 +467,12 @@ static int nu2205_slave_parse_dt(struct chip_nu2205 *chip)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int nu2205_slave_probe(struct i2c_client *client)
+#else
 static int nu2205_slave_probe(struct i2c_client *client,
 			      const struct i2c_device_id *id)
+#endif
 {
 	struct chip_nu2205 *chip;
 

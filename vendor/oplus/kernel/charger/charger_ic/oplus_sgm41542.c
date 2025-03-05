@@ -39,8 +39,13 @@
 #include <linux/pm_wakeup.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
-#include <tcpm.h>
+#ifdef CONFIG_OPLUS_PD_EXT_SUPPORT
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
+#else
 #include <tcpci.h>
+#include <tcpm.h>
+#endif
 #include "../oplus_chg_track.h"
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
@@ -48,6 +53,7 @@ extern int oplus_chg_get_pd_type(void);
 extern int oplus_chg_pd_setup(void);
 extern int oplus_chg_get_charger_subtype(void);
 #endif
+extern int oplus_check_pd_usb_type(void);
 
 struct chip_sgm41542 {
 	struct device		*dev;
@@ -81,6 +87,8 @@ struct chip_sgm41542 {
 	int			reg_access;
 	int			before_suspend_icl;
 	int			before_unsuspend_icl;
+	int			charger_current_pre;
+	int			sw_aicl_count;
 	bool                    batfet_reset_disable;
 	bool			use_voocphy;
 	struct delayed_work	init_work;
@@ -101,6 +109,8 @@ static struct chip_sgm41542 *charger_ic = NULL;
 static int aicl_result = 500;
 static bool btb_detect_over;
 static bool dumpreg_by_irq = 0;
+
+#define PORT_PD_WITH_USB 2
 
 static const unsigned int SGM41515D_IPRECHG_CURRENT_STABLE[IPRECHG_CURRENT_STABLE_LEN] = {
 	5, 10, 15, 20, 30, 40, 50, 60,
@@ -196,6 +206,7 @@ static int sgm41542_request_dpdm(struct chip_sgm41542 *chip, bool enable);
 static int sgm41542_inform_charger_type(struct chip_sgm41542 *chip);
 static void sgm41542_get_bc12(struct chip_sgm41542 *chip);
 static void oplus_chg_wakelock(struct chip_sgm41542 *chip, bool awake);
+int sgm41542_get_vbus_stat(void);
 
 #define READ_REG_CNT_MAX	20
 #define USLEEP_5000MS	5000
@@ -342,7 +353,7 @@ int sgm41542_set_vindpm_vol(int vindpm)
 }
 
 int sgm41542_usb_icl[] = {
-	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 3000,
+	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 2200, 2500, 2750, 3000,
 };
 
 static int sgm41542_get_usb_icl(void)
@@ -401,16 +412,50 @@ int sgm41542_chg_get_dyna_aicl_result(void)
 }
 
 #define BATT_VOL_4V14	4140
+#define BATT_VOL_4V30	4300
 #define SGM41542_INP_VOL_4V44	4440
 #define SGM41542_INP_VOL_4V5	4500
 #define SGM41542_INP_VOL_4V52	4520
 #define SGM41542_INP_VOL_4V535	4535
+#define SGM41542_INP_VOL_4V65	4650
+#define SGM41542_INP_VOL_4V665	4665
+
+static void sgm41545d_set_aicl_point(int vbatt)
+{
+	struct chip_sgm41542 *chip = charger_ic;
+	static int pre_hw_aicl_point = 0;
+
+	if (!chip)
+		return;
+
+	if (vbatt > BATT_VOL_4V30) {
+		chip->hw_aicl_point = SGM41542_INP_VOL_4V65;
+		chip->sw_aicl_point = SGM41542_INP_VOL_4V665;
+	} else if (vbatt > BATT_VOL_4V14) {
+		chip->hw_aicl_point = SGM41542_INP_VOL_4V52;
+		chip->sw_aicl_point = SGM41542_INP_VOL_4V535;
+	} else {
+		chip->hw_aicl_point = SGM41542_INP_VOL_4V44;
+		chip->sw_aicl_point = SGM41542_INP_VOL_4V5;
+	}
+	if (chip->hw_aicl_point != pre_hw_aicl_point) {
+		pre_hw_aicl_point = chip->hw_aicl_point;
+		sgm41542_set_vindpm_vol(chip->hw_aicl_point);
+		chg_info("pre_hw_aicl_point:%d, hw_aicl_point:%d\n",
+			pre_hw_aicl_point, chip->hw_aicl_point);
+	}
+}
+
 void sgm41542_set_aicl_point(int vbatt)
 {
 	struct chip_sgm41542 *chip = charger_ic;
 
 	if (!chip)
 		return;
+	if (chip->part_id == REG0B_SGM41515D_PART_ID) {
+		sgm41545d_set_aicl_point(vbatt);
+		return;
+	}
 
 	if (chip->hw_aicl_point == SGM41542_INP_VOL_4V44 && vbatt > BATT_VOL_4V14) {
 		chip->hw_aicl_point = SGM41542_INP_VOL_4V52;
@@ -428,7 +473,7 @@ int sgm41542_get_charger_vol(void)
 	#ifdef CONFIG_OPLUS_CHARGER_MTK
 	int vol_vaule = 0;
 	get_vbus_voltage(&vol_vaule);
-	chg_err("sgm41542_get_charger_vol: %d\n", vol_vaule);
+	chg_err("[OPLUS_CHG][%s]: %d\n", __func__, vol_vaule);
 	return vol_vaule;
 	#else
 	return qpnp_get_prop_charger_voltage_now();
@@ -440,7 +485,7 @@ int sgm41542_get_vbus_voltage(void)
 	#ifdef CONFIG_OPLUS_CHARGER_MTK
 	int vol_vaule = 0;
 	get_vbus_voltage(&vol_vaule);
-	chg_err("sgm41542_get_charger_vol: %d\n", vol_vaule);
+	chg_err("[OPLUS_CHG][%s]: %d\n", __func__, vol_vaule);
 	return vol_vaule;
 	#else
 	return qpnp_get_prop_charger_voltage_now();
@@ -456,6 +501,7 @@ int sgm41542_get_ibus_current(void)
 	#endif
 }
 
+#define SW_AICL_COUNT_MAX	3
 int sgm41542_input_current_limit_write(int current_ma)
 {
 	int i = 0, rc = 0;
@@ -463,6 +509,7 @@ int sgm41542_input_current_limit_write(int current_ma)
 	int sw_aicl_point = 0;
 	struct chip_sgm41542 *chip = charger_ic;
 	int pre_icl_index = 0, pre_icl = 0;
+	int vbus_stat = 0;
 
 	if (!chip)
 		return 0;
@@ -474,6 +521,18 @@ int sgm41542_input_current_limit_write(int current_ma)
 		chg_err("suspend,ignore set current=%dmA\n", current_ma);
 		return 0;
 	}
+
+	if (chip->charger_current_pre == current_ma) {
+		chg_err("[%s] the same as the previous current(%d), skip!\n", __func__, chip->charger_current_pre);
+		return 0;
+	} else if (chip->sw_aicl_count > SW_AICL_COUNT_MAX && current_ma > chip->charger_current_pre) {
+		chg_err("adapter is unsupport high_current, current_ma:%d charger_current_pre:%d\n", current_ma, chip->charger_current_pre);
+		return 0;
+	}  else {
+		chip->charger_current_pre = current_ma;
+	}
+	vbus_stat = sgm41542_get_vbus_stat();
+	chg_err("[%s] sgm41542 vbus_stat=0x%x, current_ma=%d\n", __func__, vbus_stat, current_ma);
 
 	/*first: icl down to 500mA, step from pre icl*/
 	pre_icl = sgm41542_get_usb_icl();
@@ -565,29 +624,74 @@ int sgm41542_input_current_limit_write(int current_ma)
 	if (chg_vol < sw_aicl_point) {
 		i = i - 2; /*1.5*/
 		goto aicl_pre_step;
-	} else if (current_ma < 3000) {
+	} else if (current_ma < 2200 || vbus_stat == REG08_SGM41542_VBUS_STAT_FLOAT) {
 		goto aicl_end;
 	}
-	i = 8; /* 3000 */
+	i = 8; /* 2200 */
 	rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
 	usleep_range(90000, 91000);
 	chg_vol = sgm41542_get_charger_vol();
 	if (chg_vol < sw_aicl_point) {
-		i = i -1;
+		i = i - 2; /*1.75*/
+		goto aicl_pre_step;
+	} else if (current_ma < 2500) {
+		goto aicl_end;
+	}
+	i = 9; /* 2500 */
+	rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
+	usleep_range(90000, 91000);
+	chg_vol = sgm41542_get_charger_vol();
+	if (chg_vol < sw_aicl_point) {
+		i = i - 2; /*2.0*/
+		goto aicl_pre_step;
+	} else if (current_ma < 2750) {
+		goto aicl_end;
+	}
+	i = 10; /* 2750 */
+	rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
+	usleep_range(90000, 91000);
+	chg_vol = sgm41542_get_charger_vol();
+	if (chg_vol < sw_aicl_point) {
+		i = i - 2; /*2.2*/
+		goto aicl_pre_step;
+	} else if (current_ma < 3000) {
+		goto aicl_end;
+	}
+	i = 11; /* 3000 */
+	rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
+	usleep_range(90000, 91000);
+	chg_vol = sgm41542_get_charger_vol();
+	if (chg_vol < sw_aicl_point) {
+		i = i - 2;/*2.5*/
 		goto aicl_pre_step;
 	} else if (current_ma >= 3000) {
 		goto aicl_end;
 	}
 aicl_pre_step:
-	chg_debug("usb input max current limit aicl chg_vol=%d j[%d]=%d sw_aicl_point:%d aicl_pre_step\n", chg_vol, i, sgm41542_usb_icl[i], sw_aicl_point);
-	goto aicl_rerun;
+	chip->sw_aicl_count++;
+	chg_debug("usb input max current limit aicl chg_vol=%d j[%d]=%d sw_aicl_point:%d  count:%d aicl_pre_step\n",
+			chg_vol, i, sgm41542_usb_icl[i], sw_aicl_point, chip->sw_aicl_count);
+	goto aicl_return;
 aicl_end:
+	chip->sw_aicl_count = 0;
 	chg_debug("usb input max current limit aicl chg_vol=%d j[%d]=%d sw_aicl_point:%d aicl_end\n", chg_vol, i, sgm41542_usb_icl[i], sw_aicl_point);
-	goto aicl_rerun;
-aicl_rerun:
+	goto aicl_return;
+aicl_return:
 	aicl_result = sgm41542_usb_icl[i];
-	rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
-	rc = sgm41542_set_vindpm_vol(chip->hw_aicl_point);
+	if (atomic_read(&chip->is_suspended) == 1) {
+		chip->before_suspend_icl = sgm41542_usb_icl[i];
+		rc = sgm41542_input_current_limit_without_aicl(100);
+		chip->charger_current_pre = 100;
+		chip->sw_aicl_count = 0;
+		chg_err("during aicl, force input current to 100mA,before=%dmA\n", chip->before_suspend_icl);
+	} else {
+		rc = sgm41542_input_current_limit_without_aicl(sgm41542_usb_icl[i]);
+		chip->charger_current_pre = sgm41542_usb_icl[i];
+	}
+	if (chip->part_id == REG0B_SGM41515D_PART_ID)
+		sgm41542_set_aicl_point(oplus_chg_get_batt_volt());
+	else
+		rc = sgm41542_set_vindpm_vol(chip->hw_aicl_point);
 	return rc;
 }
 
@@ -1138,6 +1242,7 @@ int sgm41542_enable_charging(void)
 {
 	int rc = 0;
 	struct chip_sgm41542 *chip = charger_ic;
+	struct oplus_chg_chip *g_oplus_chip = oplus_chg_get_chg_struct();
 
 	if (!chip)
 		return 0;
@@ -1146,7 +1251,8 @@ int sgm41542_enable_charging(void)
 		return 0;
 
 	sgm41542_enable_gpio(chip, true);
-	sgm41542_otg_disable();
+	if (!g_oplus_chip || !g_oplus_chip->otg_online)
+		sgm41542_otg_disable();
 	rc = sgm41542_config_interface(chip, REG01_SGM41542_ADDRESS,
 			REG01_SGM41542_CHARGING_ENABLE,
 			REG01_SGM41542_CHARGING_MASK);
@@ -1161,6 +1267,7 @@ int sgm41542_disable_charging(void)
 {
 	int rc = 0;
 	struct chip_sgm41542 *chip = charger_ic;
+	struct oplus_chg_chip *g_oplus_chip = oplus_chg_get_chg_struct();
 
 	if (!chip)
 		return 0;
@@ -1168,8 +1275,11 @@ int sgm41542_disable_charging(void)
 	if (atomic_read(&chip->charger_suspended) == 1)
 		return 0;
 
+	chip->charger_current_pre = -1;
+	chip->sw_aicl_count = 0;
 	sgm41542_enable_gpio(chip, false);
-	sgm41542_otg_disable();
+	if (!g_oplus_chip || !g_oplus_chip->otg_online)
+		sgm41542_otg_disable();
 	rc = sgm41542_config_interface(chip, REG01_SGM41542_ADDRESS,
 			REG01_SGM41542_CHARGING_DISABLE,
 			REG01_SGM41542_CHARGING_MASK);
@@ -1248,9 +1358,11 @@ int sgm41542_unsuspend_charger(void)
 	} else {
 		if (g_oplus_chip->mmi_chg != 0) {
 			rc = sgm41542_input_current_limit_without_aicl(chip->before_suspend_icl);
+			chip->charger_current_pre = chip->before_suspend_icl;
 		} else {
 			chg_err("set icl 100 when mmi_chg = %d\n", g_oplus_chip->mmi_chg);
 			rc = sgm41542_input_current_limit_without_aicl(100);
+			chip->charger_current_pre = 100;
 		}
 	}
 
@@ -1661,6 +1773,19 @@ int sgm41542_set_shipmode(bool enable)
 	return rc;
 }
 
+int sgm41542_oplus_check_cc_mode(void)
+{
+	const char *tcpc_name = "type_c_port0";
+	struct tcpc_device *tcpc_dev;
+
+	tcpc_dev = tcpc_dev_get_by_name(tcpc_name);
+	if (IS_ERR_OR_NULL(tcpc_dev)) {
+		chg_err("tcpc info error\n");
+		return -EINVAL;
+	}
+
+	return tcpm_inquire_typec_role(tcpc_dev);
+}
 
 bool sgm41542_get_deivce_online(void)
 {
@@ -1714,7 +1839,7 @@ int sgm41542_hardware_init(void)
 	/*must be before set_vindpm_vol and set_input_current*/
 	chip->hw_aicl_point = HW_AICL_POINT_OFFSET;
 	chip->sw_aicl_point = SW_AICL_POINT_OFFSET;
-
+	chip->sw_aicl_count = 0;
 
 	sgm41542_set_stat_dis(false);
 	sgm41542_set_int_mask(REG0A_SGM41542_VINDPM_INT_NOT_ALLOW | REG0A_SGM41542_IINDPM_INT_NOT_ALLOW);
@@ -1746,7 +1871,10 @@ int sgm41542_hardware_init(void)
 
 	sgm41542_set_rechg_voltage(WPC_RECHARGE_VOLTAGE_OFFSET);
 
-	sgm41542_set_vindpm_vol(chip->hw_aicl_point);
+	if (chip->part_id == REG0B_SGM41515D_PART_ID)
+		sgm41542_set_aicl_point(oplus_chg_get_batt_volt());
+	else
+		sgm41542_set_vindpm_vol(chip->hw_aicl_point);
 
 	sgm41542_set_otg_voltage();
 
@@ -1758,6 +1886,7 @@ int sgm41542_hardware_init(void)
 
 	sgm41542_set_wdt_timer(REG05_SGM41542_WATCHDOG_TIMER_40S);
 
+	chip->charger_current_pre = REG00_SGM41542_INIT_INPUT_CURRENT_LIMIT_500MA;
 	return true;
 }
 
@@ -1769,6 +1898,8 @@ static int sgm41542_get_charger_type(void)
 	if (!chip || !g_oplus_chip)
 		return POWER_SUPPLY_TYPE_UNKNOWN;
 
+	if (oplus_check_pd_usb_type() == PORT_PD_WITH_USB)
+		return POWER_SUPPLY_TYPE_USB_PD_SDP;
 
 	if (chip->oplus_charger_type != g_oplus_chip->charger_type && g_oplus_chip->usb_psy)
 		power_supply_changed(g_oplus_chip->usb_psy);
@@ -2104,12 +2235,52 @@ static void sgm41542_start_bc12_retry(struct chip_sgm41542 *chip)
 		return;
 
 	sgm41542_request_dpdm(chip, true);
+	msleep(10);
 	sgm41542_set_iindet();
 
 	if (chip->is_sgm41542)
 		schedule_delayed_work(&chip->bc12_retry_work, round_jiffies_relative(msecs_to_jiffies(100)));
 }
 
+static int sgm41542_wait_bc12_complete(void)
+{
+	int i = 0;
+	int rc = 0;
+	int vbus_stat = 0;
+	int reg07_val = 0;
+	int reg0e_val = 0;
+	struct chip_sgm41542 *chip = charger_ic;
+
+	if (!chip)
+		return 0;
+
+	for (i = 0; i < 10; i++) {
+		if (atomic_read(&chip->charger_suspended) == 1)
+			return 0;
+
+		rc = sgm41542_read_reg(chip, REG07_SGM41542_ADDRESS, &reg07_val);
+		if (rc) {
+			chg_err("Couldn't read REG07_SGM41542_ADDRESS rc = %d\n", rc);
+			return 0;
+		}
+
+		rc = sgm41542_read_reg(chip, REG0E_SGM41542_ADDRESS, &reg0e_val);
+		if (rc) {
+			chg_err("Couldn't read REG0E_SGM41542_ADDRESS rc = %d\n", rc);
+			return 0;
+		}
+
+		if (((reg07_val & REG07_SGM41542_IINDET_EN_MASK) == REG07_SGM41542_IINDET_EN_DET_COMPLETE) &&
+			((reg0e_val & REG0E_SGM41542_REG_INPUT_DET_MASK) == REG0E_SGM41542_REG_INPUT_DET_MASK)) {
+			break;
+		}
+		msleep(20);
+	}
+
+	vbus_stat = sgm41542_get_vbus_stat();
+
+	return vbus_stat;
+}
 #define OPLUS_BC12_RETRY_CNT 	1
 static void sgm41542_get_bc12(struct chip_sgm41542 *chip)
 {
@@ -2120,6 +2291,8 @@ static void sgm41542_get_bc12(struct chip_sgm41542 *chip)
 
 	if (!chip->bc12_done) {
 		vbus_stat = sgm41542_get_vbus_stat();
+		if (vbus_stat == 0)
+			vbus_stat = sgm41542_wait_bc12_complete();
 		chg_err("vbus_stat=%x\n", vbus_stat);
 		switch (vbus_stat) {
 		case REG08_SGM41542_VBUS_STAT_SDP:
@@ -2334,6 +2507,8 @@ static irqreturn_t sgm41542_irq_handler(int irq, void *data)
 		chip->support_hvdcp = false;
 		chip->is_hvdcp = false;
 		btb_detect_over = false;
+		chip->charger_current_pre = -1;
+		chip->sw_aicl_count = 0;
 		sgm41542_inform_charger_type(chip);
 		oplus_vooc_reset_fastchg_after_usbout();
 		if (oplus_vooc_get_fastchg_started() == false) {
@@ -2659,6 +2834,9 @@ static int sgm41542_set_vchg(struct charger_device *chg_dev, u32 volt)
 
 static int sgm41542_set_icl(struct charger_device *chg_dev, u32 curr)
 {
+	struct chip_sgm41542 *chip = charger_ic;
+
+	chip->charger_current_pre = curr/1000;
 	return sgm41542_input_current_limit_without_aicl(curr/1000);
 }
 
@@ -2849,6 +3027,7 @@ struct oplus_chg_operations  oplus_chg_sgm41542_ops = {
 	.oplus_usbtemp_monitor_condition = oplus_usbtemp_condition,
 	.vooc_timeout_callback = sgm41542_vooc_timeout_callback,
 	.enable_shipmode = sgm41542_set_shipmode,
+	.check_cc_mode = sgm41542_oplus_check_cc_mode,
 };
 
 static enum power_supply_usb_type sgm41542_charger_usb_types[] = {
@@ -3028,6 +3207,8 @@ static int sgm41542_charger_probe(struct i2c_client *client,
 	chip->support_hvdcp = false;
 	chip->is_hvdcp = false;
 	btb_detect_over = false;
+	chip->charger_current_pre = -1;
+	chip->sw_aicl_count = 0;
 	ret = sgm41542_get_deivce_online();
 	if (!ret) {
 		chg_err("!!!sgm41542 is not detected\n");
@@ -3203,6 +3384,7 @@ static int sgm41542_suspend(struct i2c_client *client, pm_message_t mesg)
 
 static void sgm41542_charger_shutdown(struct i2c_client *client)
 {
+	sgm41542_otg_disable();
 }
 
 static struct of_device_id sgm41542_charger_match_table[] = {

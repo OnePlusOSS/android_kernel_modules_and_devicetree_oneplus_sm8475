@@ -278,7 +278,7 @@ enum { PPS_SUPPORT_NOT = 0,
 };
 
 enum { OPLUS_PPS_POWER_CLR = 0,
-       OPLUS_PPS_POWER_THIRD = 0x1E,
+       OPLUS_PPS_POWER_THIRD = 0x21,
        OPLUS_PPS_POWER_V1 = 0x7D,
        OPLUS_PPS_POWER_V2 = 0x96,
        OPLUS_PPS_POWER_V3 = 0xF0,
@@ -844,4 +844,5 @@ bool oplus_pps_switch_to_pd(void);
 bool oplus_pps_get_adapter_voltage_status(void);
 int oplus_chg_track_pack_pps_adapter_info(u8 *pps_adapter_info, int lenth);
 bool oplus_support_pps(void);
+void oplus_pps_shutdown(void);
 #endif /*_OPLUS_PPS_H_*/

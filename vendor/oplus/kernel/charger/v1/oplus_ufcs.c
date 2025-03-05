@@ -33,8 +33,10 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 #include <linux/usb/typec.h>
 #include <linux/usb/usbpd.h>
+#endif
 
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
@@ -3360,11 +3362,12 @@ void oplus_ufcs_set_vbatt_diff(bool diff)
 static bool oplus_ufcs_voter_charging_start(void)
 {
 	struct oplus_ufcs_chip *chip = g_ufcs_chip;
-	int stop_voter = chip->ufcs_stop_status;
+	int stop_voter = 0;
 	bool restart_voter = false;
 
 	if (!chip || !chip->ufcs_support_type)
 		return restart_voter;
+	stop_voter = chip->ufcs_stop_status;
 
 	switch (stop_voter) {
 	case UFCS_STOP_VOTER_TBATT_OVER:

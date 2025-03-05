@@ -677,12 +677,12 @@ static void oplus_comm_update_ffc_config(
 				index = i * (spec->ffc_temp_region_max - 2) + oplus_comm_ffc_temp_region_map(j);
 				if (index >= (data_len / sizeof(buf[0])))
 					buf[index] = 0;
-			}
-			spec->wls_ffc_fv_cutoff_mv[i][j] = le32_to_cpu(buf[index]);
-			if (g_log_buf) {
-				log_index += snprintf(g_log_buf + log_index, LOG_BUF_SIZE - log_index - 1, "%s%d",
-					((i == 0) && (j == 0)) ? "" : ", ", spec->wls_ffc_fv_cutoff_mv[i][j]);
-				g_log_buf[log_index] = 0;
+				spec->wls_ffc_fv_cutoff_mv[i][j] = le32_to_cpu(buf[index]);
+				if (g_log_buf) {
+					log_index += snprintf(g_log_buf + log_index, LOG_BUF_SIZE - log_index - 1, "%s%d",
+						((i == 0) && (j == 0)) ? "" : ", ", spec->wls_ffc_fv_cutoff_mv[i][j]);
+					g_log_buf[log_index] = 0;
+				}
 			}
 		}
 		if (g_log_buf)

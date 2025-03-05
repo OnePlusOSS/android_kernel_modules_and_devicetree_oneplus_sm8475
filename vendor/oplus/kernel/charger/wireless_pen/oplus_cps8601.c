@@ -1682,10 +1682,14 @@ static int cps_wls_get_ask_packet(struct cps_wls_chrg_chip *chip)
 	if ((data[0] == POWER_PKG_HEAD) && data[1] == POWER_PKG_CMD) {
 		chip->pen_soc = cps_recv_pen_soc(data);
 
-		if (chip->pen_soc >= 100) {
+		if (chip->pen_soc == 100) {
 			cps_set_charge_allow(chip, false);
 			chip->power_disable_reason = PEN_REASON_CHARGE_FULL;
 			cps_wls_log(CPS_LOG_ERR, "[%s] soc full\n", __func__);
+		} else {
+			cps_set_charge_allow(chip, false);
+			chip->power_disable_reason = PEN_REASON_CHARGE_STOP;
+			cps_wls_log(CPS_LOG_ERR, "[%s] charge stop\n", __func__);
 		}
 	}
 

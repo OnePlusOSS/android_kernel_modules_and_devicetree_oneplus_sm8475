@@ -846,5 +846,6 @@ int oplus_sc6607_read_ibus(void);
 int oplus_sc6607_read_vac(void);
 int oplus_sc6607_read_vsys(void);
 int oplus_sc6607_read_vbat(void);
+bool check_ntc_suport_1000k(void);
 #endif /*__SC6607_H__*/
 

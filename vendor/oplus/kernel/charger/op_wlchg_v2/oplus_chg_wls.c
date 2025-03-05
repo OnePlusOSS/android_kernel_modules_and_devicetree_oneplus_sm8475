@@ -37,6 +37,10 @@
 #include "oplus_chg_wls_cfg.h"
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+#define PDE_DATA pde_data
+#endif
+
 extern struct oplus_chg_chip *g_oplus_chip;
 extern bool oplus_get_wired_otg_online(void);
 
@@ -1057,6 +1061,7 @@ static int oplus_chg_wls_send_msg(struct oplus_chg_wls *wls_dev, u8 msg, u8 data
 	struct oplus_chg_rx_msg *rx_msg = &wls_dev->rx_msg;
 	int cep;
 	int rc;
+	unsigned long time_left;
 
 	if (!wls_dev->msg_callback_ok) {
 		rc = oplus_chg_wls_rx_register_msg_callback(wls_dev->wls_rx, wls_dev,
@@ -1102,11 +1107,13 @@ static int oplus_chg_wls_send_msg(struct oplus_chg_wls *wls_dev, u8 msg, u8 data
 		rx_msg->pending = true;
 		reinit_completion(&wls_dev->msg_ack);
 		schedule_delayed_work(&wls_dev->wls_send_msg_work, msecs_to_jiffies(1000));
-		rc = wait_for_completion_timeout(&wls_dev->msg_ack, msecs_to_jiffies(wait_time_s * 1000));
-		if (!rc) {
+		time_left = wait_for_completion_timeout(&wls_dev->msg_ack, msecs_to_jiffies(wait_time_s * 1000));
+		if (!time_left) {
 			pr_err("Error, timed out sending message\n");
 			cancel_delayed_work_sync(&wls_dev->wls_send_msg_work);
 			rc = -ETIMEDOUT;
+		} else {
+			rc = 0;
 		}
 		rx_msg->msg_type = 0;
 		rx_msg->data = 0;
@@ -2957,7 +2964,7 @@ static ssize_t oplus_chg_wls_path_curr_store(struct device *dev,
 
 	rc = sscanf(buf, "%d,%d", &nor_curr_ma, &fast_curr_ma);
 	if (rc < 0) {
-		pr_err("can't read input string, rc=%d\n", rc);
+		pr_err("can't read input string, rc=%ld\n", rc);
 		return rc;
 	}
 	nor_curr_ma = nor_curr_ma /1000;
@@ -3560,7 +3567,7 @@ static int oplus_chg_wls_event_notifier_call(struct notifier_block *nb,
 	switch(val) {
 	case OPLUS_CHG_EVENT_ONLINE:
 		if (owner_ocm == NULL) {
-			pr_err("This event(=%d) does not support anonymous sending\n",
+			pr_err("This event(=%ld) does not support anonymous sending\n",
 				val);
 			return NOTIFY_BAD;
 		}
@@ -3574,7 +3581,7 @@ static int oplus_chg_wls_event_notifier_call(struct notifier_block *nb,
 		break;
 	case OPLUS_CHG_EVENT_OFFLINE:
 		if (owner_ocm == NULL) {
-			pr_err("This event(=%d) does not support anonymous sending\n",
+			pr_err("This event(=%ld) does not support anonymous sending\n",
 				val);
 			return NOTIFY_BAD;
 		}
@@ -3590,7 +3597,7 @@ static int oplus_chg_wls_event_notifier_call(struct notifier_block *nb,
 		break;
 	case OPLUS_CHG_EVENT_PRESENT:
 		if (owner_ocm == NULL) {
-			pr_err("This event(=%d) does not support anonymous sending\n",
+			pr_err("This event(=%ld) does not support anonymous sending\n",
 				val);
 			return NOTIFY_BAD;
 		}
@@ -4176,7 +4183,7 @@ static void oplus_chg_wls_fast_switch_next_step(struct oplus_chg_wls *wls_dev)
 	}
 	rc = oplus_chg_wls_get_batt_temp(wls_dev, &batt_temp);
 	if (rc < 0) {
-		pr_err("can't get batt temp, rc=%d\n");
+		pr_err("can't get batt temp, rc=%d\n", rc);
 		return;
 	}
 
@@ -4265,7 +4272,7 @@ static int oplus_chg_wls_fast_temp_check(struct oplus_chg_wls *wls_dev)
 	}
 	rc = oplus_chg_wls_get_batt_temp(wls_dev, &batt_temp);
 	if (rc < 0) {
-		pr_err("can't get batt temp, rc=%d\n");
+		pr_err("can't get batt temp, rc=%d\n", rc);
 		return rc;
 	}
 	def_curr_ma = oplus_get_client_vote(wls_dev->fcc_votable, JEITA_VOTER);
@@ -4311,7 +4318,7 @@ static int oplus_chg_wls_fast_temp_check(struct oplus_chg_wls *wls_dev)
 			oplus_chg_wls_fast_switch_prev_step(wls_dev);
 			return 0;
 		}
-		pr_info("jiffies=%u, timeout=%u, high_threshold=%d, batt_vol_max=%d\n",
+		pr_info("jiffies=%lu, timeout=%lu, high_threshold=%d, batt_vol_max=%d\n",
 			jiffies, fcc_chg->fcc_wait_timeout,
 			fcc_chg->fcc_step[wls_status->fastchg_level].high_threshold,
 			batt_vol_max);
@@ -4404,7 +4411,7 @@ static int oplus_chg_wls_fast_ibat_check(struct oplus_chg_wls *wls_dev)
 
 	rc = oplus_chg_wls_get_ibat(wls_dev, &ibat_ma);
 	if (rc < 0) {
-		pr_err("can't get ibat, rc=%d\n");
+		pr_err("can't get ibat, rc=%d\n", rc);
 		return rc;
 	}
 
@@ -4692,7 +4699,7 @@ static int oplus_chg_wls_set_non_ffc_current(struct oplus_chg_wls *wls_dev)
 	}
 	rc = oplus_chg_wls_get_batt_temp(wls_dev, &batt_temp);
 	if (rc < 0) {
-		pr_err("can't get batt temp, rc=%d\n");
+		pr_err("can't get batt temp, rc=%d\n", rc);
 		return rc;
 	}
 
@@ -4869,6 +4876,7 @@ static int oplus_chg_wls_rx_handle_state_default(struct oplus_chg_wls *wls_dev)
 	switch (rx_mode) {
 	case OPLUS_CHG_WLS_RX_MODE_EPP_5W:
 		wls_status->epp_5w = true;
+		fallthrough;
 	case OPLUS_CHG_WLS_RX_MODE_EPP:
 		wls_status->epp_working = true;
 		wls_status->wls_type = OPLUS_CHG_WLS_EPP;
@@ -5011,6 +5019,7 @@ static int oplus_chg_wls_rx_handle_state_default(struct oplus_chg_wls *wls_dev)
 		break;
 	case OPLUS_CHG_WLS_RX_MODE_EPP_5W:
 		wls_status->epp_5w = true;
+		fallthrough;
 	case OPLUS_CHG_WLS_RX_MODE_EPP:
 		wls_status->epp_working = true;
 		wls_status->wls_type = OPLUS_CHG_WLS_EPP;
@@ -6246,6 +6255,7 @@ static int oplus_chg_wls_rx_enter_state_done(struct oplus_chg_wls *wls_dev)
 		(void)oplus_chg_wls_rx_set_vout(wls_dev->wls_rx,
 			WLS_VOUT_FASTCHG_INIT_MV, 0);
 		wls_status->state_sub_step = 1;
+		fallthrough;
 	case 1:
 		if (wls_status->charge_type != WLS_CHARGE_TYPE_FAST) {
 			rc = oplus_chg_wls_send_msg(wls_dev, WLS_CMD_INTO_FASTCHAGE, 0xff, 0);
@@ -6380,6 +6390,7 @@ static int oplus_chg_wls_rx_enter_state_quiet(struct oplus_chg_wls *wls_dev)
 	case 0:
 		(void)oplus_chg_wls_rx_set_vout(wls_dev->wls_rx, WLS_VOUT_FASTCHG_INIT_MV, 0);
 		wls_status->state_sub_step = 1;
+		fallthrough;
 	case 1:
 		if (wls_status->charge_type != WLS_CHARGE_TYPE_FAST) {
 			rc = oplus_chg_wls_send_msg(wls_dev, WLS_CMD_INTO_FASTCHAGE, 0xff, 0);
@@ -6524,6 +6535,7 @@ static int oplus_chg_wls_rx_enter_state_stop(struct oplus_chg_wls *wls_dev)
 		(void)oplus_chg_wls_rx_set_vout(wls_dev->wls_rx,
 			WLS_VOUT_FASTCHG_INIT_MV, 0);
 		wls_status->state_sub_step = 1;
+		fallthrough;
 	case 1:
 		if (wls_status->charge_type != WLS_CHARGE_TYPE_FAST) {
 			rc = oplus_chg_wls_send_msg(wls_dev, WLS_CMD_INTO_FASTCHAGE, 0xff, 0);
@@ -7157,7 +7169,7 @@ static void oplus_chg_wls_data_update_work(struct work_struct *work)
 
 	rc = oplus_chg_wls_get_ibat(wls_dev, &ibat_ma);
 	if (rc < 0) {
-		pr_err("can't get ibat, rc=%d\n");
+		pr_err("can't get ibat, rc=%d\n", rc);
 		goto out;
 	}
 
@@ -8817,7 +8829,7 @@ static ssize_t oplus_chg_wls_proc_user_sleep_mode_write(struct file *file,
 	}
 
 	if (len > sizeof(buffer) - 1) {
-		pr_err("len[%d] -EFAULT\n", len);
+		pr_err("len[%ld] -EFAULT\n", len);
 		return -EFAULT;
 	}
 
@@ -8915,7 +8927,7 @@ static ssize_t oplus_chg_wls_proc_idt_adc_test_write(struct file *file,
 	}
 
 	if (len > sizeof(buffer) - 1) {
-		pr_err("%s: len[%d] -EFAULT.\n", __func__, len);
+		pr_err("%s: len[%ld] -EFAULT.\n", __func__, len);
 		return -EFAULT;
 	}
 
@@ -9148,7 +9160,7 @@ static ssize_t oplus_chg_wls_proc_ftm_mode_write(struct file *file,
 	}
 
 	if (len > sizeof(buffer) - 1) {
-		pr_err("len[%d] -EFAULT\n", len);
+		pr_err("len[%ld] -EFAULT\n", len);
 		return -EFAULT;
 	}
 

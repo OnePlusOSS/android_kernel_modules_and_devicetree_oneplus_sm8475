@@ -3,7 +3,7 @@
 
 #include <oplus_mms.h>
 
-#define FFC_CHG_STEP_MAX			4
+#define FFC_CHG_STEP_MAX			5
 #define AGAIN_FFC_CYCLY_THR_COUNT		2
 #define BATT_TEMP_HYST				20
 #define BATT_VOL_HYST				50

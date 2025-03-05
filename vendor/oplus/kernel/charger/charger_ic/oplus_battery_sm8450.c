@@ -71,6 +71,7 @@
 #ifndef BATTERY_LOG_REG_MAX_SIZE
 #define BATTERY_LOG_REG_MAX_SIZE 100
 #endif
+#define DEFAULT_CURR_BY_CC 100
 char battlog_buck_ic_reg_info[BATTERY_LOG_REG_MAX_SIZE] = {0};
 
 struct oplus_chg_chip *g_oplus_chip = NULL;
@@ -133,6 +134,7 @@ static int oplus_chg_track_upload_icl_err_info(
 	struct battery_chg_dev *bcdev, int err_type);
 static int oplus_chg_track_upload_adsp_err_info(
 	struct battery_chg_dev *bcdev, int err_type);
+static int oplus_chg_set_input_current(int current_ma);
 
 //extern void oplus_usb_set_none_role(void);
 #if defined(OPLUS_FEATURE_POWERINFO_FTM) && defined(CONFIG_OPLUS_POWERINFO_FTM)
@@ -643,9 +645,12 @@ void oplus_get_props_from_adsp_by_buffer(void)
 		if (chip->ffc_temp_status == FFC_TEMP_STATUS__LOW) {
 			full_vol = chip->limits.little_cool_vfloat_sw_limit;
 			full_curr = chip->limits.iterm_ma;
-		} else {
+		} else if (chip->ffc_temp_status == FFC_TEMP_STATUS__WARM) {
 			full_vol = chip->limits.ffc2_normal_vfloat_sw_limit;
 			full_curr = chip->limits.ffc2_normal_fastchg_ma + bcdev->ffc_full_delta_iterm_ma;
+		} else {
+			full_vol = chip->limits.ffc2_normal_vfloat_sw_limit;
+			full_curr = chip->limits.ffc2_normal_fastchg_ma + bcdev->ffc_full_delta_iterm_ma_low;
 		}
 	} else {
 		if (chip->fastchg_ffc_status) {
@@ -677,7 +682,7 @@ static int oplus_get_bcc_parameters_from_adsp(char *buf)
 	int ret = 0;
 	struct oplus_chg_chip *chip = g_oplus_chip;
 	struct battery_chg_dev *bcdev = NULL;
-	u8 tmpbuf[PAGE_SIZE] = {0};
+	u8 *tmpbuf;
 	int len = 0;
 	int i = 0;
 	int idx = 0;
@@ -685,6 +690,12 @@ static int oplus_get_bcc_parameters_from_adsp(char *buf)
 	if (!chip) {
 		printk(KERN_ERR "!!!chip null, oplus_get_batt_argv_buffer\n");
 		return -1;
+	}
+
+	tmpbuf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!tmpbuf) {
+		chg_err("tmpbuf error\n");
+		return -ENOMEM;
 	}
 
 	bcdev = chip->pmic_spmi.bcdev_chip;
@@ -703,10 +714,12 @@ static int oplus_get_bcc_parameters_from_adsp(char *buf)
 	if (bcc_debug_mode & BCC_Y_DEBUG) {
 		memcpy(&buf[0], bcc_debug_buf, BCC_PAGE_SIZE);
 		printk(KERN_ERR "%s bcc_debug_buf:%s\n", __func__, bcc_debug_buf);
+		kfree(tmpbuf);
 		return ret;
 	}
 #endif
 	printk(KERN_ERR "%s buf:%s\n", __func__, buf);
+	kfree(tmpbuf);
 	return ret;
 }
 
@@ -1755,6 +1768,45 @@ int qti_battery_charger_get_prop(const char *name,
 }
 EXPORT_SYMBOL(qti_battery_charger_get_prop);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+int qti_battery_charger_set_prop(const char *name,
+				enum battery_charger_prop prop_id, int val)
+{
+	struct power_supply *psy;
+	struct battery_chg_dev *bcdev;
+	struct psy_state *pst;
+	int rc = 0;
+
+	if (prop_id >= BATTERY_CHARGER_PROP_MAX)
+		return -EINVAL;
+
+	if (strcmp(name, "battery") && strcmp(name, "usb") &&
+	    strcmp(name, "wireless"))
+		return -EINVAL;
+
+	psy = power_supply_get_by_name(name);
+	if (!psy)
+		return -ENODEV;
+
+	bcdev = power_supply_get_drvdata(psy);
+	power_supply_put(psy);
+	if (!bcdev)
+		return -ENODEV;
+
+	switch (prop_id) {
+	case FLASH_ACTIVE:
+		pst = &bcdev->psy_list[PSY_TYPE_USB];
+		rc = write_property_id(bcdev, pst, F_ACTIVE, val);
+		break;
+	default:
+		break;
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL_GPL(qti_battery_charger_set_prop);
+#endif
+
 static bool validate_message(struct battery_charger_resp_msg *resp_msg,
 				size_t len)
 {
@@ -2171,6 +2223,9 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 	case BC_PD_SOFT_RESET:
 		printk(KERN_ERR "!!!!!PD hard reset happend\n");
 		break;
+	case BC_PD_SOURCECAP_DONE:
+		schedule_delayed_work(&bcdev->pd_set_aicl_work, 0);
+		break;
 	case BC_CHG_STATUS_SET:
 		schedule_delayed_work(&bcdev->unsuspend_usb_work, 0);
 		break;
@@ -2229,7 +2284,7 @@ static int battery_chg_callback(void *priv, void *data, size_t len)
 
 	if (!bcdev->initialized) {
 		pr_debug("Driver initialization failed: Dropping glink callback message: state %d\n",
-			 bcdev->state);
+			 atomic_read(&bcdev->state));
 		return 0;
 	}
 
@@ -3040,8 +3095,10 @@ static int battery_psy_get_prop(struct power_supply *psy,
 					chip->tbatt_status == BATTERY_STATUS__REMOVED)
 					pval->intval = chip->prop_status;
 
-				if ((oplus_is_vooc_project() == DUAL_BATT_150W || oplus_is_vooc_project() == DUAL_BATT_240W)
-					&& oplus_quirks_keep_connect_status() && chip->mmi_chg)
+				if ((oplus_is_vooc_project() == DUAL_BATT_150W ||
+					oplus_is_vooc_project() == DUAL_BATT_240W ||
+					oplus_get_abnormal_disconnect_keep_connect()) &&
+					oplus_quirks_keep_connect_status() && chip->mmi_chg)
 					pval->intval = chip->keep_prop_status;
 			} else if (!chip->authenticate) {
 				pval->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
@@ -3529,9 +3586,15 @@ out:
 	return rc;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_fw_crc_store(const struct class *c,
+					const struct class_attribute *attr,
+					const char *buf, size_t count)
+#else
 static ssize_t wireless_fw_crc_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3546,9 +3609,15 @@ static ssize_t wireless_fw_crc_store(struct class *c,
 }
 static CLASS_ATTR_WO(wireless_fw_crc);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_fw_version_show(const struct class *c,
+					const struct class_attribute *attr,
+					char *buf)
+#else
 static ssize_t wireless_fw_version_show(struct class *c,
 					struct class_attribute *attr,
 					char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3569,9 +3638,15 @@ static ssize_t wireless_fw_version_show(struct class *c,
 }
 static CLASS_ATTR_RO(wireless_fw_version);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_fw_force_update_store(const struct class *c,
+					const struct class_attribute *attr,
+					const char *buf, size_t count)
+#else
 static ssize_t wireless_fw_force_update_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3589,9 +3664,15 @@ static ssize_t wireless_fw_force_update_store(struct class *c,
 }
 static CLASS_ATTR_WO(wireless_fw_force_update);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_fw_update_store(const struct class *c,
+					const struct class_attribute *attr,
+					const char *buf, size_t count)
+#else
 static ssize_t wireless_fw_update_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3609,8 +3690,13 @@ static ssize_t wireless_fw_update_store(struct class *c,
 }
 static CLASS_ATTR_WO(wireless_fw_update);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t usb_typec_compliant_show(const struct class *c,
+				const struct class_attribute *attr, char *buf)
+#else
 static ssize_t usb_typec_compliant_show(struct class *c,
 				struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3626,8 +3712,13 @@ static ssize_t usb_typec_compliant_show(struct class *c,
 }
 static CLASS_ATTR_RO(usb_typec_compliant);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t usb_real_type_show(const struct class *c,
+				const struct class_attribute *attr, char *buf)
+#else
 static ssize_t usb_real_type_show(struct class *c,
 				struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3643,8 +3734,14 @@ static ssize_t usb_real_type_show(struct class *c,
 }
 static CLASS_ATTR_RO(usb_real_type);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t restrict_cur_store(const struct class *c,
+				const struct class_attribute *attr,
+				const char *buf, size_t count)
+#else
 static ssize_t restrict_cur_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3667,8 +3764,14 @@ static ssize_t restrict_cur_store(struct class *c, struct class_attribute *attr,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t restrict_cur_show(const struct class *c,
+				const struct class_attribute *attr,
+				char *buf)
+#else
 static ssize_t restrict_cur_show(struct class *c, struct class_attribute *attr,
 				char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3677,8 +3780,14 @@ static ssize_t restrict_cur_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(restrict_cur);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t restrict_chg_store(const struct class *c,
+				const struct class_attribute *attr,
+				const char *buf, size_t count)
+#else
 static ssize_t restrict_chg_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3697,8 +3806,14 @@ static ssize_t restrict_chg_store(struct class *c, struct class_attribute *attr,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t restrict_chg_show(const struct class *c,
+				const struct class_attribute *attr,
+				char *buf)
+#else
 static ssize_t restrict_chg_show(struct class *c, struct class_attribute *attr,
 				char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3707,8 +3822,14 @@ static ssize_t restrict_chg_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(restrict_chg);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t fake_soc_store(const struct class *c,
+				const struct class_attribute *attr,
+				const char *buf, size_t count)
+#else
 static ssize_t fake_soc_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3727,8 +3848,14 @@ static ssize_t fake_soc_store(struct class *c, struct class_attribute *attr,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t fake_soc_show(const struct class *c,
+				const struct class_attribute *attr,
+				char *buf)
+#else
 static ssize_t fake_soc_show(struct class *c, struct class_attribute *attr,
 				char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3737,9 +3864,15 @@ static ssize_t fake_soc_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(fake_soc);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_boost_en_store(const struct class *c,
+					const struct class_attribute *attr,
+					const char *buf, size_t count)
+#else
 static ssize_t wireless_boost_en_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3757,8 +3890,14 @@ static ssize_t wireless_boost_en_store(struct class *c,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t wireless_boost_en_show(const struct class *c,
+					const struct class_attribute *attr,
+					char *buf)
+#else
 static ssize_t wireless_boost_en_show(struct class *c,
 					struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3773,9 +3912,15 @@ static ssize_t wireless_boost_en_show(struct class *c,
 }
 static CLASS_ATTR_RW(wireless_boost_en);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t moisture_detection_en_store(const struct class *c,
+					const struct class_attribute *attr,
+					const char *buf, size_t count)
+#else
 static ssize_t moisture_detection_en_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3793,8 +3938,14 @@ static ssize_t moisture_detection_en_store(struct class *c,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t moisture_detection_en_show(const struct class *c,
+					const struct class_attribute *attr,
+					char *buf)
+#else
 static ssize_t moisture_detection_en_show(struct class *c,
 					struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3810,8 +3961,13 @@ static ssize_t moisture_detection_en_show(struct class *c,
 }
 static CLASS_ATTR_RW(moisture_detection_en);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t moisture_detection_status_show(const struct class *c,
+					const struct class_attribute *attr, char *buf)
+#else
 static ssize_t moisture_detection_status_show(struct class *c,
 					struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3827,8 +3983,13 @@ static ssize_t moisture_detection_status_show(struct class *c,
 }
 static CLASS_ATTR_RO(moisture_detection_status);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t resistance_show(const struct class *c,
+					const struct class_attribute *attr, char *buf)
+#else
 static ssize_t resistance_show(struct class *c,
 					struct class_attribute *attr, char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3843,8 +4004,14 @@ static ssize_t resistance_show(struct class *c,
 }
 static CLASS_ATTR_RO(resistance);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t soh_show(const struct class *c,
+			const struct class_attribute *attr,
+			char *buf)
+#else
 static ssize_t soh_show(struct class *c, struct class_attribute *attr,
 			char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3859,8 +4026,14 @@ static ssize_t soh_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RO(soh);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t ship_mode_en_store(const struct class *c,
+				const struct class_attribute *attr,
+				const char *buf, size_t count)
+#else
 static ssize_t ship_mode_en_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3871,8 +4044,14 @@ static ssize_t ship_mode_en_store(struct class *c, struct class_attribute *attr,
 	return count;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t ship_mode_en_show(const struct class *c,
+				const struct class_attribute *attr,
+				char *buf)
+#else
 static ssize_t ship_mode_en_show(struct class *c, struct class_attribute *attr,
 				char *buf)
+#endif
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
 						battery_class);
@@ -3905,7 +4084,10 @@ ATTRIBUTE_GROUPS(battery_class);
 static void battery_chg_add_debugfs(struct battery_chg_dev *bcdev)
 {
 	int rc;
-	struct dentry *dir, *file;
+	struct dentry *dir;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
+	struct dentry *file;
+#endif
 
 	dir = debugfs_create_dir("battery_charger", NULL);
 	if (IS_ERR(dir)) {
@@ -3915,6 +4097,7 @@ static void battery_chg_add_debugfs(struct battery_chg_dev *bcdev)
 		return;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	file = debugfs_create_bool("block_tx", 0600, dir, &bcdev->block_tx);
 	if (IS_ERR(file)) {
 		rc = PTR_ERR(file);
@@ -3922,12 +4105,16 @@ static void battery_chg_add_debugfs(struct battery_chg_dev *bcdev)
 			rc);
 		goto error;
 	}
-
 	bcdev->debugfs_dir = dir;
 
 	return;
 error:
 	debugfs_remove_recursive(dir);
+#else
+	debugfs_create_bool("block_tx", 0600, dir, &bcdev->block_tx);
+	bcdev->debugfs_dir = dir;
+	return;
+#endif
 }
 #else
 static void battery_chg_add_debugfs(struct battery_chg_dev *bcdev) { }
@@ -4940,6 +5127,12 @@ static int oplus_chg_parse_custom_dt(struct oplus_chg_chip *chip)
                 bcdev->otg_real_soc_min = USB_OTG_REAL_SOC_MIN;
         }
 
+	rc = of_property_read_u32(node, "qcom,ffc_full_delta_iterm_ma_low",
+					&bcdev->ffc_full_delta_iterm_ma_low);
+	if (rc < 0) {
+		bcdev->ffc_full_delta_iterm_ma_low = FFC_FULL_DELTA_ITEARM_MA_LOW;
+	}
+
         rc = of_property_read_u32(node, "qcom,ffc_full_delta_iterm_ma",
                         &bcdev->ffc_full_delta_iterm_ma);
         if (rc < 0) {
@@ -4947,8 +5140,10 @@ static int oplus_chg_parse_custom_dt(struct oplus_chg_chip *chip)
 	}
 
 	bcdev->pmic_is_pm7250b = of_property_read_bool(bcdev->dev->of_node, "qcom,pmic-is-pm7250b");
-	chg_err("pmic_is_pm7250b:%d,ffc_full_delta_iterm_ma:%d\n", bcdev->pmic_is_pm7250b, bcdev->ffc_full_delta_iterm_ma);
+	chg_err("pmic_is_pm7250b:%d,ffc_full_delta_iterm_ma:%d, ffc_full_delta_iterm_ma_low:%d\n",
+		bcdev->pmic_is_pm7250b, bcdev->ffc_full_delta_iterm_ma, bcdev->ffc_full_delta_iterm_ma_low);
 
+	bcdev->common_charge_icl_support = of_property_read_bool(bcdev->dev->of_node, "oplus,common-charge-icl-support");
 	return 0;
 }
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
@@ -5157,7 +5352,7 @@ static int oplus_usbtemp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.usbtemp_v_chan)) {
 			rc = PTR_ERR(bcdev->iio.usbtemp_v_chan);
 			if (rc != -EPROBE_DEFER)
-				dev_err(bcdev->dev, "usb_temp_adc  get  error, %ld\n",	rc);
+				dev_err(bcdev->dev, "usb_temp_adc  get  error, %d\n",	rc);
 				bcdev->iio.usbtemp_v_chan = NULL;
 				return rc;
 		}
@@ -5172,7 +5367,7 @@ static int oplus_usbtemp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.usbtemp_sup_v_chan)) {
 			rc = PTR_ERR(bcdev->iio.usbtemp_sup_v_chan);
 			if (rc != -EPROBE_DEFER)
-				dev_err(bcdev->dev, "usb_supplementary_temp_adc  get error, %ld\n", rc);
+				dev_err(bcdev->dev, "usb_supplementary_temp_adc  get error, %d\n", rc);
 				bcdev->iio.usbtemp_sup_v_chan = NULL;
 				return rc;
 		}
@@ -5186,7 +5381,7 @@ static int oplus_usbtemp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.batt0_con_btb_chan)) {
 			rc = PTR_ERR(bcdev->iio.batt0_con_btb_chan);
 			if (rc != -EPROBE_DEFER) {
-				dev_err(bcdev->dev, "batt0_con_btb_chan  get error, %ld\n", rc);
+				dev_err(bcdev->dev, "batt0_con_btb_chan  get error, %d\n", rc);
 				bcdev->iio.batt0_con_btb_chan = NULL;
 				return rc;
 			}
@@ -5200,7 +5395,7 @@ static int oplus_usbtemp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.batt1_con_btb_chan)) {
 			rc = PTR_ERR(bcdev->iio.batt1_con_btb_chan);
 			if (rc != -EPROBE_DEFER) {
-				dev_err(bcdev->dev, "batt1_con_btb_chan  get error, %ld\n", rc);
+				dev_err(bcdev->dev, "batt1_con_btb_chan  get error, %d\n", rc);
 				bcdev->iio.batt1_con_btb_chan = NULL;
 				return rc;
 			}
@@ -5214,7 +5409,7 @@ static int oplus_usbtemp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.usbcon_btb_chan)) {
 			rc = PTR_ERR(bcdev->iio.usbcon_btb_chan);
 			if (rc != -EPROBE_DEFER) {
-				dev_err(bcdev->dev, "usbcon_btb_chan  get error, %ld\n", rc);
+				dev_err(bcdev->dev, "usbcon_btb_chan  get error, %d\n", rc);
 				bcdev->iio.usbcon_btb_chan = NULL;
 				return rc;
 			}
@@ -5314,7 +5509,7 @@ static int oplus_subboard_temp_iio_init(struct oplus_chg_chip *chip)
 		if (IS_ERR(bcdev->iio.subboard_temp_v_chan)) {
 			rc = PTR_ERR(bcdev->iio.subboard_temp_v_chan);
 			if (rc != -EPROBE_DEFER)
-				dev_err(bcdev->dev, "subboard_temp_v_chan  get  error, %ld\n",	rc);
+				dev_err(bcdev->dev, "subboard_temp_v_chan  get  error, %d\n",	rc);
 				bcdev->iio.subboard_temp_v_chan = NULL;
 				return rc;
 		}
@@ -6970,7 +7165,7 @@ static int oplus_usbtemp_monitor_main_new_method(void *data)
 				curr_range_change = true;
 				curr_range_change_first_time = pre_hi_current_time;
 			}
-			chg_err("reconnected when hi_current, need keep %d seconds", now_time.tv_sec - pre_hi_current_time.tv_sec);
+			chg_err("reconnected when hi_current, need keep %ld seconds", now_time.tv_sec - pre_hi_current_time.tv_sec);
 		} else if (curr_range_change == true && chip->usbtemp_batt_current >= 5000
 				&& chip->usbtemp_pre_batt_current < 5000) {
 			curr_range_change = false;
@@ -7498,10 +7693,103 @@ bool qpnp_get_prop_vbus_collapse_status(void)
 	return collapse_status;
 }
 
+static int usb_icl[] = {
+	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 3000,
+};
+
+static int oplus_get_max_current_from_first_fixed_pdo(void)
+{
+	int pdo_max = PPS_PDO_MAX;
+	int i, pdo_index;
+	struct battery_chg_dev *bcdev = NULL;
+	struct oplus_chg_chip *chip = g_oplus_chip;
+
+	if (!chip) {
+		chg_err("chip is NULL!\n");
+		return -1;
+	}
+	bcdev = chip->pmic_spmi.bcdev_chip;
+	if (!bcdev->dev->of_node) {
+		chg_err("of_node is NULL!\n");
+		return -1;
+	}
+	if (!bcdev->common_charge_icl_support) {
+		chg_err("get common-charge-icl-support == 0\n");
+		return -1;
+	}
+	pps_read_buffer(bcdev);
+	for (pdo_index = 0; pdo_index < pdo_max; pdo_index++) {
+		chip->pdo[pdo_index].pdo_data = bcdev->pps_read_buffer_dump.data_buffer[pdo_index + 2];
+	}
+	if (chip->pdo[0].pdo_data == 0) {
+		chg_err("get pdo info error\n");
+		return -1;
+	}
+	for (i = 0; i < pdo_max; i++) {
+		if (chip->pdo[i].pdo_type == USBPD_PDMSG_PDOTYPE_FIXED_SUPPLY &&
+		    PD_PDO_VOL(chip->pdo[i].voltage50mv) > 0)
+			return PD_PDO_CURR_MAX(chip->pdo[i].max_current10ma);
+	}
+	return -1;
+}
+
+static int oplus_pd_set_aicr(int current_ma, bool en)
+{
+	struct oplus_chg_chip *chip = g_oplus_chip;
+
+	if (!chip) {
+		chg_err("chip is NULL!\n");
+		return -1;
+	}
+	chg_err("current_ma = %d", current_ma);
+	chip->pd_curr_max = current_ma;
+	if (en)
+		return oplus_chg_set_input_current(chip->pd_curr_max);
+	else
+		return 0;
+}
+
+static void oplus_chg_pd_set_aicl(void)
+{
+	int pd_curr;
+	static int pd_curr1 = 3000, pd_curr2 = 3000;
+	struct oplus_chg_chip *chip = g_oplus_chip;
+	static int pre_pd_volt;
+
+	if (!chip) {
+		pr_info("chip is NULL!\n");
+		return;
+	}
+
+	pd_curr = oplus_get_max_current_from_first_fixed_pdo();
+	pr_info("get pd set aicl =%d, volt = %d!\n", pd_curr, chip->pd_volt);
+
+	if (chip->pd_volt == PDO_5V) {
+		pd_curr1 = pd_curr;
+		if (pre_pd_volt != chip->pd_volt)
+			pd_curr1 = min(pd_curr2, pd_curr1);
+		if (pd_curr1 <= DEFAULT_CURR_BY_CC)
+			oplus_pd_set_aicr(pd_curr1, true);
+		else
+			oplus_pd_set_aicr(pd_curr1, false);
+		pre_pd_volt = chip->pd_volt;
+	} else if (chip->pd_volt == PDO_9V) {
+		pd_curr2 = pd_curr;
+		if (pre_pd_volt != chip->pd_volt)
+			pd_curr2 = min(pd_curr2, pd_curr1);
+		if (pd_curr2 <= 100)
+			oplus_pd_set_aicr(pd_curr2, true);
+		else
+			oplus_pd_set_aicr(pd_curr2, false);
+		pre_pd_volt = chip->pd_volt;
+	}
+}
+
 static int oplus_chg_set_input_current_with_no_aicl(int current_ma)
 {
 	int rc = 0;
 	int prop_id = 0;
+	int max_pdo_current;
 	struct battery_chg_dev *bcdev = NULL;
 	struct psy_state *pst = NULL;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -7514,6 +7802,18 @@ static int oplus_chg_set_input_current_with_no_aicl(int current_ma)
 	pst = &bcdev->psy_list[PSY_TYPE_USB];
 
 	prop_id = get_property_id(pst, POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT);
+
+	max_pdo_current = oplus_get_max_current_from_first_fixed_pdo();
+	chg_err("max_pdo_current = %d\n", max_pdo_current);
+	if (max_pdo_current >= 0 && max_pdo_current < usb_icl[0]) {
+		rc = write_property_id(bcdev, pst, prop_id, max_pdo_current * 1000);
+		if (rc)
+			chg_err("set icl to %d mA fail, rc=%d\n", max_pdo_current, rc);
+		else
+			chg_err("set icl to %d mA\n", max_pdo_current);
+		return rc;
+	}
+
 	rc = write_property_id(bcdev, pst, prop_id, current_ma * 1000);
 	if (rc)
 		chg_err("set icl to %d mA fail, rc=%d\n", current_ma, rc);
@@ -7546,6 +7846,10 @@ static int oplus_chg_set_wls_input_current(int current_ma)
 	return rc;
 }
 
+static void oplus_chg_pd_set_aicl_work(struct work_struct *work)
+{
+	oplus_chg_pd_set_aicl();
+}
 static void smbchg_set_aicl_point(int vol)
 {
 	/*do nothing*/
@@ -7553,16 +7857,13 @@ static void smbchg_set_aicl_point(int vol)
 
 #define AICL_POINT_VOL_9V 7600
 
-static int usb_icl[] = {
-	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 3000,
-};
-
 static int oplus_chg_set_input_current(int current_ma)
 {
 	int rc = 0, i = 0;
 	int chg_vol = 0;
 	int aicl_point = 0;
 	int prop_id = 0;
+	int max_pdo_current;
 	struct battery_chg_dev *bcdev = NULL;
 	struct psy_state *pst = NULL;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -7593,6 +7894,30 @@ static int oplus_chg_set_input_current(int current_ma)
 			aicl_point = 4500;
 		}
 	}
+
+	max_pdo_current = oplus_get_max_current_from_first_fixed_pdo();
+	chg_err("max_pdo_current = %d\n", max_pdo_current);
+	if (max_pdo_current >= 0 && max_pdo_current < usb_icl[0]) {
+		rc = write_property_id(bcdev, pst, prop_id, max_pdo_current * 1000);
+		if (rc) {
+			chg_err("set pd icl to %d mA fail, rc=%d\n", max_pdo_current, rc);
+		} else {
+			chg_err("set pd icl to %d mA\n", max_pdo_current);
+		}
+		goto aicl_return;
+	}
+
+	if (max_pdo_current > 0)
+		current_ma = min(current_ma, chip->pd_curr_max);
+	chg_err("current_ma = %d\n", current_ma);
+
+	rc = write_property_id(bcdev, pst, prop_id, DEFAULT_CURR_BY_CC * 1000);
+	if (rc) {
+		chg_err("set icl to 100 mA fail");
+	} else {
+		chg_err("set icl to 100 mA first\n");
+	}
+	usleep_range(25000, 26000);
 
 	if (current_ma < 500) {
 		i = 0;
@@ -7935,7 +8260,7 @@ int oplus_get_charger_cycle(void)
 	return cycle_count;
 }
 
-int oplus_adsp_voocphy_get_enable()
+int oplus_adsp_voocphy_get_enable(void)
 {
 	int rc = 0;
 	struct battery_chg_dev *bcdev = NULL;
@@ -8292,6 +8617,16 @@ int oplus_chg_wired_get_break_sub_crux_info(char *crux_info)
 	return bcdev->real_chg_type;
 }
 
+int oplus_abnormal_adapter_disconnect_keep(void)
+{
+	int ret_val = 0;
+	if ((oplus_chg_get_voocphy_support() == ADSP_VOOCPHY) &&
+		(oplus_chg_get_fast_chg_type() == ADAPTER_ID_65W_0X14) &&
+		oplus_is_pd_svooc() && !oplus_voocphy_get_fastchg_start())
+			ret_val = 1;
+	return ret_val;
+}
+
 #define MAX_VBUS_CHECK_COUNTS			4
 #define VOLTAGE_800MV				800
 #define GET_INFO_FROMADS_MAXIMIT		3
@@ -8310,6 +8645,8 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 	}
 	bcdev = chip->pmic_spmi.bcdev_chip;
 	pst = &bcdev->psy_list[PSY_TYPE_USB];
+
+	bcdev->plugin_already_run = true;
 
 	rc = read_property_id(bcdev, pst, USB_IN_STATUS);
 	if (rc) {
@@ -8424,7 +8761,7 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 		oplus_pps_stop_disconnect();
 		oplus_pps_variables_reset(true);
 		bcdev->hvdcp_detach_time = cpu_clock(smp_processor_id()) / CPU_CLOCK_TIME_MS;
-		printk(KERN_ERR "!!! %s: the hvdcp_detach_time:%lu, detect time %lu \n", __func__, bcdev->hvdcp_detach_time, bcdev->hvdcp_detect_time);
+		printk(KERN_ERR "!!! %s: the hvdcp_detach_time:%llu, detect time %llu \n", __func__, bcdev->hvdcp_detach_time, bcdev->hvdcp_detect_time);
 		if (bcdev->hvdcp_detach_time - bcdev->hvdcp_detect_time <= OPLUS_HVDCP_DETECT_TO_DETACH_TIME) {
 			bcdev->hvdcp_disable = true;
 			schedule_delayed_work(&bcdev->hvdcp_disable_work, OPLUS_HVDCP_DISABLE_INTERVAL);
@@ -8847,7 +9184,7 @@ static int oplus_chg_hw_init(void)
 		smbchg_usb_suspend_enable();
 	}
 
-	oplus_chg_set_input_current_with_no_aicl(500);
+	oplus_chg_set_input_current_with_no_aicl(100);
 	smbchg_charging_enable();
 
 	return 0;
@@ -9777,7 +10114,8 @@ int oplus_chg_set_pd_config(void)
 		if(is_ext_chg_ops())
 			oplus_chg_suspend_charger();
 		oplus_chg_config_charger_vsys_threshold(0x03);/*set Vsys Skip threshold 101%*/
-		rc = write_property_id(bcdev, pst, BATT_SET_PDO, 5000);
+		chip->pd_volt = PDO_5V;
+		rc = write_property_id(bcdev, pst, BATT_SET_PDO, chip->pd_volt);
 		if (rc)
 			chg_err("set PDO 5V fail, rc=%d\n", rc);
 		else
@@ -9798,7 +10136,8 @@ int oplus_chg_set_pd_config(void)
 			oplus_chg_suspend_charger();
 		oplus_chg_config_charger_vsys_threshold(0x02);/*set Vsys Skip threshold 104%*/
 		oplus_chg_enable_burst_mode(false);
-		rc = write_property_id(bcdev, pst, BATT_SET_PDO, 9000);
+		chip->pd_volt = PDO_9V;
+		rc = write_property_id(bcdev, pst, BATT_SET_PDO, chip->pd_volt);
 		if (rc)
 			chg_err("set PDO 9V fail, rc=%d\n", rc);
 		else
@@ -9834,7 +10173,8 @@ int oplus_chg_set_pd_5v(void)
 		oplus_chg_suspend_charger();
 		oplus_chg_config_charger_vsys_threshold(0x03);/*set Vsys Skip threshold 101%*/
 	}
-	rc = write_property_id(bcdev, pst, BATT_SET_PDO, 5000);
+	chip->pd_volt = PDO_5V;
+	rc = write_property_id(bcdev, pst, BATT_SET_PDO, chip->pd_volt);
 	if (rc)
 		chg_err("set PDO 5V fail, rc=%d\n", rc);
 	else
@@ -9866,7 +10206,8 @@ int oplus_chg_pd_5V(void)
 		oplus_chg_suspend_charger();
 	oplus_chg_config_charger_vsys_threshold(0x02);/*set Vsys Skip threshold 104%*/
 	oplus_chg_enable_burst_mode(false);
-	rc = write_property_id(bcdev, pst, BATT_SET_PDO, PDO_5V);
+	chip->pd_volt = PDO_5V;
+	rc = write_property_id(bcdev, pst, BATT_SET_PDO, chip->pd_volt);
 	if (rc)
 		chg_err("set PDO 5V fail, rc=%d\n", rc);
 	else
@@ -9997,7 +10338,7 @@ int oplus_chg_enable_qc_detect(void)
 
 	rc = write_property_id(bcdev, pst, BATT_SET_QC, 0);
 	bcdev->hvdcp_detect_time = cpu_clock(smp_processor_id()) / CPU_CLOCK_TIME_MS;
-	printk(KERN_ERR " HVDCP2 detect: %d, the detect time: %lu\n",
+	printk(KERN_ERR " HVDCP2 detect: %d, the detect time: %llu\n",
 		bcdev->hvdcp_detect_ok, bcdev->hvdcp_detect_time);
 
 	return rc;
@@ -10352,12 +10693,16 @@ static int fg_bq27541_get_average_current(void)
 	struct psy_state *pst = NULL;
 	struct oplus_chg_chip *chip = g_oplus_chip;
 
-	if (!chip) {
+	if (!chip || !probe_done) {
 		return -1;
 	}
 
 	bcdev = chip->pmic_spmi.bcdev_chip;
+	if (!bcdev)
+		return 0;
 	pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	if (!pst)
+		return 0;
 
 	if (oplus_chg_get_voocphy_support() == ADSP_VOOCPHY && !chip->charger_exist && !chip->read_by_reg) {
 		curr = DIV_ROUND_CLOSEST((int)bcdev->read_buffer_dump.data_buffer[1], 1000);
@@ -12119,6 +12464,8 @@ static int battery_chg_probe(struct platform_device *pdev)
 	}
 
 	g_oplus_chip = oplus_chip;
+	g_oplus_chip->pd_curr_max = 3000;
+	g_oplus_chip->pd_volt = PDO_5V;
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 
 	bcdev = devm_kzalloc(&pdev->dev, sizeof(*bcdev), GFP_KERNEL);
@@ -12204,6 +12551,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&bcdev->hvdcp_disable_work, oplus_hvdcp_disable_work);
 	INIT_DELAYED_WORK(&bcdev->typec_state_change_work, oplus_typec_state_change_work);
 	INIT_DELAYED_WORK(&bcdev->chg_status_send_work, oplus_chg_status_send_adsp_work);
+	INIT_DELAYED_WORK(&bcdev->pd_set_aicl_work, oplus_chg_pd_set_aicl_work);
 	INIT_DELAYED_WORK(&bcdev->suspend_check_work, oplus_suspend_check_work);
 	INIT_DELAYED_WORK(&bcdev->vbus_adc_enable_work, oplus_vbus_enable_adc_work);
 	INIT_DELAYED_WORK(&bcdev->adsp_voocphy_err_work, oplus_adsp_voocphy_err_work);
@@ -12375,6 +12723,9 @@ static int battery_chg_probe(struct platform_device *pdev)
 	schedule_delayed_work(&bcdev->adsp_voocphy_enable_check_work,
 		round_jiffies_relative(msecs_to_jiffies(1500)));
 	schedule_delayed_work(&bcdev->mcu_en_init_work, 0);
+	/* Adapter has no insertion interrupt circumvention scheme */
+	if (!bcdev->plugin_already_run && bcdev->usb_in_status)
+		schedule_delayed_work(&bcdev->plugin_irq_work, 0);
 	battlog_buck_ic_ops.dev_data = (void *)oplus_chip;
 	battery_log_ops_register(&battlog_buck_ic_ops);
 	pr_info("battery_chg_probe end...\n");

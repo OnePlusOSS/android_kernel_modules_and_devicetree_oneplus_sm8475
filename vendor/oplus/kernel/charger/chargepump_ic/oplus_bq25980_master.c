@@ -148,7 +148,7 @@ int bq25980_master_get_tdie(void)
 	       (((data_block[0] & BQ25980_TDIE_POL_H_MASK) << 8) |
 		(data_block[1] & BQ25980_TDIE_POL_L_MASK)) *
 		       BQ25980_TDIE_ADC_LSB;
-	pps_err("0x37[0x%x] 0x38[0x%x] tdie[%d] = %d\n", data_block[0],
+	pps_err("0x37[0x%x] 0x38[0x%x] tdie[%d]\n", data_block[0],
 		data_block[1], tdie);
 
 	return tdie;
@@ -571,8 +571,12 @@ static int bq25980_irq_register(struct chip_bq25980 *chip)
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int bq25980_master_probe(struct i2c_client *client)
+#else
 static int bq25980_master_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
+#endif
 {
 	struct chip_bq25980 *chip;
 

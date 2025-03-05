@@ -4921,6 +4921,18 @@ int oplus_pps_get_adsp_authenticate(void)
 	return auth_result;
 }
 
+void oplus_pps_shutdown(void)
+{
+	struct oplus_pps_chip *chip = &g_pps_chip;
+
+	if (chip == NULL) {
+		chg_err("device not found\n");
+		return;
+	}
+
+	schedule_delayed_work(&chip->pps_stop_work, 0);
+}
+
 int oplus_pps_start(int authen)
 {
 	struct oplus_pps_chip *chip = &g_pps_chip;

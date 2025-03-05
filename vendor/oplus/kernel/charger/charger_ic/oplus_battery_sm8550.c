@@ -9632,6 +9632,16 @@ int oplus_chg_wired_get_break_sub_crux_info(char *crux_info)
 	return bcdev->real_chg_type;
 }
 
+int oplus_abnormal_adapter_disconnect_keep(void)
+{
+	int ret_val = 0;
+	if ((oplus_chg_get_voocphy_support() == ADSP_VOOCPHY) &&
+		(oplus_chg_get_fast_chg_type() == ADAPTER_ID_65W_0X14) &&
+		oplus_is_pd_svooc() && !oplus_voocphy_get_fastchg_start())
+			ret_val = 1;
+	return ret_val;
+}
+
 #define MAX_VBUS_CHECK_COUNTS			4
 #define VOLTAGE_800MV				800
 #define GET_INFO_FROMADS_MAXIMIT		3
@@ -9787,6 +9797,7 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 				    oplus_vooc_get_fastchg_to_warm() == false) {      /*plug out by normal*/
 					printk(KERN_ERR "[%s]: plug out normal\n", __func__);
 					smbchg_set_chargerid_switch_val(0);
+					oplus_ufcs_variables_reset(0);
 					chip->chargerid_volt = 0;
 					chip->chargerid_volt_got = false;
 					chip->charger_type = POWER_SUPPLY_TYPE_UNKNOWN;

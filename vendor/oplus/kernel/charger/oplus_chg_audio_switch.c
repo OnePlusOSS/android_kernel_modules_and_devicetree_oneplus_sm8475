@@ -18,8 +18,13 @@
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 #if IS_ENABLED(CONFIG_TCPC_CLASS)
+#ifdef CONFIG_OPLUS_PD_EXT_SUPPORT
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
+#else
 #include <tcpci.h>
 #include <tcpm.h>
+#endif
 #endif
 #endif
 #define chg_info(fmt, ...)                                                     \
@@ -44,9 +49,7 @@ struct audio_switch {
 
 static struct audio_switch g_audio_switch;
 
-#if IS_ENABLED(CONFIG_TCPC_CLASS)
 #define AUDIO_SWITCH_BY_TYPEC_NOTIFY 1
-#endif
 
 #if IS_ENABLED(CONFIG_OPLUS_AUDIO_SWITCH_GLINK)
 static RAW_NOTIFIER_HEAD(chg_glink_notifier);

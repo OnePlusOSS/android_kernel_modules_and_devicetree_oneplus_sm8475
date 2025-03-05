@@ -643,7 +643,6 @@
 
 
 &dsi_panel_tianma_ab389_ili7838a_1080_2412_dsc_cmd {
-	qcom,panel-supply-entries = <&dsi_panel_oplus_optimization_pwr_supply_lvzhou>;
 	qcom,mdss-dsi-panel-controller = <&mdss_dsi0>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
 	qcom,mdss-dsi-bl-inverted-dbv;

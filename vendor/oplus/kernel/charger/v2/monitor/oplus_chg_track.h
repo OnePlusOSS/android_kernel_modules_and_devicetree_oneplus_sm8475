@@ -64,7 +64,9 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_EIS_INFO,
 	TRACK_NOTIFY_FLAG_ANTI_EXPANSION_INFO,
 	TRACK_NOTIFY_FLAG_CHG_UP_INFO,
-	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_CHG_UP_INFO,
+	TRACK_NOTIFY_FLAG_PLC_INFO,
+	TRACK_NOTIFY_FLAG_WIRED_RETENTION_ONLINE,
+	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_WIRED_RETENTION_ONLINE,
 
 	TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
 	TRACK_NOTIFY_FLAG_NO_CHARGING = TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
@@ -87,8 +89,7 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_FAST_CHARGING_BREAK = TRACK_NOTIFY_FLAG_CHARGING_BREAK_FIRST,
 	TRACK_NOTIFY_FLAG_GENERAL_CHARGING_BREAK,
 	TRACK_NOTIFY_FLAG_WLS_CHARGING_BREAK,
-	TRACK_NOTIFY_FLAG_WIRED_RETENTION_ONLINE,
-	TRACK_NOTIFY_FLAG_CHARGING_BREAK_LAST = TRACK_NOTIFY_FLAG_WIRED_RETENTION_ONLINE,
+	TRACK_NOTIFY_FLAG_CHARGING_BREAK_LAST = TRACK_NOTIFY_FLAG_WLS_CHARGING_BREAK,
 
 	TRACK_NOTIFY_FLAG_DEVICE_ABNORMAL_FIRST,
 	TRACK_NOTIFY_FLAG_WLS_ABNORMAL = TRACK_NOTIFY_FLAG_DEVICE_ABNORMAL_FIRST,
@@ -141,6 +142,23 @@ enum oplus_chg_liquid_intake_track_cmd {
 	TRACK_DATA_PLUGOUT_MAX
 };*/
 
+#define OPLUS_CHG_TRACK_SCENE_BIDIRECT_CP_ERR "bidirect_cp_work_err"
+enum oplus_chg_track_bidirect_cp_device_error {
+	TRACK_BIDIRECT_CP_ERR_DEFAULT,
+	TRACK_BIDIRECT_CP_ERR_SC_EN_STAT,
+	TRACK_BIDIRECT_CP_ERR_V2X_OVP,
+	TRACK_BIDIRECT_CP_ERR_V1X_OVP,
+	TRACK_BIDIRECT_CP_ERR_VAC_OVP,
+	TRACK_BIDIRECT_CP_ERR_FWD_OCP,
+	TRACK_BIDIRECT_CP_ERR_RVS_OCP,
+	TRACK_BIDIRECT_CP_ERR_TSHUT,
+	TRACK_BIDIRECT_CP_ERR_VAC2V2X_OVP,
+	TRACK_BIDIRECT_CP_ERR_VAC2V2X_UVP,
+	TRACK_BIDIRECT_CP_ERR_V1X_ISS_OPP,
+	TRACK_BIDIRECT_CP_ERR_WD_TIMEOUT,
+	TRACK_BIDIRECT_CP_ERR_LNC_SS_TIMEOUT,
+};
+
 typedef struct {
 	unsigned int type_reason;
 	unsigned int flag_reason;
@@ -177,6 +195,7 @@ void oplus_chg_track_update_dischg_profile(struct oplus_monitor *monitor);
 void oplus_chg_track_upload_dischg_profile(struct oplus_monitor *monitor);
 void oplus_chg_track_upload_uisoc_keep_2_err_info(struct oplus_monitor *monitor);
 int oplus_chg_track_upload_rechg_info(struct oplus_monitor *monitor);
+int oplus_chg_track_get_bidirect_cp_err_reason(int err_type, char * err_reason, int len);
 void oplus_chg_track_upload_wired_retention_online_info(struct oplus_monitor *monitor);
 
 #endif /* __OPLUS_CHG_TRACK_H__ */

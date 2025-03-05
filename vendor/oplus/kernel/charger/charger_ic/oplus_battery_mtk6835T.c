@@ -52,7 +52,12 @@
 #include <linux/of_gpio.h>
 #include <linux/iio/consumer.h>
 #include "op_charge.h"
+#ifdef CONFIG_OPLUS_PD_EXT_SUPPORT
+#include "../pd_ext/inc/tcpm.h"
+#else
 #include <tcpm.h>
+#endif
+
 #include "../oplus_charger.h"
 #include "../oplus_gauge.h"
 #include "../oplus_vooc.h"
@@ -879,7 +884,9 @@ static bool is_charger_exist(struct mtk_charger *info)
 
 static int get_charger_type(struct mtk_charger *info)
 {
-	union power_supply_propval prop, prop2, prop3;
+	union power_supply_propval prop = {0};
+	union power_supply_propval prop2 = {0};
+	union power_supply_propval prop3 = {0};
 	static struct power_supply *chg_psy;
 	int ret;
 
@@ -2880,7 +2887,7 @@ static ssize_t sc_tuisoc_store(
 	struct device *dev, struct device_attribute *attr,
 					 const char *buf, size_t size)
 {
-	unsigned long val = 0;
+	long val = 0;
 	int ret;
 	struct power_supply *chg_psy = NULL;
 	struct mtk_charger *info = NULL;
@@ -2942,7 +2949,7 @@ static ssize_t sc_ibat_limit_store(
 	struct device *dev, struct device_attribute *attr,
 					 const char *buf, size_t size)
 {
-	unsigned long val = 0;
+	long val = 0;
 	int ret;
 	struct power_supply *chg_psy = NULL;
 	struct mtk_charger *info = NULL;
@@ -5803,7 +5810,7 @@ void oplus_set_otg_switch_status(bool value)
 		}
 
 		printk(KERN_ERR "[OPLUS_CHG][%s]: otg switch[%d]\n", __func__, value);
-		tcpm_typec_change_role(pinfo->tcpc, value ? TYPEC_ROLE_DRP : TYPEC_ROLE_SNK);
+		tcpm_typec_change_role(pinfo->tcpc, value ? TYPEC_ROLE_TRY_SNK : TYPEC_ROLE_SNK);
 	}
 }
 EXPORT_SYMBOL(oplus_set_otg_switch_status);

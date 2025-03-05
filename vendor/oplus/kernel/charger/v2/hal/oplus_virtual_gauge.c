@@ -507,6 +507,37 @@ static int oplus_chg_vg_get_batt_min(struct oplus_chg_ic_dev *ic_dev,
 	return rc;
 }
 
+static int oplus_chg_vg_get_real_time_curr(struct oplus_chg_ic_dev *ic_dev,
+				      int *curr_ma)
+{
+	struct oplus_virtual_gauge_ic *chip;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < chip->child_num; i++) {
+		if (!func_is_support(&chip->child_list[i],
+				     OPLUS_IC_FUNC_GAUGE_GET_REAL_TIME_CURR)) {
+			rc = (rc == 0) ? -ENOTSUPP : rc;
+			continue;
+		}
+		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_GAUGE_GET_REAL_TIME_CURR,
+				       curr_ma);
+		if (rc < 0)
+			chg_err("child ic[%d] get battery current error, rc=%d\n",
+				i, rc);
+		break;
+	}
+
+	return rc;
+}
+
 static int oplus_chg_vg_get_batt_curr(struct oplus_chg_ic_dev *ic_dev,
 				      int *curr_ma)
 {
@@ -1455,6 +1486,37 @@ static int oplus_chg_vg_get_device_type(struct oplus_chg_ic_dev *ic_dev,
 				       type);
 		if (rc < 0)
 			chg_err("child ic[%d] get device type error, rc=%d\n",
+				i, rc);
+		break;
+	}
+
+	return rc;
+}
+
+static int oplus_chg_vg_set_seal_flag(struct oplus_chg_ic_dev *ic_dev,
+					int seal_flag)
+{
+	struct oplus_virtual_gauge_ic *chip;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < chip->child_num; i++) {
+		if (!func_is_support(&chip->child_list[i],
+				     OPLUS_IC_FUNC_GAUGE_SET_SEAL_FLAG)) {
+			rc = (rc == 0) ? -ENOTSUPP : rc;
+			continue;
+		}
+		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_GAUGE_SET_SEAL_FLAG,
+				       seal_flag);
+		if (rc < 0)
+			chg_err("child ic[%d] set seal flag error, rc=%d\n",
 				i, rc);
 		break;
 	}
@@ -3005,6 +3067,35 @@ static int oplus_chg_vg_get_chem_id(struct oplus_chg_ic_dev *ic_dev, u8 buf[], i
 	return rc;
 }
 
+static int oplus_chg_vg_get_gauge_car_c(struct oplus_chg_ic_dev *ic_dev, int *car_c)
+{
+	struct oplus_virtual_gauge_ic *chip;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < chip->child_num; i++) {
+		if (!func_is_support(&chip->child_list[i],
+				     OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C)) {
+			rc = (rc == 0) ? -ENOTSUPP : rc;
+			continue;
+		}
+
+		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C, car_c);
+		if (rc < 0)
+			chg_err("child ic[%d] GAUGE_GET_GAUGE_CAR_C error, rc=%d\n", i, rc);
+		break;
+	}
+
+	return rc;
+}
+
 static void *oplus_chg_vg_get_func(struct oplus_chg_ic_dev *ic_dev,
 				   enum oplus_chg_ic_func func_id)
 {
@@ -3053,6 +3144,11 @@ static void *oplus_chg_vg_get_func(struct oplus_chg_ic_dev *ic_dev,
 		func = OPLUS_CHG_IC_FUNC_CHECK(
 			OPLUS_IC_FUNC_GAUGE_GET_BATT_CURR,
 			oplus_chg_vg_get_batt_curr);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_REAL_TIME_CURR:
+		func = OPLUS_CHG_IC_FUNC_CHECK(
+			OPLUS_IC_FUNC_GAUGE_GET_REAL_TIME_CURR,
+			oplus_chg_vg_get_real_time_curr);
 		break;
 	case OPLUS_IC_FUNC_GAUGE_GET_BATT_TEMP:
 		func = OPLUS_CHG_IC_FUNC_CHECK(
@@ -3185,6 +3281,11 @@ static void *oplus_chg_vg_get_func(struct oplus_chg_ic_dev *ic_dev,
 		func = OPLUS_CHG_IC_FUNC_CHECK(
 			OPLUS_IC_FUNC_GAUGE_GET_DEVICE_TYPE,
 			oplus_chg_vg_get_device_type);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_SET_SEAL_FLAG:
+		func = OPLUS_CHG_IC_FUNC_CHECK(
+			OPLUS_IC_FUNC_GAUGE_SET_SEAL_FLAG,
+			oplus_chg_vg_set_seal_flag);
 		break;
 	case OPLUS_IC_FUNC_GAUGE_GET_DEVICE_TYPE_FOR_VOOC:
 		func = OPLUS_CHG_IC_FUNC_CHECK(
@@ -3393,6 +3494,10 @@ static void *oplus_chg_vg_get_func(struct oplus_chg_ic_dev *ic_dev,
 	case OPLUS_IC_FUNC_GAUGE_GET_LAST_CC:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_LAST_CC,
 			oplus_chg_vg_get_last_cc);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C,
+			oplus_chg_vg_get_gauge_car_c);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

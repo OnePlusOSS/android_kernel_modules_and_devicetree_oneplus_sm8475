@@ -19,6 +19,9 @@
 #include "../oplus_chg_voter.h"
 #endif
 #include <linux/miscdevice.h>
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 6, 0))
+#include <linux/pinctrl/consumer.h>
+#endif
 #include "../oplus_chg_comm.h"
 #include "oplus_chg_strategy.h"
 #include "../oplus_chg_track.h"

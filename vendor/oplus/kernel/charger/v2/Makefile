@@ -39,6 +39,7 @@ oplus_chg_v2-y += oplus_chg_gki.o
 oplus_chg_v2-y += oplus_chg_voter.o
 oplus_chg_v2-y += oplus_chg_wired.o
 oplus_chg_v2-y += oplus_chg_comm.o
+oplus_chg_v2-y += oplus_chg_plc.o
 oplus_chg_v2-y += oplus_chg_vooc.o
 oplus_chg_v2-y += oplus_configfs.o
 oplus_chg_v2-y += oplus_chg_dual_chan.o

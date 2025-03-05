@@ -2728,7 +2728,71 @@
                     }
                 }
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_REAL_TIME_CURR",
+            "desc": {
+                "zh": "获取当前电池实时电流"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "当前电池电流,正的表示放电,负的表示充电, 单位mA"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_SET_SEAL_FLAG",
+            "desc": {
+                "zh": "设置芯片解锁加锁"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1:解锁, 0:加锁"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
         }
     ],
-    "version": "V4.5:90:c12e2c73f0774f9e193eba69ef09c0a69a21af6a52edec315cf9606083db8839"
+    "version": "V4.7:92:e9030888c6429bdfd1c2e25dbb960648918d0ca1e133040b3dbb82ed74bbf118"
 }

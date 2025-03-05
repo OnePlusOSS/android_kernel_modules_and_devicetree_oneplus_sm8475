@@ -341,5 +341,5 @@ bool oplus_is_ptcrb_version(void);
 int oplus_get_chg_spec_version(void);
 uint8_t oplus_chg_get_region_id(void);
 unsigned int oplus_chg_get_nvid_support_flags(void);
-
+bool oplus_chg_get_common_charge_icl_support_flags(void);
 #endif /* __OPLUS_CHG_CORE_H__ */

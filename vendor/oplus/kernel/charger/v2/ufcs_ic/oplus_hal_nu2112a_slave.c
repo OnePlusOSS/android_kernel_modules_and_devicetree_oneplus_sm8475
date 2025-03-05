@@ -59,6 +59,11 @@ struct nu2112a_slave_device {
 	enum oplus_cp_work_mode cp_work_mode;
 };
 
+static enum oplus_cp_work_mode g_cp_support_work_mode[] = {
+	CP_WORK_MODE_BYPASS,
+	CP_WORK_MODE_2_TO_1,
+};
+
 static int nu2112a_slave_get_chg_enable(struct oplus_voocphy_manager *chip, u8 *data);
 
 #define I2C_ERR_NUM 10
@@ -300,19 +305,34 @@ static int nu2112a_slave_get_voocphy_enable(struct oplus_voocphy_manager *chip, 
 	return ret;
 }
 
-static int nu2112a_slave_set_chg_pmid2out(bool enable)
+static int nu2112a_slave_set_chg_pmid2out(bool enable, int reason)
 {
 	if (!oplus_voocphy_mg)
 		return 0;
 
 	chg_err("nu2112a_slave_set_chg_pmid2out\n");
 
-	if (enable)
-		return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
-						0x33); /*PMID/2-VOUT < 10%VOUT*/
-	else
-		return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
-						0xA3); /*PMID/2-VOUT < 10%VOUT*/
+	if (enable) {
+		if (reason == SETTING_REASON_SVOOC)
+			return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
+							0x31); /*PMID/2-VOUT < 10%VOUT*/
+		else if (reason == SETTING_REASON_VOOC)
+			return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
+							0x33);
+		else
+			chg_err("no type for slave_set_chg_pmid2out\n");
+	} else {
+		if (reason == SETTING_REASON_SVOOC)
+			return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
+							0xB1); /*PMID/2-VOUT < 10%VOUT*/
+		else if (reason == SETTING_REASON_VOOC)
+			return nu2112a_slave_write_byte(oplus_voocphy_mg->slave_client, NU2112A_REG_05,
+							0xA3);
+		else
+			chg_err("no type for slave_set_chg_pmid2out\n");
+	}
+
+	return 0;
 }
 
 static bool nu2112a_slave_get_chg_pmid2out(void)
@@ -548,6 +568,162 @@ static int nu2112a_slave_cp_get_iin(struct oplus_chg_ic_dev *ic_dev, int *iin)
 	return 0;
 }
 
+static bool nu2112a_slave_check_work_mode_support(enum oplus_cp_work_mode mode)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(g_cp_support_work_mode); i++) {
+		if (g_cp_support_work_mode[i] == mode)
+			return true;
+	}
+	return false;
+}
+
+static int nu2112a_slave_cp_check_work_mode_support(struct oplus_chg_ic_dev *ic_dev, enum oplus_cp_work_mode mode)
+{
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	return nu2112a_slave_check_work_mode_support(mode);
+}
+
+static int nu2112a_slave_cp_set_work_mode(struct oplus_chg_ic_dev *ic_dev, enum oplus_cp_work_mode mode)
+{
+	struct nu2112a_slave_device *chip;
+	int rc;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	if (!nu2112a_slave_check_work_mode_support(mode)) {
+		chg_err("not supported work mode, mode=%d\n", mode);
+		return -EINVAL;
+	}
+
+	if (mode == CP_WORK_MODE_BYPASS)
+		rc = nu2112a_slave_vooc_hw_setting(chip->voocphy);
+	else
+		rc = nu2112a_slave_svooc_hw_setting(chip->voocphy);
+
+	if (rc < 0)
+		chg_err("set work mode to %d error\n", mode);
+
+	return rc;
+}
+
+static int nu2112a_slave_get_cp_vbus(struct oplus_voocphy_manager *chip)
+{
+	u8 data_block[2] = { 0 };
+	s32 ret = 0;
+
+	/* parse data_block for improving time of interrupt */
+	ret = i2c_smbus_read_i2c_block_data(chip->slave_client, NU2112A_REG_1C, 2, data_block);
+	if (ret < 0) {
+		nu2112a_slave_i2c_error(true);
+		pr_err("nu2112a_slave read vbat error \n");
+		return ret;
+	} else {
+		nu2112a_slave_i2c_error(false);
+	}
+
+	return (((data_block[0] & NU2112A_VBUS_POL_H_MASK) << 8) | data_block[1]) * NU2112A_VBUS_ADC_LSB;
+}
+
+static int nu2112a_slave_cp_get_vin(struct oplus_chg_ic_dev *ic_dev, int *vin)
+{
+	struct nu2112a_slave_device *chip;
+	int rc;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	rc = nu2112a_slave_get_cp_vbus(chip->voocphy);
+	if (rc < 0) {
+		chg_err("can't get cp vin, rc=%d\n", rc);
+		return rc;
+	}
+	*vin = rc;
+
+	return 0;
+}
+
+static int nu2112a_slave_cp_set_work_start(struct oplus_chg_ic_dev *ic_dev, bool start)
+{
+	struct nu2112a_slave_device *chip;
+	int rc;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	chg_info("%s work %s\n", chip->slave_dev->of_node->name, start ? "start" : "stop");
+
+	rc = nu2112a_slave_set_chg_enable(chip->voocphy, start);
+	if (rc < 0)
+		return rc;
+
+	return 0;
+}
+
+static int nu2112a_slave_cp_get_work_status(struct oplus_chg_ic_dev *ic_dev, bool *start)
+{
+	struct nu2112a_slave_device *chip;
+	u8 data;
+	int rc;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	rc = nu2112a_slave_read_byte(chip->slave_client, NU2112A_REG_07, &data);
+	if (rc < 0) {
+		chg_err("read NU2112A_REG_07 error, rc=%d\n", rc);
+		return rc;
+	}
+
+	*start = data & BIT(7);
+
+	return 0;
+}
+
+static int nu2112a_slave_set_adc_enable(struct oplus_voocphy_manager *chip, bool enable)
+{
+	if (!chip) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	if (enable)
+		return nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_18, 0x90);
+	else
+		return nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_18, 0x10);
+}
+
+static int nu2112a_slave_cp_adc_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
+{
+	struct nu2112a_slave_device *chip;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	return nu2112a_slave_set_adc_enable(chip->voocphy, en);
+}
+
 static void *nu2112a_slave_cp_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_chg_ic_func func_id)
 {
 	void *func = NULL;
@@ -567,6 +743,30 @@ static void *nu2112a_slave_cp_get_func(struct oplus_chg_ic_dev *ic_dev, enum opl
 		break;
 	case OPLUS_IC_FUNC_CP_GET_IIN:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_IIN, nu2112a_slave_cp_get_iin);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_WORK_MODE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_WORK_MODE,
+			nu2112a_slave_cp_set_work_mode);
+		break;
+	case OPLUS_IC_FUNC_CP_CHECK_WORK_MODE_SUPPORT:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_CHECK_WORK_MODE_SUPPORT,
+			nu2112a_slave_cp_check_work_mode_support);
+		break;
+	case OPLUS_IC_FUNC_CP_GET_VIN:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_VIN,
+			nu2112a_slave_cp_get_vin);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_WORK_START:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_WORK_START,
+			nu2112a_slave_cp_set_work_start);
+		break;
+	case OPLUS_IC_FUNC_CP_GET_WORK_STATUS:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_WORK_STATUS,
+			nu2112a_slave_cp_get_work_status);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_ADC_ENABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_ADC_ENABLE,
+			nu2112a_slave_cp_adc_enable);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

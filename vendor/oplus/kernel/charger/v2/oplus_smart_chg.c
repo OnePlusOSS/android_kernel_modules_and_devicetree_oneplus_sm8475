@@ -1090,7 +1090,7 @@ static void oplus_smart_chg_bcc_set_buffer(int *buffer)
 	oplus_gauge_get_volt(gauge_topic, 0, &voltage_cell1);
 	oplus_gauge_get_volt(gauge_topic, 1, &voltage_cell2);
 
-	batt_current = oplus_gauge_get_batt_current();
+	batt_current = oplus_gauge_get_real_time_current();
 
 	btemp = oplus_vooc_check_bcc_temp();
 
