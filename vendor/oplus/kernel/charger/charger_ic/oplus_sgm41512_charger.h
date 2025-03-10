@@ -3,12 +3,12 @@
  * Copyright (C) 2018-2020 Oplus. All rights reserved.
  */
 
-#ifndef __OPLUS_SGM41512_H__
+#ifndef __OPPO_SGM41512_H__
 
-#define __OPLUS_SGM41512_H__
+#define __OPPO_SGM41512_H__
 
 #include <linux/power_supply.h>
-#ifdef CONFIG_OPLUS_CHARGER_MTK
+#ifdef CONFIG_OPPO_CHARGER_MTK
 /* #include <mt-plat/charger_type.h> */
 #endif
 
@@ -261,15 +261,15 @@ extern int mt_get_chargerid_switch_val(void);
 extern int oplus_usb_switch_gpio_gpio_init(void);
 extern bool meter_fg_30_get_battery_authenticate(void);
 
-#else /* CONFIG_OPLUS_CHARGER_MTK */
+#else /* CONFIG_OPPO_CHARGER_MTK */
 extern int qpnp_charger_type_get(void);
 extern bool qpnp_lbc_is_usb_chg_plugged_in(void);
 extern int qpnp_get_prop_charger_voltage_now(void);
 extern int qpnp_get_prop_battery_voltage_now(void);
 extern int qpnp_set_pmic_soc_memory(int soc);
 extern int qpnp_get_pmic_soc_memory(void);
-#endif /* CONFIG_OPLUS_CHARGER_MTK */
+#endif /* CONFIG_OPPO_CHARGER_MTK */
 
 bool oplus_pmic_check_chip_is_null(void);
 
-#endif /* __OPLUS_SGM41512_H__ */
+#endif /* __OPPO_SGM41512_H__ */

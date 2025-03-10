@@ -691,6 +691,7 @@ int sc8571_master_cp_enable(int enable)
 {
 	struct chip_sc8571 *chip = chip_sc8571_master;
 	int ret = 0;
+
 	if (!chip) {
 		pps_err("chip is NULL\n");
 		return ret;
@@ -750,7 +751,7 @@ void sc8571_master_cfg_sc(void)
 	sc8571_write_byte(SC8571_REG_02, 0xD1); /*0X02 DIS_BATOCP*/
 	sc8571_write_byte(SC8571_REG_03, 0xD0); /*0X03 DIS_BATOCP_ALM*/
 
-	sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 DIS_BATOCP_ALM*/
+	sc8571_write_byte(SC8571_REG_05, 0x80); /*0X05 DIS_BATOCP_ALM*/
 	sc8571_write_byte(SC8571_REG_06, 0x4B); /*0X06 BUS_OVP=23V*/
 	sc8571_write_byte(SC8571_REG_07, 0xA2); /*0X07 DIS_BUSOVP_ALM*/
 	sc8571_write_byte(SC8571_REG_08, 0x14); /*0X08 DIS_IBUSOVP_ALM*/
@@ -763,7 +764,7 @@ void sc8571_master_cfg_sc(void)
 	sc8571_write_byte(SC8571_REG_12, 0x60); /*0X12 DIS_BATOCP*/
 	sc8571_write_byte(SC8571_REG_23, 0x80); /*0X23 DIS_BATOCP_ALM*/
 	sc8571_write_byte(SC8571_REG_24, 0x0E); /*0X24 DIS_BATOCP_ALM*/
-	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X41 disable pmid2vout temp*/
+	sc8571_write_byte(SC8571_REG_41, 0xA0); /*0X41 disable pmid2vout temp*/
 	sc8571_write_byte(SC8571_REG_42, 0x5C); /*0X42 pmid2vout 400mv*/
 	sc8571_master_pmid2vout_enable(false);
 }
@@ -779,7 +780,7 @@ void sc8571_master_cfg_bypass(void)
 	sc8571_write_byte(SC8571_REG_01, 0xC6); /*0X01 DIS_BATOVP_ALM*/
 	sc8571_write_byte(SC8571_REG_02, 0xD1); /*0X02 DIS_BATOCP*/
 	sc8571_write_byte(SC8571_REG_03, 0xD0); /*0X03 DIS_BATOCP_ALM*/
-	sc8571_write_byte(SC8571_REG_05, 0x0); /*0X05 DIS_BATOCP_ALM*/
+	sc8571_write_byte(SC8571_REG_05, 0x80); /*0X05 DIS_BATOCP_ALM*/
 
 	sc8571_write_byte(SC8571_REG_06, 0x5A); /*0X06 BUS_OVP=10.5V*/
 	sc8571_write_byte(SC8571_REG_07, 0xA2); /*0X07 DIS_BUSOVP_ALM*/
@@ -792,8 +793,42 @@ void sc8571_master_cfg_bypass(void)
 	sc8571_write_byte(SC8571_REG_12, 0x60); /*0X12 DIS_BATOCP*/
 	sc8571_write_byte(SC8571_REG_23, 0x80); /*0X23 DIS_BATOCP_ALM*/
 	sc8571_write_byte(SC8571_REG_24, 0x0E); /*0X24 DIS_BATOCP_ALM*/
-	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X41 disable pmid2vout temp*/
+	sc8571_write_byte(SC8571_REG_41, 0xA0); /*0X41 disable pmid2vout temp*/
 	sc8571_write_byte(SC8571_REG_42, 0xFC); /*0xFC*/
+}
+
+bool sc8571_master_enable_ibus_ucp(void)
+{
+	int ret;
+	u8 val_buf;
+
+	if (!chip_sc8571_master) {
+		pps_err("chip is NULL\n");
+		return false;
+	}
+
+	ret = sc8571_read_byte(0x05, &val_buf);
+	if (ret < 0) {
+		pps_err("read 0x05 failed, ret = 0x%x\n", ret);
+		return false;
+	}
+
+	if (!(val_buf & SC8571_BUS_UCP_DIS_MASK))
+		return true;
+
+	val_buf = 0x80;
+	sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 DIS_BATOCP_ALM*/
+	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X11  IBUS UCP*/
+	sc8571_read_byte(0x05, &val_buf);
+
+	if (val_buf & SC8571_BUS_UCP_DIS_MASK) {
+		pps_err("ucp enable failed, read 0x05 val_buf = 0x%x\n", val_buf);
+		return false;
+	}
+
+	pps_info("read 0x05 val_buf = 0x%x\n", val_buf);
+
+	return true;
 }
 
 void sc8571_master_hardware_init(void)

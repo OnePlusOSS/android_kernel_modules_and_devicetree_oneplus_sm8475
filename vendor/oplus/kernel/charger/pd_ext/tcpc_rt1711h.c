@@ -1572,6 +1572,7 @@ static int rt1711_tcpcdev_init(struct rt1711_chip *chip, struct device *dev)
 
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
+/*Fanhong.Kong@BSP.CHG.Basic, 2022/012/30, Add for pmic sc6607*/
 static inline bool rt1711h_check_sc6607(struct tcpc_device *tcpc)
 {
 	u16 vid, pid, did;

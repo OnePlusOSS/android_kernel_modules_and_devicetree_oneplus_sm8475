@@ -866,6 +866,7 @@ int sc8571_master_cp_enable(int enable);
 bool sc8571_master_get_enable(void);
 void sc8571_master_cfg_sc(void);
 void sc8571_master_cfg_bypass(void);
+bool sc8571_master_enable_ibus_ucp(void);
 void sc8571_master_hardware_init(void);
 void sc8571_master_reset(void);
 int sc8571_master_dump_registers(void);

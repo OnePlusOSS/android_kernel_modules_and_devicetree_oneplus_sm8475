@@ -13,6 +13,7 @@ void oplus_cp_master_cfg_bypass(void);
 void oplus_cp_master_cfg_sc(void);
 int oplus_cp_master_cp_enable(int enable);
 bool oplus_cp_master_get_enable(void);
+bool oplus_cp_master_ucp_enable(void);
 int oplus_cp_master_get_ibus(void);
 int oplus_cp_master_get_vbus(void);
 int oplus_cp_master_get_vac(void);

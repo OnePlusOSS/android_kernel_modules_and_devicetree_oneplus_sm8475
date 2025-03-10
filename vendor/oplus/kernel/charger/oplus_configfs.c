@@ -2648,7 +2648,6 @@ static ssize_t protocol_type_show(struct device *dev,
 	bool vooc_online = false;
 	static int pre_fast_chg_type = CHARGER_SUBTYPE_DEFAULT;
 	union oplus_chg_mod_propval pval = {0, };
-	static int protocol_type = CHARGER_SUBTYPE_DEFAULT;
 
 	chip = (struct oplus_chg_chip *)dev_get_drvdata(oplus_common_dir);
 	if (!chip) {
@@ -2696,8 +2695,6 @@ static ssize_t protocol_type_show(struct device *dev,
 				fast_chg_type = CHARGER_SUBTYPE_FASTCHG_SVOOC;
 			else
 				fast_chg_type = CHARGER_SUBTYPE_DEFAULT;
-		} else {
-			fast_chg_type = CHARGER_SUBTYPE_DEFAULT;
 		}
 	}
 
@@ -2705,12 +2702,6 @@ static ssize_t protocol_type_show(struct device *dev,
 		fast_chg_type = protocol_type_by_user;
 
 	last_fast_chg_type = fast_chg_type;
-	if (chip->mmi_chg == 1) {
-		protocol_type = fast_chg_type;
-	}
-	if ((chip->mmi_chg == 0) && (chip->charge_limit_enable_status == 1)) {
-		return sprintf(buf, "%d\n", protocol_type);
-	}
 
 	return sprintf(buf, "%d\n", fast_chg_type);
 }
@@ -3300,6 +3291,77 @@ static ssize_t read_gauge_reg_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(read_gauge_reg);
 
+static ssize_t non_standard_chg_switch_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_chg_chip *chip = NULL;
+	chip = (struct oplus_chg_chip *)dev_get_drvdata(oplus_common_dir);
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	return sprintf(buf, "%d\n", chip->non_standard_chg_switch);
+}
+
+static ssize_t non_standard_chg_switch_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	int val = 0;
+	struct oplus_chg_chip *chip = NULL;
+
+	chip = (struct oplus_chg_chip *)dev_get_drvdata(oplus_common_dir);
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	chip->non_standard_chg_switch = val;
+	chg_info("rus value store, rus switch = %d\n", chip->non_standard_chg_switch);
+	return count;
+}
+static DEVICE_ATTR_RW(non_standard_chg_switch);
+
+static ssize_t dec_delta_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int counts = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+	counts = oplus_charger_get_dec_delta();
+
+	return sprintf(buf, "%d\n", counts);
+}
+
+static ssize_t dec_delta_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+	oplus_charger_set_dec_delta(val);
+
+	return count;
+}
+static DEVICE_ATTR_RW(dec_delta);
+
 static struct device_attribute *oplus_common_attributes[] = {
 #ifdef OPLUS_CHG_ADB_ROOT_ENABLE
 	&dev_attr_charge_parameter,
@@ -3323,6 +3385,8 @@ static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_device_power,
 	&dev_attr_cpa_power,
 	&dev_attr_chg_up_limit,
+	&dev_attr_non_standard_chg_switch,
+	&dev_attr_dec_delta,
 	NULL
 };
 #ifdef OPLUS_FEATURE_CHG_BASIC

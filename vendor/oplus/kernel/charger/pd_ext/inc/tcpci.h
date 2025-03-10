@@ -242,6 +242,7 @@ int tcpci_notify_request_bat_info(
 #endif	/* CONFIG_USB_POWER_DELIVERY */
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
+/* @BSP.CHG.Basic 2023/01/06 add for audio switch */
 int tcpci_notify_switch_set_state(struct tcpc_device *tcpc, bool state, bool (*pfunc)(int));
 int tcpci_notify_switch_get_state(struct tcpc_device *tcpc, bool (*pfunc)(int));
 #endif

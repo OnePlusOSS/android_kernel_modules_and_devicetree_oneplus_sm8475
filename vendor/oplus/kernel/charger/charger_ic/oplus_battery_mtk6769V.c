@@ -197,6 +197,22 @@ void oplus_wake_up_usbtemp_thread(void);
 extern void oplus_chg_turn_off_charging(struct oplus_chg_chip *chip);
 
 extern bool set_charge_power_sel(int);
+
+static enum mtk_pd_connect_type pd_connect_tbl[] = {
+	MTK_PD_CONNECT_NONE,
+	MTK_PD_CONNECT_TYPEC_ONLY_SNK,
+	MTK_PD_CONNECT_TYPEC_ONLY_SNK,
+	MTK_PD_CONNECT_NONE,
+	MTK_PD_CONNECT_PE_READY_SNK,
+	MTK_PD_CONNECT_NONE,
+	MTK_PD_CONNECT_PE_READY_SNK_PD30,
+	MTK_PD_CONNECT_NONE,
+	MTK_PD_CONNECT_PE_READY_SNK_APDO,
+	MTK_PD_CONNECT_HARD_RESET,
+	MTK_PD_CONNECT_SOFT_RESET,
+	MTK_PD_CONNECT_TYPEC_ONLY_SNK,
+	MTK_PD_CONNECT_TYPEC_ONLY_SNK,
+};
 /*====================================================================*/
 
 #define USB_TEMP_HIGH		0x01 /*bit0*/
@@ -240,11 +256,6 @@ int __attribute__((weak)) get_charger_ntc_volt(void)
 int __attribute__((weak)) get_bat_con_ntc_volt(void)
 {
 	return 0;
-}
-
-void __attribute__((weak)) oplus_chg_pullup_dp_set(bool is_on)
-{
-	return;
 }
 
 bool __attribute__((weak)) mtk_pdc_init(struct mtk_charger *info)
@@ -4758,10 +4769,6 @@ int notify_adapter_event(struct notifier_block *notifier,
 		mtk_chg_alg_notify_call(pinfo, EVT_DETACH, 0);
 		_wake_up_charger(pinfo);
 		/* reset PE40 */
-#ifdef OPLUS_FEATURE_CHG_BASIC
-		pinfo->in_good_connect = false;
-		chr_err("MTK_PD_CONNECT_NONE in_good_connect false\n");
-#endif
 		break;
 
 	case TA_ATTACH:
@@ -4770,10 +4777,6 @@ int notify_adapter_event(struct notifier_block *notifier,
 		pinfo->ta_status[index] = TA_ATTACH;
 		mutex_unlock(&pinfo->ta_lock);
 		_wake_up_charger(pinfo);
-#ifdef OPLUS_FEATURE_CHG_BASIC
-		pinfo->in_good_connect = false;
-		chr_err("TA_ATTACH in_good_connect false\n");
-#endif
 		/* reset PE40 */
 		break;
 
@@ -4794,12 +4797,6 @@ int notify_adapter_event(struct notifier_block *notifier,
 		mutex_unlock(&pinfo->ta_lock);
 		_wake_up_charger(pinfo);
 		/* PD is ready */
-#ifdef OPLUS_FEATURE_CHG_BASIC
-		oplus_chg_track_record_chg_type_info();
-		pinfo->in_good_connect = true;
-		oplus_get_adapter_svid();
-		chr_err("MTK_PD_CONNECT_PE_READY_SNK_PD30 in_good_connect true\n");
-#endif
 		break;
 
 	case TA_SOFT_RESET:
@@ -4809,12 +4806,6 @@ int notify_adapter_event(struct notifier_block *notifier,
 		mutex_unlock(&pinfo->ta_lock);
 		_wake_up_charger(pinfo);
 		/* PD30 is ready */
-#ifdef OPLUS_FEATURE_CHG_BASIC
-		oplus_chg_track_record_chg_type_info();
-		pinfo->in_good_connect = true;
-		oplus_get_adapter_svid();
-		chr_err("MTK_PD_CONNECT_PE_READY_SNK_PD30 in_good_connect true\n");
-#endif
 		break;
 	case MTK_TYPEC_WD_STATUS:
 		chr_err("wd status = %d\n", *(bool *)val);
@@ -4824,10 +4815,16 @@ int notify_adapter_event(struct notifier_block *notifier,
 			pinfo->record_water_detected = true;
 			if (boot_mode == 8 || boot_mode == 9)
 				pinfo->enable_hv_charging = false;
+			oplus_vooc_set_disable_adapter_output(true);
+			if (g_oplus_chip && g_oplus_chip->usb_psy)
+				power_supply_changed(g_oplus_chip->usb_psy);
 		} else {
 			pinfo->notify_code &= ~CHG_TYPEC_WD_STATUS;
 			if (boot_mode == 8 || boot_mode == 9)
 				pinfo->enable_hv_charging = true;
+			oplus_vooc_set_disable_adapter_output(false);
+			if (g_oplus_chip && g_oplus_chip->usb_psy)
+				power_supply_changed(g_oplus_chip->usb_psy);
 		}
 		mtk_chgstat_notify(pinfo);
 		report_psy = boot_mode == 8 || boot_mode == 9;
@@ -6303,6 +6300,9 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 {
 	struct tcp_notify *noti = data;
 	bool vbus_on;
+	struct oplus_pps_chip *pps_chip;
+
+	pr_err("%s: event:%lu", __func__, event);
 
 	switch (event) {
 	case TCP_NOTIFY_SOURCE_VBUS:
@@ -6311,6 +6311,89 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 		vbus_on = (noti->vbus_state.mv) ? true : false;
 		set_chr_enable_otg(vbus_on);
 		break;
+
+	case TCP_NOTIFY_PD_STATE:
+		chr_err("%s: PD state received:%d\n", __func__, noti->pd_state.connected);
+		switch (noti->pd_state.connected) {
+		case PD_CONNECT_NONE:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify Detach\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_NONE];
+			mutex_unlock(&pinfo->pd_lock);
+			pinfo->in_good_connect = false;
+			pps_chip = oplus_pps_get_pps_chip();
+			if (pps_chip) {
+				pps_chip->adapter_info.svid = 0;
+				pps_chip->adapter_info.pid = 0;
+				pps_chip->adapter_info.bcd = 0;
+				pps_chip->adapter_info.nr = 0;
+			}
+			chr_err("PD_CONNECT_NONE in_good_connect false\n");
+			/* reset PE40 */
+			break;
+
+		case PD_CONNECT_HARD_RESET:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify HardReset\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_NONE];
+			pinfo->pd_reset = true;
+			mutex_unlock(&pinfo->pd_lock);
+			_wake_up_charger(pinfo);
+			pinfo->in_good_connect = false;
+			chr_err("PD_CONNECT_HARD_RESET in_good_connect false\n");
+			/* reset PE40 */
+			break;
+
+		case PD_CONNECT_PE_READY_SNK:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify fixe voltage ready\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_PE_READY_SNK];
+			mutex_unlock(&pinfo->pd_lock);
+			oplus_chg_track_record_chg_type_info();
+			pinfo->in_good_connect = true;
+			oplus_get_adapter_svid();
+			chr_err("PD_CONNECT_PE_READY_SNK_PD30 in_good_connect true\n");
+			/* PD is ready */
+			break;
+
+		case PD_CONNECT_PE_READY_SNK_PD30:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify PD30 ready\r\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_PE_READY_SNK_PD30];
+			mutex_unlock(&pinfo->pd_lock);
+			oplus_chg_track_record_chg_type_info();
+			pinfo->in_good_connect = true;
+			oplus_get_adapter_svid();
+			chr_err("PD_CONNECT_PE_READY_SNK_PD30 in_good_connect true\n");
+			/* PD30 is ready */
+			break;
+
+		case PD_CONNECT_PE_READY_SNK_APDO:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify APDO Ready\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_PE_READY_SNK_APDO];
+			mutex_unlock(&pinfo->pd_lock);
+			/* PE40 is ready */
+			_wake_up_charger(pinfo);
+			oplus_chg_track_record_chg_type_info();
+			pinfo->in_good_connect = true;
+			oplus_get_adapter_svid();
+			chr_err("PD_CONNECT_PE_READY_SNK_APDO in_good_connect true\n");
+			oplus_chg_pps_get_source_cap(pinfo);
+			oplus_chg_wake_update_work();
+			break;
+
+		case PD_CONNECT_TYPEC_ONLY_SNK:
+			mutex_lock(&pinfo->pd_lock);
+			chr_err("PD Notify Type-C Ready\n");
+			pinfo->pd_type = pd_connect_tbl[PD_CONNECT_TYPEC_ONLY_SNK];
+			mutex_unlock(&pinfo->pd_lock);
+			/* type C is ready */
+			_wake_up_charger(pinfo);
+			break;
+		}
+		break;
+
 	default:
 		break;
 	}

@@ -289,7 +289,8 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_GAUGE_INFO,
 	TRACK_NOTIFY_FLAG_GAUGE_MODE,
 	TRACK_NOTIFY_FLAG_ANTI_EXPANSION_INFO,
-	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_ANTI_EXPANSION_INFO,
+	TRACK_NOTIFY_FLAG_DEC_VOL_INFO,
+	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_DEC_VOL_INFO,
 
 	TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
 	TRACK_NOTIFY_FLAG_NO_CHARGING = TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
@@ -388,6 +389,11 @@ enum oplus_chg_track_chg_status {
 	TRACK_WLS_CHG_DONE,
 };
 
+enum oplus_chg_track_full_curr_limit_status {
+	TRACK_1_TIME_FULL_CURR_LIMIT,
+	TRACK_N_TIME_FULL_CURR_LIMIT,
+};
+
 enum oplus_chg_track_cp_voocphy_break_code {
 	TRACK_CP_VOOCPHY_BREAK_DEFAULT = 0,
 	TRACK_CP_VOOCPHY_FAST_ABSENT,
@@ -457,4 +463,7 @@ int oplus_chg_olc_config_set(const char *buf);
 int oplus_chg_olc_config_get(char *buf);
 int oplus_track_upload_ntc_abnormal_info(int ntc_temp, char *ntc_name,
 						   char *scene, char *reason, char *other);
+int oplus_chg_track_upload_rechg_info(void);
+int oplus_chg_track_set_fcl_info(int type, int batt_volt, int batt_curr, int batt_temp);
+
 #endif
