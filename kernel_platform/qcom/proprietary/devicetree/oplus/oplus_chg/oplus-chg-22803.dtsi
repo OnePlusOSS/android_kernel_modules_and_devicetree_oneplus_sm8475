@@ -84,7 +84,7 @@
 	qcom,input_current_vooc_ma_warm = <3200>;
 	qcom,vooc_temp_bat_warm_decidegc = <370>;
 	qcom,input_current_vooc_ma_high = <2200>;
-	qcom,vooc_temp_bat_hot_decidegc = <440>;
+	qcom,vooc_temp_bat_hot_decidegc = <510>;
 
 	qcom,charger_current_vooc_ma_normal = <3600>;
 

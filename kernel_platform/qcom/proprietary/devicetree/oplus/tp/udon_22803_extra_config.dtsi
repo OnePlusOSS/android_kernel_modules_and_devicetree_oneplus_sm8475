@@ -9,6 +9,7 @@
 };
 
 &tlmm {
+//#ifdef OPLUS_FEATURE_TP_BASIC
 	pmx_ts_int_active {
 		ts_int_active: ts_int_active {
 			mux {
@@ -239,6 +240,7 @@
 	};
 };
 &tlmm {
+//#ifdef OPLUS_FEATURE_TP_BASIC
 	qupv3_se4_spi_pins: qupv3_se4_spi_pins {
 		qupv3_se4_spi_active: qupv3_se4_spi_active {
 			mux {
