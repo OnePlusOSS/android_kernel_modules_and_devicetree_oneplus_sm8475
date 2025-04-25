@@ -339,7 +339,6 @@ struct tcp_ny_wd0_state {
 	bool wd0;
 };
 
-/* @BSP.CHG.Basic 2022/01/06 add for audio switch */
 struct tcp_ny_switch_set_status {
 	bool	 state;		/* 0: DP/DM state;  1: fastchg state */
 	bool 	(*pfunc)(int);	/* recevier call the pfunc to ack.*/

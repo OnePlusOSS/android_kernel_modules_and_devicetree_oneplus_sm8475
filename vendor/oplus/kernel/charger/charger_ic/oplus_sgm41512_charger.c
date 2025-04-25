@@ -1409,7 +1409,7 @@ close_time:
 	rtc_class_close(rtc);
 	return 0;
 }
-#endif /* CONFIG_OPPO_RTC_DET_SUPPORT */
+#endif /* CONFIG_OPLUS_RTC_DET_SUPPORT */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 static void mt_usb_connect_v1(void)
