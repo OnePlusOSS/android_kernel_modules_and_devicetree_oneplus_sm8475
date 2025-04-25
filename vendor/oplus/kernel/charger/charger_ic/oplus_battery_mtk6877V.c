@@ -7881,7 +7881,6 @@ int oplus_check_cc_mode(void) {
 	return tcpm_inquire_typec_role(tcpc_dev);
 }
 
-/* lizhijie@BSP.CHG.Basic, 2020/05/08, Add for PD */
 int mtk_chg_enable_vbus_ovp(bool enable)
 {
 	static struct mtk_charger *pinfo;

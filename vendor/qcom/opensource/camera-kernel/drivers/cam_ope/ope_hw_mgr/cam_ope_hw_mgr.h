@@ -60,13 +60,8 @@
 #define CLK_HW_MAX                 0x1
 
 #define OPE_DEVICE_IDLE_TIMEOUT    400
-#ifdef OPLUS_FEATURE_CAMERA_COMMON
-#define OPE_REQUEST_RT_TIMEOUT        500
-#define OPE_REQUEST_NRT_TIMEOUT        500
-#else
 #define OPE_REQUEST_RT_TIMEOUT        200
 #define OPE_REQUEST_NRT_TIMEOUT        400
-#endif
 
 /**
  * struct cam_ope_clk_bw_request_v2
