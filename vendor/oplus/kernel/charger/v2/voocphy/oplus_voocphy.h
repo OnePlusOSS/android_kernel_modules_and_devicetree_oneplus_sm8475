@@ -600,6 +600,9 @@ struct oplus_voocphy_manager {
 	struct power_supply *batt_psy;
 	void *priv_data;
 
+	struct oplus_mms *plc_topic;
+	struct mms_subscribe *plc_subs;
+
 	int irq_gpio;
 	int irq;
 
@@ -913,6 +916,8 @@ struct oplus_voocphy_manager {
 	int eis_status;
 	int eis_copycat_detect_cnt;
 	bool cp_err_uploading;
+
+	int plc_status;
 };
 
 struct oplus_voocphy_operations {

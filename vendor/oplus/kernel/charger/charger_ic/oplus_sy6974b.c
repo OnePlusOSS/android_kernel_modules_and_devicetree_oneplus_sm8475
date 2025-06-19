@@ -361,7 +361,7 @@ int oplus_sy6974b_enter_shipmode(bool en)
 
 
 int sy6974b_usb_icl[] = {
-	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 3000,
+	300, 500, 900, 1200, 1350, 1500, 1750, 2000, 2500, 3000,
 };
 
 static int sy6974b_get_usb_icl(void)
@@ -620,11 +620,22 @@ int sy6974b_input_current_limit_write(int current_ma)
 	if (chg_vol < sw_aicl_point) {
 		i = i - 2; //1.5
 		goto aicl_pre_step;
+	} else if (current_ma < 2500) {
+		goto aicl_end;
+	}
+
+	i = 8; /* 2500 */
+	rc = sy6974b_input_current_limit_without_aicl(sy6974b_usb_icl[i]);
+	usleep_range(AICL_DELAY_MIN_US, AICL_DELAY_MAX_US);
+	chg_vol = sy6974b_get_charger_vol();
+	if (chg_vol < sw_aicl_point) {
+		i = i - 1; //2
+		goto aicl_pre_step;
 	} else if (current_ma < 3000) {
 		goto aicl_end;
 	}
 
-	i = 8; /* 3000 */
+	i = 9; /* 3000 */
 	rc = sy6974b_input_current_limit_without_aicl(sy6974b_usb_icl[i]);
 	usleep_range(AICL_DELAY_MIN_US, AICL_DELAY_MAX_US);
 	chg_vol = sy6974b_get_charger_vol();
@@ -996,7 +1007,8 @@ bool oplus_chg_is_usb_present(void)
 		return pre_vbus_status;
 	}
 #endif
-	if (oplus_voocphy_get_fastchg_commu_ing()) {
+	if (oplus_voocphy_get_fastchg_commu_ing() ||
+	    oplus_voocphy_get_copycat_type() != FAST_COPYCAT_TYPE_UNKNOW) {
 		/*chg_err("fastchg_commu_ing,return true");*/
 		pre_vbus_status = true;
 		return pre_vbus_status;
@@ -2218,6 +2230,7 @@ static int oplus_sy6974b_hardware_init(void)
 	sy6974b_set_vindpm_vol(chip->hw_aicl_point);
 	/* Enable charging */
 	if (strcmp(chip->chg_dev_name, "primary_chg") == 0) {
+		sy6974b_unsuspend_charger();
 		ret = sy6974b_enable_charging();
 		if (ret < 0) {
 			chg_err("oplus_sy6974b_hardware_init enable charging failed \n");
@@ -3149,6 +3162,44 @@ static void register_charger_devinfo(struct chip_sy6974b *chip)
 	}
 #endif
 }
+
+static bool oplus_match_sy6974b_cmdline_str(void)
+{
+	struct device_node *cmdline_node = NULL;
+	const char *cmdline;
+	char *match = NULL;
+	char *support_second_chg_ic_str = "support_2ed_chg_ic";
+	char *chg_ic_str = "sy6974b";
+	int ret = 0;
+
+	cmdline_node = of_find_node_by_path("/chosen");
+	if (!cmdline_node) {
+		chg_err("NULL pointer!!!\n");
+		return true;
+	}
+
+	ret = of_property_read_string(cmdline_node, "bootargs", &cmdline);
+	if (ret) {
+		chg_err("failed to read bootargs\n");
+		return true;
+	}
+
+	match = strstr(cmdline, support_second_chg_ic_str);
+	if (match) {
+		match = strstr(cmdline, chg_ic_str);
+		if (match) {
+			chg_info("match: %s success in cmdline\n", chg_ic_str);
+		} else {
+			chg_err("match: %s fail in cmdline\n", chg_ic_str);
+			return false;
+		}
+	} else {
+		chg_info("not support second chg ic\n");
+	}
+
+	return true;
+}
+
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 static enum power_supply_usb_type sy6974b_charger_usb_types[] = {
 	POWER_SUPPLY_USB_TYPE_UNKNOWN,
@@ -3726,7 +3777,16 @@ void sy6974b_charger_exit(void)
 int sy6974b_charger_init(void)
 {
 	int ret = 0;
+	bool is_match = false;
 	chg_err(" init start\n");
+
+	is_match = oplus_match_sy6974b_cmdline_str();
+	if (is_match) {
+		chg_info("continue init\n");
+	} else {
+		chg_err("exit init\n");
+		return -EINVAL;
+	}
 
 	if (i2c_add_driver(&sy6974b_charger_driver) != 0) {
 		chg_err(" failed to register sy6974b i2c driver.\n");

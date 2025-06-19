@@ -60,6 +60,8 @@
 	oplus,chg_ops = "plat-pmic";
 	qcom,smart_charging_screenoff;
 	qcom,voocphy_support = <2>;
+	oplus,full_limit_curr_support;
+
 	qcom,input_current_charger_ma = <2000>;
 	qcom,pd_input_current_charger_ma = <2000>;
 	qcom,qc_input_current_charger_ma = <2000>;
@@ -691,7 +693,6 @@
 		//qcom,charging_switch1_ctr1-gpio = <&tlmm 163 0x00>;
 
 		qcom,external_gauge_support;
-		oplus,full_limit_curr_support;
 		qcom,voocphy_bidirect_cp_support;
 		qcom,voocphy_current_default = <91>;
 

@@ -658,6 +658,7 @@
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 	/* ofp config */
 	oplus,ofp-fp-type = <0x08>;
+	oplus,ofp-longrui-aod-config = <0x02>;
 	/* serial num config */
 	oplus,dsi-serial-number-enabled;
 	oplus,dsi-serial-number-index= <0>;

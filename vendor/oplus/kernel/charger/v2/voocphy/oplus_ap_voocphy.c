@@ -35,6 +35,7 @@
 #endif
 #include <oplus_chg_dual_chan.h>
 #include <oplus_chg_comm.h>
+#include <oplus_chg_plc.h>
 
 enum {
 	FASTCHG_TEMP_RANGE_INIT = 0,
@@ -81,7 +82,7 @@ enum {
 };
 
 #define AP_ALLOW_FASTCHG	(1 << 6)
-#define TARGET_VOL_OFFSET_THR	250
+#define TARGET_VOL_OFFSET_THR	1000 /* considering adapter error and adc error, changing from 0.25A to 1A */
 #define TARGET_CURR_OFFSET_THR  500
 #define DELAY_TEMP_MONITOR_COUNTS		2
 #define trace_oplus_tp_sched_change_ux(x, y)
@@ -5151,6 +5152,7 @@ static int oplus_voocphy_curr_event_handle(struct device *dev, unsigned long dat
 			temp_current = vbat_temp_cur;
 			temp_vbatt = chip->gauge_vbatt;
 		}
+
 		if (oplus_get_chg_spec_version() == OPLUS_CHG_SPEC_VER_V3P7) {
 			rc = oplus_chg_strategy_get_data(chip->svooc_lcf_strategy, &ret_val);
 			if (chip->parallel_charge_support && chip->svooc_sub_lcf_strategy)
@@ -5609,6 +5611,9 @@ static int oplus_voocphy_safe_event_handle(struct device *dev, unsigned long dat
 		voocphy_info( "oplus_voocphy_safe_event_handle ignore");
 		return status;
 	}
+
+	if (chip->plc_status == PLC_STATUS_ENABLE)
+		return oplus_voocphy_monitor_timer_start(chip, VOOC_THREAD_TIMER_SAFE, VOOC_SAFE_EVENT_TIME);
 
 	if (chip->fastchg_timeout_time)
 		chip->fastchg_timeout_time--;
@@ -7348,6 +7353,51 @@ static struct hw_vphy_info ap_vinf = {
 #include "../config/dynamic_cfg/oplus_voocphy_cfg.c"
 #endif
 
+static void oplus_voocphy_plc_subs_callback(struct mms_subscribe *subs,
+					    enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_voocphy_manager *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case PLC_ITEM_STATUS:
+			oplus_mms_get_item_data(chip->plc_topic, id, &data,
+						false);
+			chip->plc_status = data.intval;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_voocphy_subscribe_plc_topic(struct oplus_mms *topic,
+					      void *prv_data)
+{
+	struct oplus_voocphy_manager *chip = prv_data;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	chip->plc_topic = topic;
+	chip->plc_subs = oplus_mms_subscribe(chip->plc_topic, chip,
+					     oplus_voocphy_plc_subs_callback,
+					     "voocphy");
+	if (IS_ERR_OR_NULL(chip->plc_subs)) {
+		chg_err("subscribe plc topic error, rc=%ld\n",
+			PTR_ERR(chip->plc_subs));
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->plc_topic, PLC_ITEM_STATUS, &data, true);
+	if (rc >= 0)
+		chip->plc_status = data.intval;
+}
+
 int oplus_register_voocphy(struct oplus_voocphy_manager *chip)
 {
 	int ret;
@@ -7367,6 +7417,8 @@ int oplus_register_voocphy(struct oplus_voocphy_manager *chip)
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 	(void)oplus_voocphy_reg_debug_config(chip);
 #endif
+
+	oplus_mms_wait_topic("plc", oplus_voocphy_subscribe_plc_topic, chip);
 
 	return 0;
 }

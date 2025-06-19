@@ -375,6 +375,10 @@ static int usb_psy_get_prop(struct power_supply *psy,
 	switch (prop) {
 	case POWER_SUPPLY_PROP_ONLINE:
 		pval->intval = chip->wired_online;
+		if (!pval->intval) {
+			oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_ONLINE, &data, false);
+			pval->intval = data.intval;
+		}
 		if (chip->retention_state)
 			pval->intval = 1;
 		chg_debug("online = %d", pval->intval);
@@ -606,12 +610,16 @@ static int battery_psy_get_prop(struct power_supply *psy,
 			pval->intval = pre_batt_status;
 		} else {
 			pval->intval = chip->batt_status;
-			if (chip->retention_connect_state && chip->batt_status == POWER_SUPPLY_STATUS_DISCHARGING)
-				pval->intval = POWER_SUPPLY_STATUS_CHARGING;
-			if (pval->intval == POWER_SUPPLY_STATUS_FULL &&
-				chip->temp_region == TEMP_REGION_WARM &&
-				oplus_gki_get_ui_soc(chip) != 100)
-				pval->intval = POWER_SUPPLY_STATUS_CHARGING;
+			if (is_chg_disable_votable_available(chip) &&
+				!(get_client_vote(chip->chg_disable_votable, MMI_CHG_VOTER) > 0)) {
+				if (chip->retention_connect_state &&
+					chip->batt_status == POWER_SUPPLY_STATUS_DISCHARGING)
+					pval->intval = POWER_SUPPLY_STATUS_CHARGING;
+				if (pval->intval == POWER_SUPPLY_STATUS_FULL &&
+					chip->temp_region == TEMP_REGION_WARM &&
+					oplus_gki_get_ui_soc(chip) != 100)
+					pval->intval = POWER_SUPPLY_STATUS_CHARGING;
+			}
 			if (pval->intval == POWER_SUPPLY_STATUS_FULL &&
 				chip->temp_region == TEMP_REGION_HOT &&
 				oplus_gki_get_ui_soc(chip) != 100)
@@ -1131,6 +1139,7 @@ static void oplus_gki_wired_online_update_work(struct work_struct *work)
 	union mms_msg_data data = { 0 };
 	bool wired_online;
 
+	chg_debug("enter\n");
 	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_ONLINE, &data, false);
 	wired_online = data.intval;
 	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_CHG_TYPE, &data, false);
