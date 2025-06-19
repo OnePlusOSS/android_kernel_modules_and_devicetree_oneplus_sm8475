@@ -1261,7 +1261,7 @@ static int sgm7220_tcpcdev_init(struct sgm7220_chip *chip, struct device *dev)
 
 	chip->tcpc_desc = desc;
 	chip->tcpc = tcpc_device_register(dev, desc, &sgm7220_tcpc_ops, chip);
-	if (IS_ERR(chip->tcpc))
+	if (IS_ERR_OR_NULL(chip->tcpc))
 		return -EINVAL;
 
 	chip->tcpc->tcpc_flags = TCPC_FLAGS_LPM_WAKEUP_WATCHDOG;

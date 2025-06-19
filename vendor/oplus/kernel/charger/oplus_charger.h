@@ -649,6 +649,15 @@ typedef enum {
 	OPLUS_USBTEMP_TIMER_STAGE1,
 } OPLUS_USBTEMP_TIMER_STAGE;
 
+typedef enum {
+	PLC_STATUS_NOT_SUPPORT = 0,
+	PLC_STATUS_NOT_ALLOW,
+	PLC_STATUS_DISABLE,
+	PLC_STATUS_ENABLE,
+	PLC_STATUS_WAIT,
+	PLC_STATUS_MAX,
+} PLC_STATUS_TYPE;
+
 struct usbtemp_curr {
 	int batt_curr;
 	int temp_delta;
@@ -764,7 +773,11 @@ struct oplus_chg_limits {
 	int qc_temp_little_cool_fastchg_current_ma_low;
 	int normal_bat_decidegc; /*16C*/
 	int temp_normal_fastchg_current_ma;
+	int temp_normal_fastchg_current_ma_high;
+	int temp_normal_fastchg_current_ma_low;
 	int pd_temp_normal_fastchg_current_ma;
+	int pd_temp_normal_fastchg_current_ma_high;
+	int pd_temp_normal_fastchg_current_ma_low;
 	int qc_temp_normal_fastchg_current_ma;
 
 	int normal_phase1_bat_decidegc; /* 16C ~ 22C */
@@ -1031,6 +1044,10 @@ struct reserve_soc_data {
 	int smooth_soc_avg_cnt;
 };
 
+#define RECHG_SOC_TO_PARAM(rechg_soc, en) ((((rechg_soc) & 0xff) << 8) | ((en) & 0xff))
+#define RECHG_SOC_TO_SOC(param) (((param) >> 8) & 0xff)
+#define RECHG_SOC_TO_ENABLE(param) ((param) & 0xff)
+
 typedef enum {
 	AGING_FFC_NOT_SUPPORT,
 	AGING_FFC_V1,
@@ -1117,6 +1134,13 @@ struct oplus_cpa_protocol_info {
 	int max_power_mw;
 };
 
+struct dec_cv_data {
+	bool dec_track;
+	int dec_vol;
+	int dec_delta;
+	int spec_dec_cv_mv;
+};
+
 struct oplus_chg_chip {
 	struct i2c_client *client;
 	struct device *dev;
@@ -1184,6 +1208,10 @@ struct oplus_chg_chip {
 	bool sw_full;
 	bool hw_full_by_sw;
 	bool hw_full;
+	bool rechg_soc_en;
+	bool uisoc_down_in_full;
+	bool rechg_now;
+	int rechg_soc;
 	int sw_sub_batt_full_count;
 	bool sw_sub_batt_full;
 	bool hw_sub_batt_full_by_sw;
@@ -1279,6 +1307,7 @@ struct oplus_chg_chip {
 	int led_temp_status;
 	bool vooc_temp_change;
 	int vooc_temp_status;
+	bool full_limit_curr_support;
 	bool camera_on;
 	bool camera_on_pre;
 	bool calling_on;
@@ -1291,6 +1320,11 @@ struct oplus_chg_chip {
 	bool otg_switch;
 	bool ui_otg_switch;
 	int mmi_chg;
+	int plc_status;
+	int curr_plc_status;
+	bool plc_support;
+	int plc_buck;
+	struct delayed_work plc_disable_wait_work;
 	int unwakelock_chg;
 	int stop_chg;
 	int mmi_fastchg;
@@ -1301,6 +1335,7 @@ struct oplus_chg_chip {
 	bool suspend_after_full;
 	bool check_batt_full_by_sw;
 	bool external_gauge;
+	bool check_hmac_with_battery_id;
 	bool external_authenticate;
 	bool chg_ctrl_by_lcd;
 	bool chg_ctrl_by_lcd_default;
@@ -1489,6 +1524,7 @@ struct oplus_chg_chip {
 	int quick_mode_stop_soc;
 	bool quick_mode_gain_support;
 	bool dual_panel_support;
+	bool lithium_plating_battery_support;
 
 	int uisoc_1_start_batt_rm;
 	int uisoc_1_start_vbatt_max;
@@ -1501,6 +1537,8 @@ struct oplus_chg_chip {
 	int debug_force_fast_gpio_err;
 	int debug_force_cooldown_match_trigger;
 	int debug_batt_cc;
+	int batt_debug_cycle_count;
+	int debug_battery_sn_data;
 	int aging_ffc_version;
 	char chg_power_info[OPLUS_CHG_TRACK_CURX_INFO_LEN];
 	char err_reason[OPLUS_CHG_TRACK_DEVICE_ERR_NAME_LEN];
@@ -1526,14 +1564,21 @@ struct oplus_chg_chip {
 #endif
 
 	oplus_chg_track_trigger *mmi_chg_info_trigger;
+	oplus_chg_track_trigger *plc_chg_info_trigger;
 	oplus_chg_track_trigger *slow_chg_info_trigger;
 	oplus_chg_track_trigger *chg_cycle_info_trigger;
+	oplus_chg_track_trigger *dec_vol_info_trigger;
 	struct delayed_work mmi_chg_info_trigger_work;
+	struct delayed_work plc_chg_info_trigger_work;
 	struct delayed_work slow_chg_info_trigger_work;
 	struct delayed_work chg_cycle_info_trigger_work;
+	struct delayed_work dec_vol_info_trigger_work;
+
 	struct mutex mmi_chg_info_lock;
+	struct mutex plc_chg_info_lock;
 	struct mutex slow_chg_info_lock;
 	struct mutex chg_cycle_info_lock;
+	struct mutex dec_vol_info_lock;
 
 	struct reserve_soc_data rsd;
 	bool is_gauge_ready;
@@ -1627,6 +1672,7 @@ struct oplus_chg_chip {
 	struct oplus_cpa_protocol_info protocol_prio_table[CHG_PROTOCOL_MAX];
 
 	bool support_hot_enter_kpoc;
+	bool usbtemp_high_temp_scheme;
 	int poweroff_high_batt_temp;
 	int poweroff_emergency_batt_temp;
 	int usbtemp_batt_temp_over_hot;
@@ -1636,6 +1682,8 @@ struct oplus_chg_chip {
 	bool abnormal_disconnect_keep_connect;
 	int usb_port_ntc_pullup;
 	int pre_chg_up_limit_mmi_val;
+	struct dec_cv_data dec_cv;
+	bool dec_spec_support;
 };
 
 #define TTF_UPDATE_UEVENT_BIT		BIT(30)
@@ -2041,5 +2089,10 @@ int oplus_set_chg_up_limit(int charge_limit_enable, int charge_limit_value,
 	int is_force_set_charge_limit, int charge_limit_recharge_value, int callname);
 void oplus_comm_set_anti_expansion_status(struct oplus_chg_chip *chip, int val);
 bool oplus_get_abnormal_disconnect_keep_connect(void);
+void oplus_charger_set_dec_delta(int val);
+int oplus_charger_get_dec_delta(void);
+void oplus_comm_set_rechg_soc_limit(int rechg_soc, bool en);
+void oplus_comm_get_rechg_soc_limit(int *rechg_soc, bool *en);
+int oplus_plc_based_buck_setting(struct oplus_chg_chip *chip, int enable);
 //#endif
 #endif /*_OPLUS_CHARGER_H_*/

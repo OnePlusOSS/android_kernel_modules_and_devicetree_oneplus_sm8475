@@ -9554,6 +9554,7 @@ static void oplus_check_abnormal_usbin_status_work(struct work_struct *work)
 {
 	struct battery_chg_dev *bcdev = NULL;
 	struct oplus_chg_chip *chip = g_oplus_chip;
+	static unsigned long check_abnormal_usbin_jiffies = 0;
 	if (!chip) {
 		chg_err("chip is NULL!\n");
 		return;
@@ -9567,7 +9568,12 @@ static void oplus_check_abnormal_usbin_status_work(struct work_struct *work)
 	    !chip->usbin_abnormal_status &&
 	    chip->charger_volt <= VOLTAGE_800MV &&
 	    chip->usb_present_vbus0_count <= MAX_VBUS_CHECK_COUNTS) {
-		chip->usb_present_vbus0_count++;
+		if (time_is_after_jiffies(check_abnormal_usbin_jiffies))
+			chg_err("current_time is less than check_abnormal_usbin_time\n");
+		else {
+			chip->usb_present_vbus0_count++;
+			check_abnormal_usbin_jiffies = jiffies +  msecs_to_jiffies(4500);
+		}
 
 		if (chip->usb_present_vbus0_count == MAX_VBUS_CHECK_COUNTS ||
 		    !bcdev->cid_status) {

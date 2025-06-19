@@ -60,7 +60,6 @@ struct oplus_smart_charge {
 	bool pps_online;
 	bool pps_charging;
 	bool pps_oplus_adapter;
-	u32 pps_adapter_id;
 
 	int normal_cool_down;
 	int smart_normal_cool_down;
@@ -174,10 +173,7 @@ static int get_adapter_power(struct oplus_smart_charge *smart_chg)
 	} else if (smart_chg->ufcs_charging) {
 		power = oplus_ufcs_get_ufcs_power(smart_chg->ufcs_topic);
 	} else if (smart_chg->pps_charging) {
-		if (smart_chg->pps_oplus_adapter)
-			power = oplus_pps_adapter_id_to_power(smart_chg->pps_adapter_id);
-		else
-			power = oplus_pps_adapter_id_to_power(PPS_FASTCHG_TYPE_THIRD);
+		power = oplus_pps_get_charging_power_watt(smart_chg->pps_topic);
 	}
 	return power;
 }
@@ -564,12 +560,6 @@ static void oplus_configfs_pps_subs_callback(struct mms_subscribe *subs,
 				break;
 			smart_chg->pps_charging = !!data.intval;
 			break;
-		case PPS_ITEM_ADAPTER_ID:
-			rc = oplus_mms_get_item_data(smart_chg->pps_topic, id, &data, false);
-			if (rc < 0)
-				break;
-			smart_chg->pps_adapter_id = (u32)data.intval;
-			break;
 		case PPS_ITEM_OPLUS_ADAPTER:
 			rc = oplus_mms_get_item_data(smart_chg->pps_topic, id, &data, false);
 			if (rc < 0)
@@ -616,13 +606,6 @@ static void oplus_configfs_subscribe_pps_topic(struct oplus_mms *topic,
 		smart_chg->pps_charging = false;
 	} else {
 		smart_chg->pps_charging = !!data.intval;
-	}
-	rc = oplus_mms_get_item_data(smart_chg->pps_topic, PPS_ITEM_ADAPTER_ID, &data, true);
-	if (rc < 0) {
-		chg_err("can't get pps adapter_id status, rc=%d\n", rc);
-		smart_chg->pps_adapter_id = false;
-	} else {
-		smart_chg->pps_adapter_id = data.intval;
 	}
 	rc = oplus_mms_get_item_data(smart_chg->pps_topic, PPS_ITEM_OPLUS_ADAPTER, &data, true);
 	if (rc < 0) {

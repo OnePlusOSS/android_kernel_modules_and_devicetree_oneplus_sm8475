@@ -191,6 +191,8 @@
 	qcom,normal_vfloat_over_sw_limit = <4475>;
 	qcom,warm_vfloat_over_sw_limit = <4140>;
 
+	oplus_spec,dec-vol-fv-mv = <40>;
+
 	qcom,vooc-high-temp = <520>;
 	qcom,vooc-normal-high-temp = <430>;
 	qcom,vooc-warm-allow-soc = <50>;

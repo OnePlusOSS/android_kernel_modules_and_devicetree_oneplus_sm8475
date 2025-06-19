@@ -112,6 +112,10 @@ static int bq27411_write_soc_smooth_parameter(struct chip_bq27541 *chip, bool is
 static int zy0603_unseal(struct chip_bq27541 *chip, u32 key);
 static int zy0603_seal(struct chip_bq27541 *chip, u32 key);
 static bool zy0603_afi_update_done(void);
+static int bq27z561_unseal(struct chip_bq27541 *chip, u32 key);
+static int bq27z561_seal(struct chip_bq27541 *chip, u32 key);
+static bool bq27z561_deep_init(void);
+static void bq27z561_deep_deinit(void);
 static int gauge_get_info(u8 *info, int len);
 static int sub_gauge_get_info(u8 *info, int len);
 static int gauge_get_calib_time(int *dod_calib_time, int *qmax_calib_time, int gauge_index);
@@ -1608,6 +1612,142 @@ static int bq27541_get_sub_battery_cc(void)
 	return cc;
 }
 
+static u8 bq27541_calc_checksum(u8 *buf, int len)
+{
+	u8 checksum = 0;
+
+	while (len--)
+		checksum += buf[len];
+
+	return 0xff - checksum;
+}
+
+static int bq27541_block_check_conditions(struct chip_bq27541 *chip, u8 *buf, int len, int offset, bool do_checksum)
+{
+	if (!chip || !buf || (offset < 0) || (offset >= BQ27541_BLOCK_SIZE) || (len <= 0) ||
+	    (len + do_checksum > BQ27541_BLOCK_SIZE) || (offset + len + do_checksum > BQ27541_BLOCK_SIZE)) {
+		chg_err("%soffset %d or len %d invalid\n", buf ? "buf is null or " : "", offset, len);
+		return -EINVAL;
+	}
+
+	if (atomic_read(&chip->suspended) == 1 || atomic_read(&chip->gauge_i2c_status))
+		return -EINVAL;
+
+	return 0;
+}
+
+int bq27541_read_block(struct chip_bq27541 *chip, int addr, u8 *buf, int len, int offset, bool do_checksum)
+{
+	int ret;
+	int data_check;
+	int try_count = GAUGE_SUBCMD_TRY_COUNT;
+	u8 extend_data[BQ28Z610_EXTEND_DATA_SIZE] = { 0 };
+	u8 checksum = 0;
+
+	ret = bq27541_block_check_conditions(chip, buf, len, offset, do_checksum);
+	if (ret < 0)
+		return ret;
+
+try:
+	mutex_lock(&chip->gauge_alt_manufacturer_access);
+	ret = gauge_i2c_txsubcmd(chip, GAUGE_EXTERN_DATAFLASHBLOCK, addr);
+	if (ret < 0)
+		goto error;
+	usleep_range(1000, 1000);
+	ret = gauge_read_i2c_block(chip, GAUGE_EXTERN_DATAFLASHBLOCK, (offset + len + do_checksum + 2), extend_data);
+	if (ret < 0)
+		goto error;
+
+	data_check = (extend_data[1] << 0x8) | extend_data[0];
+	if (try_count-- > 0 && data_check != addr) {
+		chg_err("0x%04x not match. try_count=%d extend_data[0]=0x%2x, extend_data[1]=0x%2x\n", addr, try_count,
+			extend_data[0], extend_data[1]);
+		mutex_unlock(&chip->gauge_alt_manufacturer_access);
+		usleep_range(2000, 2000);
+		goto try;
+	}
+	if (data_check != addr)
+		goto error;
+
+	if (do_checksum) {
+		checksum = bq27541_calc_checksum(&extend_data[offset + 2], len);
+		if (checksum != extend_data[offset + len + 2]) {
+			chg_err("[%*ph]checksum not match. expect=0x%02x actual=0x%02x\n",
+				offset + len + do_checksum + 2, extend_data, checksum, extend_data[offset + len + 2]);
+			goto error;
+		}
+	}
+
+	memcpy(buf, &extend_data[offset + 2], len);
+	chg_info("addr=0x%04x offset=%d buf=[%*ph] do_checksum=%d read success\n", addr, offset, len, buf, do_checksum);
+	mutex_unlock(&chip->gauge_alt_manufacturer_access);
+	return 0;
+
+error:
+	chg_info("addr=0x%04x offset=%d buf=[%*ph] do_checksum=%d read fail\n", addr, offset, len, buf, do_checksum);
+	mutex_unlock(&chip->gauge_alt_manufacturer_access);
+	return -EINVAL;
+}
+
+static int bq28z610_get_true_fcc(struct chip_bq27541 *chip, int *true_fcc)
+{
+	int ret;
+	u8 buf[BQ28Z610_TRUE_FCC_NUM_SIZE] = { 0 };
+
+	if (!chip || !true_fcc)
+		return -EINVAL;
+
+	ret = bq27541_read_block(
+		chip, BQ28Z610_REG_TRUE_FCC, buf, BQ28Z610_TRUE_FCC_NUM_SIZE, BQ28Z610_TRUE_FCC_OFFSET, false);
+	if (ret < 0)
+		return ret;
+
+	*true_fcc = (buf[1] << 8) | buf[0];
+	chg_info("true_fcc=%d\n", *true_fcc);
+
+	return ret;
+}
+
+static void bq28z610_set_fcc_sync(struct chip_bq27541 *chip)
+{
+	mutex_lock(&chip->gauge_alt_manufacturer_access);
+	gauge_i2c_txsubcmd(chip, BQ28Z610_REG_CNTL1, BQ28Z610_FCC_SYNC_CMD);
+	mutex_unlock(&chip->gauge_alt_manufacturer_access);
+	chg_info("set fcc sync\n");
+}
+
+static void bq27541_fcc_too_small_check_work(struct work_struct *work)
+{
+	int ret;
+	int true_fcc = 0;
+	struct chip_bq27541 *chip = container_of(
+		work, struct chip_bq27541, fcc_too_small_check_work);
+
+	ret = bq28z610_get_true_fcc(chip, &true_fcc);
+	if (!ret && (true_fcc > 200)) /* TODO: true_fcc value is more than 200 */
+		bq28z610_set_fcc_sync(chip);
+
+	chip->fcc_too_small_checking = false;
+}
+
+static void bq27541_fcc_too_small_check(struct chip_bq27541 *chip, int fcc)
+{
+	if (!chip)
+		return;
+	if ((chip->batt_bq28z610 || chip->batt_bq27z561) && !chip->batt_zy0603) {
+		if (chip->fcc_too_small_checking) {
+			chg_info("fcc too small checking, ignore this time");
+			return;
+		}
+
+		/* TODO: fcc value is less than 200 */
+		if (fcc < 200) {
+			chip->fcc_too_small_checking = true;
+			schedule_work(&chip->fcc_too_small_check_work);
+		}
+	}
+}
+
 static int bq27541_get_battery_fcc(void) /*  sjc20150105  */
 {
 	int ret = 0;
@@ -1641,6 +1781,8 @@ static int bq27541_get_battery_fcc(void) /*  sjc20150105  */
 		}
 	}
 	gauge_ic->fcc_pre = fcc;
+	bq27541_fcc_too_small_check(gauge_ic, fcc);
+
 	return fcc;
 }
 
@@ -1677,6 +1819,8 @@ static int bq27541_get_sub_gauge_battery_fcc(void)
 		}
 	}
 	sub_gauge_ic->fcc_pre = fcc;
+	bq27541_fcc_too_small_check(sub_gauge_ic, fcc);
+
 	return fcc;
 }
 
@@ -3958,6 +4102,624 @@ int bqfs_data_check(void)
 	return true;
 }
 
+int bq27541_get_batt_manu_date_by_alt_manufacturer_access(void)
+{
+	int ret = 0;
+	int data_check = 0;
+	int try_count = BQ27Z561_SUBCMD_TRY_COUNT;
+	u8 extend_data[BQ27Z561_SUBCMD_MANU_DATE_READ_BUF_LEN + 2] = {0};
+	struct gauge_track_info_reg extend =
+		{ BQ27Z561_SUBCMD_MANU_DATE, BQ27Z561_SUBCMD_MANU_DATE_READ_BUF_LEN };
+
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+try:
+	mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
+	ret = gauge_i2c_txsubcmd(gauge_ic, BQ27Z561_DATAFLASHBLOCK, extend.addr);
+	if (ret < 0)
+		goto error;
+	usleep_range(1000, 1000);
+	ret = gauge_read_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+		(extend.len + 2), extend_data);
+	if (ret < 0)
+		goto error;
+
+	data_check = (extend_data[1] << 8) | extend_data[0];
+	if (try_count-- > 0 && data_check != extend.addr) {
+		mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
+		chg_err("not match. extend_data[0]=0x%2x, extend_data[1]=0x%2x\n",
+			extend_data[0], extend_data[1]);
+		usleep_range(2000, 2000);
+		goto try;
+	}
+	if (!try_count)
+		goto error;
+
+	gauge_ic->manu_date = (extend_data[3] << 8) | extend_data[2];
+	pr_info("bq27541 get batt manu date by alt manufacturer access:0x%04x\n",
+		gauge_ic->manu_date);
+
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
+	return ret;
+}
+
+int bq27541_get_batt_manu_date(char *info, int len)
+{
+	int date_len = 0;
+
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	date_len = snprintf(info, len, "%d-%02d-%02d", (((gauge_ic->manu_date >> 9) & 0x7F) + 1980),
+			(gauge_ic->manu_date >> 5) & 0xF, gauge_ic->manu_date & 0x1F);
+
+	return date_len;
+}
+
+static int bq27541_get_batt_manu_info_by_alt_manufacturer_access(void)
+{
+	int ret = 0;
+	u8 buf[BQ27Z561_BATT_VDM_DATA_READ_BUF_LEN] = {0x00};
+	u8 ui_soh = 0x00;
+	u16 ui_cycle_count = 0x00;
+	u8 used_flag = 0x00;
+	u16 date_temp = 0x00;
+	u8 check_sum = BQ27Z561_BATTINFO_DEFAULT_CHECKSUM;
+	int retry_id = 0;
+
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+retry:
+	while (retry_id < BQ27Z561_BATT_INFO_RETRY_MAX) {
+		retry_id++;
+
+		mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
+		ret = gauge_i2c_txsubcmd(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+			BQ27Z561_BATTINFO_VDMDATA_CMD);
+		if (ret < 0)
+			goto error;
+		usleep_range(1000, 1000);
+		ret = gauge_read_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+			BQ27Z561_BATT_VDM_DATA_READ_BUF_LEN, buf);
+		if (ret < 0)
+			goto error;
+
+		mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
+
+		if ((buf[0] == (BQ27Z561_BATTINFO_VDMDATA_CMD & 0xFF))
+			&& (buf[1] == (BQ27Z561_BATTINFO_VDMDATA_CMD >> 8))) {
+			date_temp = buf[BQ27Z561_BATT_FIRST_USAGE_DATE_L] |
+				buf[BQ27Z561_BATT_FIRST_USAGE_DATE_H] << 8;
+			ui_soh = buf[BQ27Z561_BATT_UI_SOH];
+			ui_cycle_count = buf[BQ27Z561_BATT_UI_CYCLE_COUNT_L] |
+				buf[BQ27Z561_BATT_UI_CYCLE_COUNT_H] << 8;
+			used_flag = buf[BQ27Z561_BATT_USED_FLAG];
+			break;
+		}
+	}
+
+	if (retry_id < BQ27Z561_BATT_INFO_RETRY_MAX) {
+		if (buf[BQ27Z561_BATT_FIRST_USAGE_DATE_CHECK] != BQ27Z561_BATTINFO_NO_CHECKSUM) {
+			check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM -
+				buf[BQ27Z561_BATT_FIRST_USAGE_DATE_L] -
+				buf[BQ27Z561_BATT_FIRST_USAGE_DATE_H]) & 0xFF;
+			if (check_sum != buf[BQ27Z561_BATT_FIRST_USAGE_DATE_CHECK]) {
+				chg_err("fud_check fail calc[0x%02x] read[0x%02x], retry\n",
+					check_sum, buf[BQ27Z561_BATT_FIRST_USAGE_DATE_CHECK]);
+				goto retry;
+			}
+		}
+
+		gauge_ic->first_usage_date = date_temp;
+
+		if (buf[BQ27Z561_BATT_UI_SOH_CHECK] != BQ27Z561_BATTINFO_NO_CHECKSUM) {
+			check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM -
+				buf[BQ27Z561_BATT_UI_SOH]) & 0xFF;
+			if (check_sum != buf[BQ27Z561_BATT_UI_SOH_CHECK]) {
+				chg_err("uisoc_check fail calc[0x%02x] read[0x%02x], retry\n",
+					check_sum, buf[BQ27Z561_BATT_UI_SOH_CHECK]);
+				goto retry;
+			}
+		}
+
+		gauge_ic->ui_soh = ui_soh;
+
+		if (buf[BQ27Z561_BATT_UI_CYCLE_COUNT_CHECK] != BQ27Z561_BATTINFO_NO_CHECKSUM) {
+			check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM -
+				buf[BQ27Z561_BATT_UI_CYCLE_COUNT_L] -
+				buf[BQ27Z561_BATT_UI_CYCLE_COUNT_H]) & 0xFF;
+			if (check_sum != buf[BQ27Z561_BATT_UI_CYCLE_COUNT_CHECK]) {
+				chg_err("uicc_check fail calc[0x%02x] read[0x%02x], retry.\n",
+					check_sum, buf[BQ27Z561_BATT_UI_CYCLE_COUNT_CHECK]);
+				goto retry;
+			}
+		}
+
+		gauge_ic->ui_cycle_count = ui_cycle_count;
+
+		if (buf[BQ27Z561_BATT_USED_FLAG_CHECK] != BQ27Z561_BATTINFO_NO_CHECKSUM) {
+			check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM -
+				buf[BQ27Z561_BATT_USED_FLAG]) & 0xFF;
+			if (check_sum != buf[BQ27Z561_BATT_USED_FLAG_CHECK]) {
+				chg_err("used_flag fail calc[0x%02x] read[0x%02x], retry.\n",
+					check_sum, buf[BQ27Z561_BATT_USED_FLAG_CHECK]);
+				goto retry;
+			}
+		}
+		gauge_ic->used_flag = used_flag;
+	}
+
+	return 0;
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
+	return ret;
+}
+
+static void oplus_get_manu_battinfo_work(struct work_struct *work)
+{
+	int ret = 0;
+
+	if (!gauge_ic->batt_bq27z561)
+		return;
+
+	ret = bq27541_get_batt_manu_date_by_alt_manufacturer_access();
+	if (ret < 0) {
+		chg_err("oplus_bq27541_get_batt_manufact_info get manu-date failed\n");
+	}
+	ret = bq27541_get_batt_manu_info_by_alt_manufacturer_access();
+	if (ret < 0) {
+		chg_err("oplus_bq27541_get_batt_manufact_info get manu_info failed\n");
+	}
+
+	return;
+}
+
+static int bq27z561_sealed(void)
+{
+	struct chip_bq27541 *chip = gauge_ic;
+	int rc = 0;
+	u8 seal_op_st[2] = { 0x54, 0x00 };
+	u8 read_buf[6] = { 0 };
+
+	if (!chip)
+		return -EINVAL;
+
+	gauge_write_i2c_block(chip, 0x3E, 2, seal_op_st);
+	usleep_range(50000, 50000);
+	gauge_read_i2c_block(chip, 0x3E, 6, read_buf);
+
+	if ((read_buf[3] & 0x01) == 0) {
+		rc = 0;
+		chg_info("bq27z561 is unseal\n");
+	} else {
+		rc = -1;
+		chg_info("bq27z561 is seal\n");
+	}
+	return rc;
+}
+
+static bool bq27z561_deep_init(void)
+{
+	struct chip_bq27541 *chip = gauge_ic;
+	int ret = 0;
+
+	if (!chip) {
+		return false;
+	}
+
+	ret = bq27z561_sealed();
+	if (ret == 0) {
+		chg_info("bq27z561 is already unseal\n");
+		return true;
+	}
+
+	mutex_lock(&chip->gauge_alt_manufacturer_access);
+	ret = bq27z561_unseal(chip, 0);
+	mutex_unlock(&chip->gauge_alt_manufacturer_access);
+	usleep_range(10000, 10000);
+
+	if (ret < 0) {
+		chg_err("bq27z561 unseal failed\n");
+		return false;
+	}
+
+	chg_err("bq27z561_deep_init\n");
+
+	return true;
+}
+
+static void bq27z561_deep_deinit(void)
+{
+	struct chip_bq27541 *chip = gauge_ic;
+
+	usleep_range(1000, 1000);
+	mutex_lock(&chip->gauge_alt_manufacturer_access);
+	bq27z561_seal(chip, 0);
+	mutex_unlock(&chip->gauge_alt_manufacturer_access);
+	usleep_range(100000, 100000);
+
+	chg_err("bq27z561_deep_deinit\n");
+}
+
+int bq27541_get_batt_first_usage_date(char *info, int len)
+{
+	int date_len = 0;
+
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	cancel_delayed_work_sync(&gauge_ic->get_manu_battinfo_work);
+	schedule_delayed_work(&gauge_ic->get_manu_battinfo_work,
+		round_jiffies_relative(msecs_to_jiffies(100)));
+
+	date_len = snprintf(info, len, "%d-%02d-%02d",
+		(((gauge_ic->first_usage_date >> 9) & 0x7F) + 1980),
+		(gauge_ic->first_usage_date >> 5) & 0xF,
+		gauge_ic->first_usage_date & 0x1F);
+
+	return date_len;
+}
+
+int bq27541_set_batt_first_usage_date(const char *info)
+{
+	u16 first_usage_date = 0x0000;
+	u8 check_sum = 0x00;
+	u8 write_data[BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN] =
+		{BQ27Z561_SUBCMD_FIRST_USAGE_DATE_WADDR & 0xFF,
+		BQ27Z561_SUBCMD_FIRST_USAGE_DATE_WADDR >> 8, 0x00, 0x00, 0x00};
+	u8 check_data[2] = {BQ27Z561_BATTINFO_DEFAULT_CHECKSUM,
+		BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN + 2};
+	int i = 0;
+	int ret = 0;
+	int year = 0;
+	int month = 0;
+	int day = 0;
+
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	if (!info)
+		return -EINVAL;
+
+	ret = sscanf(info, "%d-%d-%d", &year, &month, &day);
+	if (ret <= 0) {
+		return -EINVAL;
+	}
+
+	first_usage_date = (((year - 1980) & 0x7F) << 9) | ((month & 0xF) << 5) | (day & 0x1F);
+	check_sum = 0xFF - ((first_usage_date >> 8) & 0xFF) - (first_usage_date & 0xFF);
+	chg_info("first_usage_date:%d-%d-%d\n", year, month, day);
+	chg_info("first_usage_date data=0x%04x\n", first_usage_date);
+
+	write_data[2] = first_usage_date & 0xFF;
+	write_data[3] = first_usage_date >> 8;
+	check_sum = (0xFF - write_data[2] - write_data[3]) & 0xFF;
+	write_data[4] = check_sum;
+
+	if (!bq27z561_deep_init()) {
+		chg_err("bq27z561 deep init failed\n");
+		return -EINVAL;
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+		BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN, write_data);
+	if (ret < 0)
+		return -EINVAL;
+	usleep_range(1000, 1000);
+
+	for (i = 0; i < BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN; i++) {
+		check_data[0] -= write_data[i];
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+
+	if (!gauge_ic->bq27z561_seal_flag) {
+		usleep_range(1000, 1000);
+		bq27z561_deep_deinit();
+	}
+	return ret;
+}
+
+int bq27z561_get_bq27z561_seal_flag(void)
+{
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	chg_err("bq27z561_get_bq27z561_seal_flag = %d\n", gauge_ic->bq27z561_seal_flag);
+	return gauge_ic->bq27z561_seal_flag;
+}
+
+int bq27z561_set_bq27z561_seal_flag(int seal_flag)
+{
+	u8 bq27z561_seal_flag = seal_flag & 0xFF;
+
+	gauge_ic->bq27z561_seal_flag = bq27z561_seal_flag;
+
+	if (seal_flag) {
+		if (!bq27z561_deep_init()) {
+			chg_err("bq27z561 deep init failed\n");
+			return -EINVAL;
+		}
+	} else {
+		usleep_range(1000, 1000);
+		bq27z561_deep_deinit();
+	}
+
+	chg_err("bq27z561_set_bq27z561_seal_flag = %d\n", gauge_ic->bq27z561_seal_flag);
+	return 0;
+}
+
+int bq27541_get_batt_ui_cc(void)
+{
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	cancel_delayed_work_sync(&gauge_ic->get_manu_battinfo_work);
+	schedule_delayed_work(&gauge_ic->get_manu_battinfo_work,
+		round_jiffies_relative(msecs_to_jiffies(100)));
+
+	return gauge_ic->ui_cycle_count;
+}
+
+int bq27541_set_batt_ui_cc(int ui_cycle_count)
+{
+	u16 ui_cycle_count_data = ui_cycle_count & 0xFFFF;
+	u8 check_sum = 0x00;
+	u8 write_data[BQ27Z561_BATT_UI_CC_WLEN] = {BQ27Z561_SUBCMD_UI_CC_WADDR & 0xFF,
+		BQ27Z561_SUBCMD_UI_CC_WADDR >> 8, 0x00, 0x00, 0x00};
+	u8 check_data[2] = {BQ27Z561_BATTINFO_DEFAULT_CHECKSUM, BQ27Z561_BATT_UI_CC_WLEN + 2};
+	int i = 0;
+	int ret = 0;
+
+	check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM - write_data[2] - write_data[3]) & 0xFF;
+	chg_info("ui_cycle_count_data=0x%04x\n", ui_cycle_count_data);
+
+	write_data[2] = ui_cycle_count_data & 0xFF;
+	write_data[3] = ui_cycle_count_data >> 8;
+	check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM - write_data[2] - write_data[3]) & 0xFF;
+	write_data[4] = check_sum;
+
+	if (!bq27z561_deep_init()) {
+		return -EINVAL;
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+		BQ27Z561_BATT_UI_CC_WLEN, write_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+	usleep_range(1000, 1000);
+
+	for (i = 0; i < BQ27Z561_BATT_UI_CC_WLEN; i++) {
+		check_data[0] -= write_data[i];
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+
+	if (!gauge_ic->bq27z561_seal_flag) {
+		usleep_range(1000, 1000);
+		bq27z561_deep_deinit();
+	}
+
+	return ret;
+}
+
+int bq27541_get_batt_ui_soh(void)
+{
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	cancel_delayed_work_sync(&gauge_ic->get_manu_battinfo_work);
+	schedule_delayed_work(&gauge_ic->get_manu_battinfo_work,
+		round_jiffies_relative(msecs_to_jiffies(100)));
+
+	return gauge_ic->ui_soh;
+}
+
+int bq27541_set_batt_ui_soh(int ui_soh)
+{
+	u8 ui_soh_data = ui_soh & 0xFF;
+	u8 check_sum = 0x00;
+	u8 write_data[BQ27Z561_BATT_UI_SOH_WLEN] = {BQ27Z561_SUBCMD_UI_SOH_WADDR & 0xFF,
+		BQ27Z561_SUBCMD_UI_SOH_WADDR >> 8, 0x00, 0x00};
+	u8 check_data[2] = {BQ27Z561_BATTINFO_DEFAULT_CHECKSUM, BQ27Z561_BATT_UI_SOH_WLEN + 2};
+	int i = 0;
+	int ret = 0;
+
+	chg_info("set_batt_ui_soh data=0x%04x\n", ui_soh_data);
+	write_data[2] = ui_soh_data;
+	check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM - write_data[2]) & 0xFF;
+	write_data[3] = check_sum;
+
+	if (!bq27z561_deep_init()) {
+		return -EINVAL;
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+		BQ27Z561_BATT_UI_SOH_WLEN, write_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+	usleep_range(1000, 1000);
+
+	for (i = 0; i < BQ27Z561_BATT_UI_SOH_WLEN; i++) {
+		check_data[0] -= write_data[i];
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+
+	if (!gauge_ic->bq27z561_seal_flag) {
+		usleep_range(1000, 1000);
+		bq27z561_deep_deinit();
+	}
+
+	return ret;
+}
+
+
+int bq27541_get_batt_used_flag(void)
+{
+	if (!gauge_ic)
+		return -EINVAL;
+
+	if (!gauge_ic->batt_bq27z561)
+		return -EINVAL;
+
+	cancel_delayed_work_sync(&gauge_ic->get_manu_battinfo_work);
+	schedule_delayed_work(&gauge_ic->get_manu_battinfo_work,
+		round_jiffies_relative(msecs_to_jiffies(100)));
+
+	return gauge_ic->used_flag;
+}
+
+int bq27541_set_batt_used_flag(int used_flag)
+{
+	u8 used_flag_data = used_flag & 0xFF;
+	u8 check_sum = 0x00;
+	u8 write_data[BQ27Z561_BATT_USED_FLAG_WLEN] = {BQ27Z561_SUBCMD_USED_FLAG_WADDR & 0xFF,
+					BQ27Z561_SUBCMD_USED_FLAG_WADDR >> 8, 0x00, 0x00};
+	u8 check_data[2] = {BQ27Z561_BATTINFO_DEFAULT_CHECKSUM, BQ27Z561_BATT_USED_FLAG_WLEN + 2};
+	int i = 0;
+	int ret = 0;
+
+	chg_info("set_batt_used_flag data=0x%04x\n", used_flag_data);
+	write_data[2] = used_flag_data;
+	check_sum = (BQ27Z561_BATTINFO_DEFAULT_CHECKSUM - write_data[2]) & 0xFF;
+	write_data[3] = check_sum;
+
+	if (!bq27z561_deep_init()) {
+		return -EINVAL;
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
+		BQ27Z561_BATT_USED_FLAG_WLEN, write_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+	usleep_range(1000, 1000);
+
+	for (i = 0; i < BQ27Z561_BATT_USED_FLAG_WLEN; i++) {
+		check_data[0] -= write_data[i];
+	}
+	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
+	if (ret < 0) {
+		return -EINVAL;
+	}
+
+	if (!gauge_ic->bq27z561_seal_flag) {
+		usleep_range(1000, 1000);
+		bq27z561_deep_deinit();
+	}
+
+	return ret;
+}
+
+static int oplus_bq27541_get_batt_sn(struct chip_bq27541 *chip)
+{
+	int i;
+	int ret;
+	int retry = 0;
+	u8 check_sum = 0xFF;
+	u8 buf[BQ28Z610_BATT_SN_READ_BUF_LEN] = {0x00};
+	u8 batt_sn[OPLUS_BATT_SERIAL_NUM_SIZE] = {0x00};
+
+	if (!chip) {
+		chg_err("chip fg_ic is not ready.\n");
+		return -ENODEV;
+	}
+
+	if (!gauge_ic->batt_bq27z561) {
+		return 0;
+	}
+
+	if (atomic_read(&chip->suspended) == 1) {
+		return 0;
+	}
+
+retry:
+	while (retry < BQ28Z610_BATT_SN_RETRY_MAX) {
+		retry++;
+		ret = gauge_i2c_txsubcmd(chip, BQ28Z610_BATT_SN_EN_ADDR, BQ28Z610_BATT_SN_CMD);
+		if (ret < 0) {
+			continue;
+		}
+		usleep_range(1000, 1000);
+		ret = gauge_read_i2c_block(chip, BQ28Z610_BATT_SN_EN_ADDR,
+			BQ28Z610_BATT_SN_READ_BUF_LEN, buf);
+		if (ret < 0) {
+			continue;
+		}
+
+		if ((buf[0] == (BQ28Z610_BATT_SN_CMD & 0xFF)) &&
+		    (buf[1] == (BQ28Z610_BATT_SN_CMD >> 8))) {
+			memcpy(batt_sn, &buf[2], OPLUS_BATT_SERIAL_NUM_SIZE);
+			break;
+		}
+		chg_err("read sn fail, retry(%d)\n", retry);
+	}
+
+
+	if (retry < BQ28Z610_BATT_SN_RETRY_MAX) {
+		if (batt_sn[OPLUS_BATT_SERIAL_NUM_SIZE - 1] != BQ28Z610_BATT_SN_NO_CHECKSUM) {
+			check_sum = 0xFF;
+			for (i = 0; i < OPLUS_BATT_SERIAL_NUM_SIZE - 1; i++) {
+				check_sum -= batt_sn[i];
+			}
+			if (check_sum != batt_sn[OPLUS_BATT_SERIAL_NUM_SIZE - 1]) {
+				chg_err("check_sum fail calc[%d] read[%d], retry.\n",
+					check_sum, batt_sn[OPLUS_BATT_SERIAL_NUM_SIZE - 1]);
+				goto retry;
+			}
+		}
+		/* replace checksum byte by end of string '\0' */
+		batt_sn[OPLUS_BATT_SERIAL_NUM_SIZE - 1] = '\0';
+		strlcpy(chip->battinfo.bat_serial_num, (char*)batt_sn, OPLUS_BATT_SERIAL_NUM_SIZE);
+	} else {
+		chg_err("get sn failed\n");
+	}
+	return 0;
+}
+
+int oplus_bq27541_get_battinfo_sn(char buf[], int len)
+{
+	struct chip_bq27541 *chip = gauge_ic;
+	int bsnlen = 0;
+
+	chg_info("BattSN:%s\n", chip->battinfo.bat_serial_num);
+	bsnlen = strlcpy(buf, chip->battinfo.bat_serial_num, OPLUS_BATT_SERIAL_NUM_SIZE);
+
+	return bsnlen;
+}
+
 static int gauge_get_qmax(int *qmax1, int *qmax2)
 {
 	SCC_CELL_TYPE type;
@@ -4461,6 +5223,18 @@ static struct oplus_gauge_operations bq27541_gauge_ops = {
 	.get_bqfs_status = bqfs_get_init_status,
 	.bqfs_fw_check = bqfs_fw_check,
 	.bqfs_data_check = bqfs_data_check,
+	.get_batt_manu_date = bq27541_get_batt_manu_date,
+	.get_batt_first_usage_date = bq27541_get_batt_first_usage_date,
+	.set_batt_first_usage_date = bq27541_set_batt_first_usage_date,
+	.get_seal_flag = bq27z561_get_bq27z561_seal_flag,
+	.set_seal_flag = bq27z561_set_bq27z561_seal_flag,
+	.get_batt_ui_cc = bq27541_get_batt_ui_cc,
+	.set_batt_ui_cc = bq27541_set_batt_ui_cc,
+	.get_batt_ui_soh = bq27541_get_batt_ui_soh,
+	.set_batt_ui_soh = bq27541_set_batt_ui_soh,
+	.get_batt_used_flag = bq27541_get_batt_used_flag,
+	.set_batt_used_flag = bq27541_set_batt_used_flag,
+	.get_battinfo_sn = oplus_bq27541_get_battinfo_sn,
 };
 
 static struct oplus_gauge_operations bq27541_sub_gauge_ops = {
@@ -5203,6 +5977,91 @@ static int zy0603_unseal(struct chip_bq27541 *chip, u32 key)
 		}
 	} while (retry > 0);
 	pr_err("%s zy0603_unseal flag [%d]\n", __func__, rc);
+	if (rc < 0) {
+		oplus_chg_gauge_seal_unseal_fail(OPLUS_GAUGE_UNSEAL_FAIL);
+	}
+	return rc;
+}
+
+static int bq27z561_seal(struct chip_bq27541 *chip, u32 key)
+{
+	u8 seal_cmd[2] = { 0x30, 0x00 };
+	u8 seal_op_st[2] = { 0x54, 0x00 };
+	u8 read_buf[4] = { 0 };
+	int retry = 2;
+	int rc = 0;
+
+	if (!chip)
+		return -EINVAL;
+
+	do {
+		gauge_write_i2c_block(chip, 0x3E, 2, seal_cmd);
+		chg_err("%s write {0x30,0x00} --> 0x3E\n", __func__);
+		usleep_range(1000, 1000);
+
+		gauge_write_i2c_block(chip, 0x3E, 2, seal_op_st);
+		chg_err("%s write {0x54,0x00} --> 0x3E\n", __func__);
+		usleep_range(1000, 1000);
+
+		gauge_read_i2c_block(chip, 0x3E, 4, read_buf);
+		chg_err("%s 0x3E -->read [0x%02x][0x%02x] [0x%02x][0x%02x]\n", __func__, read_buf[0],
+		       read_buf[1], read_buf[2], read_buf[3]);
+		if ((read_buf[3] & 0x01) != 0) {
+			retry = 0;
+			rc = 0;
+		} else {
+			retry--;
+			rc = -1;
+		}
+	} while (retry > 0);
+	chg_err("%s bq27z561_seal flag [%d]\n", __func__, rc);
+	if (rc < 0) {
+		oplus_chg_gauge_seal_unseal_fail(OPLUS_GAUGE_SEAL_FAIL);
+	}
+
+	return rc;
+}
+
+static int bq27z561_unseal(struct chip_bq27541 *chip, u32 key)
+{
+	u8 seal_cmd_1[2] = { 0x14, 0x04 };
+	u8 seal_cmd_2[2] = { 0x72, 0x36 };
+	u8 seal_op_st[2] = { 0x54, 0x00 };
+	u8 read_buf[6] = { 0 };
+	int retry = 5;
+	int rc = 0;
+
+	if (!chip)
+		return -EINVAL;
+
+	do {
+		usleep_range(2000000, 2000000);
+		gauge_write_i2c_block(chip, 0x00, 2, seal_cmd_1);
+		chg_err("%s write {0x14,0x04} --> 0x00\n", __func__);
+		usleep_range(1000000, 1000000);
+
+		gauge_write_i2c_block(chip, 0x00, 2, seal_cmd_2);
+		chg_err("%s write {0x72,0x36} --> 0x00\n", __func__);
+		usleep_range(10000, 10000);
+
+		gauge_write_i2c_block(chip, 0x3E, 2, seal_op_st);
+		chg_err("%s write {0x54,0x00} --> 0x3E\n", __func__);
+		usleep_range(50000, 50000);
+
+		gauge_read_i2c_block(chip, 0x3E, 6, read_buf);
+		chg_err("%s bq27z561_unseal 0x3E -->read [0x%02x][0x%02x]"
+			" [0x%02x][0x%02x] [0x%02x][0x%02x]\n",
+			__func__, read_buf[0], read_buf[1],
+			read_buf[2], read_buf[3], read_buf[4], read_buf[5]);
+		if ((read_buf[3] & 0x01) == 0) {
+			retry = 0;
+			rc = 0;
+		} else {
+			retry--;
+			rc = -1;
+		}
+	} while (retry > 0);
+	chg_err("%s bq27z561_unseal flag [%d]\n", __func__, rc);
 	if (rc < 0) {
 		oplus_chg_gauge_seal_unseal_fail(OPLUS_GAUGE_UNSEAL_FAIL);
 	}
@@ -8020,6 +8879,7 @@ rerun:
 		return -EFAULT;
 	}
 
+	INIT_WORK(&fg_ic->fcc_too_small_check_work, bq27541_fcc_too_small_check_work);
 	if (fg_ic->batt_zy0603) {
 		rc = zy0603_parse_afi_buf(fg_ic);
 		dev_err(&client->dev, "zy0603 support and can't config gauge param\n");
@@ -8077,6 +8937,7 @@ rerun:
 	fg_ic->max_vol_pre = 3800;
 	fg_ic->min_vol_pre = 3800;
 	fg_ic->current_pre = 999;
+	fg_ic->bq27z561_seal_flag = 0;
 
 	/*for zy0603 battery protect cuase turn off mos*/
 	fg_ic->protect_check_done = false;
@@ -8165,6 +9026,14 @@ rerun:
 			external_auth_chip->get_hmac_test_result = oplus_get_extern_hmac_test_result;
 			oplus_external_auth_init(external_auth_chip);
 		}
+	}
+
+	if (fg_ic->support_extern_cmd && fg_ic->batt_bq27z561) {
+		oplus_bq27541_get_batt_sn(fg_ic);
+
+		INIT_DELAYED_WORK(&fg_ic->get_manu_battinfo_work, oplus_get_manu_battinfo_work);
+		schedule_delayed_work(&fg_ic->get_manu_battinfo_work,
+			round_jiffies_relative(msecs_to_jiffies(100)));
 	}
 
 	bq27541_track_init(fg_ic);

@@ -3675,8 +3675,8 @@ oplus_chg_track_record_charger_info(struct oplus_monitor *monitor,
 
 	if (monitor->plc_support) {
 		index += snprintf(&(p_trigger_data->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
-			"$$plc_support@@%d$$enable_count@@%d$$plc_init_sm_soc@@%d$$plc_init_ui_soc@@%d$$plc_init_temp@@%d",
-			monitor->plc_support,  monitor->enable_count,  monitor->plc_init_sm_soc,  monitor->plc_init_ui_soc,
+			"$$enable_count@@%d$$plc_init_sm_soc@@%d$$plc_init_ui_soc@@%d$$plc_init_temp@@%d",
+			monitor->enable_count, monitor->plc_init_sm_soc, monitor->plc_init_ui_soc,
 			monitor->plc_init_temp);
 	}
 	oplus_chg_track_record_general_info(monitor, track_status,

@@ -1517,6 +1517,7 @@ static int oplus_ufcs_variables_init(void)
 	chip->ilimit.btb_diff_down = OPLUS_UFCS_CURRENT_LIMIT_MAX;
 	chip->ilimit.current_slow_chg = 0;
 	/*chip->ilimit.current_imax = OPLUS_UFCS_CURRENT_LIMIT_MAX;*/
+	chip->ilimit.full_1time_limit = OPLUS_UFCS_CURRENT_LIMIT_MAX;
 
 	chip->timer.batt_curve_time = 0;
 	chip->timer.set_pdo_flag = 0;
@@ -2189,14 +2190,15 @@ int oplus_ufcs_get_current_normal_cool_down(void)
 static int oplus_ufcs_get_target_current(struct oplus_ufcs_chip *chip)
 {
 	int target_current_temp = 0;
+#define ROUND_DOWN(a, n) (((a) / (n)) * (n))
 
 	if (!chip || !chip->ops || !chip->ufcs_support_type)
 		return -ENODEV;
 
-	ufcs_debug("[%d, %d, %d, %d, %d, %d, %d, %d, %d]\n", chip->ilimit.current_batt_curve,
+	ufcs_debug("[%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", chip->ilimit.current_batt_curve,
 		   chip->ilimit.current_batt_temp, chip->ilimit.current_cool_down, chip->ilimit.cp_ibus_down,
 		   chip->ilimit.current_bcc, chip->ilimit.cp_r_down, chip->ilimit.current_imax,
-		   chip->ilimit.btb_diff_down, chip->ilimit.current_slow_chg);
+		   chip->ilimit.btb_diff_down, chip->ilimit.current_slow_chg, chip->ilimit.full_1time_limit);
 
 	target_current_temp = chip->ilimit.current_batt_curve < chip->ilimit.current_batt_temp ?
 				      chip->ilimit.current_batt_curve :
@@ -2215,6 +2217,8 @@ static int oplus_ufcs_get_target_current(struct oplus_ufcs_chip *chip)
 		target_current_temp < chip->ilimit.cp_r_down ? target_current_temp : chip->ilimit.cp_r_down;
 	target_current_temp =
 		target_current_temp < chip->ilimit.btb_diff_down ? target_current_temp : chip->ilimit.btb_diff_down;
+	target_current_temp =
+		target_current_temp < chip->ilimit.full_1time_limit ? target_current_temp : chip->ilimit.full_1time_limit;
 
 	if ((chip->ilimit.current_imax > 0) && (target_current_temp > chip->ilimit.current_imax)) {
 		target_current_temp = chip->ilimit.current_imax;
@@ -2226,6 +2230,7 @@ static int oplus_ufcs_get_target_current(struct oplus_ufcs_chip *chip)
 
 	if ((chip->ilimit.current_slow_chg > 0) && (target_current_temp > chip->ilimit.current_slow_chg))
 		target_current_temp = chip->ilimit.current_slow_chg;
+	target_current_temp =  ROUND_DOWN(target_current_temp, OPLUS_UFCS_CURR_UPDATE_V1);
 
 	return target_current_temp;
 }
@@ -2275,6 +2280,102 @@ static void oplus_ufcs_tick_timer(struct oplus_ufcs_chip *chip)
 		chip->timer.curve_check_timer = ts_current;
 		chip->timer.curve_check_flag = 1;
 	}
+}
+
+struct ufcs_full_1time_table {
+	int volt_diff;
+	int curr_dec;
+	int dchg_curr;
+};
+
+static struct ufcs_full_1time_table full_1time_table[] = {
+	{0, 1000, 800},
+	{20, 500, 800},
+	{40, 0, 800}
+};
+
+static int oplus_ufcs_1time_limit_curr(struct oplus_ufcs_chip *chip)
+{
+	int i = 0;
+	int volt_diff = 0;
+	int len = ARRAY_SIZE(full_1time_table);
+	int batt_curr_limit = 0;
+	int ibat = chip->data.ap_batt_current;
+	int vbat = chip->data.ap_batt_volt;
+	int tbat = chip->data.ap_batt_temperature;
+	int normal_sw_vth = 0, normal_hw_vth = 0;
+	static bool  limit_status = false;
+	static int limit_cnts = 0;
+	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
+
+	if (!chip || !chg_chip) {
+		chg_err("chip is null\n");
+		return -EINVAL;
+	}
+
+	if (!chg_chip->full_limit_curr_support)
+		return 0;
+
+	if (chip->ufcs_status <= OPLUS_UFCS_STATUS_OPEN_MOS) {
+		limit_status = false;
+		limit_cnts = 0;
+		return 0;
+	}
+
+	if (chip->ufcs_authentication && limit_status) {
+		limit_cnts++;
+		if (limit_cnts > 3 && chip->ask_charger_current < chip->target_charger_current) {
+			limit_cnts = 0;
+			limit_status = false;
+		}
+		return 0;
+	}
+
+	if (!chip->ufcs_authentication)
+		normal_hw_vth = chip->limits.ufcs_full_normal_hw_vbat_third;
+	else
+		normal_hw_vth = chip->limits.ufcs_full_normal_hw_vbat;
+
+	if (tbat < chip->limits.ufcs_cool_temp) {
+		if (!chip->ufcs_authentication)
+			normal_sw_vth = chip->limits.ufcs_full_cool_sw_vbat_third;
+		else
+			normal_sw_vth = chip->limits.ufcs_full_cool_sw_vbat;
+	} else if (chip->limits.ufcs_normal_high_temp != -EINVAL && tbat > chip->limits.ufcs_normal_high_temp) {
+		normal_sw_vth = chip->limits.ufcs_full_warm_vbat;
+	} else {
+		if (!chip->ufcs_authentication)
+			normal_sw_vth = chip->limits.ufcs_full_normal_sw_vbat_third;
+		else
+			normal_sw_vth = chip->limits.ufcs_full_normal_sw_vbat;
+	}
+
+	for (i = 0; i < len; i++) {
+		if (i == 0)
+			volt_diff = normal_hw_vth - vbat;
+		else
+			volt_diff = normal_sw_vth - vbat;
+
+		if (full_1time_table[i].volt_diff > volt_diff)
+			break;
+	}
+
+	if (i != len) {
+		limit_status = true;
+		batt_curr_limit = (abs(ibat) - full_1time_table[i].curr_dec) / oplus_ufcs_get_cp_ratio();
+		chip->ilimit.full_1time_limit = batt_curr_limit > full_1time_table[i].dchg_curr ?
+			batt_curr_limit : full_1time_table[i].dchg_curr;
+		if (i == 0)
+			oplus_chg_track_set_fcl_info(
+				TRACK_1_TIME_FULL_CURR_LIMIT, vbat, abs(ibat), tbat);
+		else
+			oplus_chg_track_set_fcl_info(
+				TRACK_N_TIME_FULL_CURR_LIMIT, vbat, abs(ibat), tbat);
+		ufcs_err(" [%d, %d, %d, %d, %d], [%d, %d, %d]\n", abs(ibat), vbat, tbat,
+			normal_hw_vth, normal_sw_vth, i, volt_diff, chip->ilimit.full_1time_limit);
+	}
+
+	return 0;
 }
 
 static void oplus_ufcs_check_sw_full(struct oplus_ufcs_chip *chip)
@@ -2393,6 +2494,7 @@ static void oplus_ufcs_check_charging_full(struct oplus_ufcs_chip *chip)
 	}
 }
 
+#define UFCS_UCP_SS_IBUS_MIN 600
 static void oplus_ufcs_check_ibat_safety(struct oplus_ufcs_chip *chip)
 {
 	int chg_ith = 0;
@@ -2404,6 +2506,10 @@ static void oplus_ufcs_check_ibat_safety(struct oplus_ufcs_chip *chip)
 		return;
 
 	chip->timer.check_ibat_flag = 0;
+
+	if (chip->data.charger_output_current > UFCS_UCP_SS_IBUS_MIN)
+		oplus_voocphy_set_sstimeout_ucp_enable(true);
+
 	if (chip->data.ap_batt_current > UFCS_IBAT_LOW_MIN) {
 		chip->count.ibat_low++;
 		if (chip->count.ibat_low >= UFCS_IBAT_LOW_CNT) {
@@ -3003,7 +3109,7 @@ static int oplus_ufcs_action_status_start(struct oplus_ufcs_chip *chip)
 
 		if (chip->ask_charger_volt_last >= oplus_ufcs_get_curve_vbus(chip)) {
 			vbus_err_times++;
-			ufcs_err("pps_vbus_deviation %d times!\n", vbus_err_times);
+			ufcs_err("ufcs_vbus_deviation %d times!\n", vbus_err_times);
 			if (vbus_err_times >= UFCS_CHANGE_VBUS_ERR_TIMES) {
 				vbus_err_times = 0;
 				if (chip->ufcs_startup_retry_times < UFCS_RETRY_COUNT) {
@@ -3104,26 +3210,22 @@ static int oplus_ufcs_action_curr_change(struct oplus_ufcs_chip *chip)
 
 	chip->ask_charger_volt = chip->target_charger_volt;
 
-	if ((chip->ask_charger_current > chip->target_charger_current)) {
+	if ((chip->ask_charger_current > (chip->target_charger_current + OPLUS_UFCS_CURR_UPDATE_V6))) {
 		if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V10) {
 			update_size = OPLUS_UFCS_CURR_UPDATE_V10;
 		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V8) {
 			update_size = OPLUS_UFCS_CURR_UPDATE_V8;
 		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V7) {
 			update_size = OPLUS_UFCS_CURR_UPDATE_V7;
-		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V6) {
-			update_size = OPLUS_UFCS_CURR_UPDATE_V6;
-		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V4) {
-			update_size = OPLUS_UFCS_CURR_UPDATE_V4;
 		} else {
-			update_size = OPLUS_UFCS_CURR_UPDATE_V1;
+			update_size = OPLUS_UFCS_CURR_UPDATE_V6;
 		}
 		chip->ask_charger_current -= update_size;
 	} else if (chip->ask_charger_current < chip->target_charger_current) {
-		if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V6) {
-			update_size = OPLUS_UFCS_CURR_UPDATE_V6;
-		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V4) {
+		if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V4) {
 			update_size = OPLUS_UFCS_CURR_UPDATE_V4;
+		} else if (abs(chip->ask_charger_current - chip->target_charger_current) >= OPLUS_UFCS_CURR_UPDATE_V3) {
+			update_size = OPLUS_UFCS_CURR_UPDATE_V3;
 		} else {
 			update_size = OPLUS_UFCS_CURR_UPDATE_V1;
 		}
@@ -3179,6 +3281,7 @@ static int oplus_ufcs_action_check(struct oplus_ufcs_chip *chip)
 
 	chip->target_charger_current_pre = chip->target_charger_current;
 	oplus_ufcs_get_batt_curve_curr(chip);
+	oplus_ufcs_1time_limit_curr(chip);
 
 	switch (chip->ufcs_status) {
 	case OPLUS_UFCS_STATUS_START:
@@ -4568,7 +4671,8 @@ bool oplus_ufcs_show_vooc(void)
 	if (!chip || !chip->ufcs_support_type)
 		return false;
 
-	return (oplus_ufcs_get_protocol_status() == PROTOCOL_CHARGING_UFCS_OPLUS && oplus_is_ufcs_charging());
+	return ((oplus_ufcs_get_protocol_status() == PROTOCOL_CHARGING_UFCS_OPLUS ||
+	    oplus_ufcs_get_protocol_status() == PROTOCOL_CHARGING_UFCS_THIRD) && oplus_is_ufcs_charging());
 }
 
 static enum ufcs_power_type oplus_ufcs_imax_covert_power(enum ufcs_power_imax curr)

@@ -238,6 +238,11 @@
 /* Register 3Ch */
 #define NU2112A_REG_3C 0x3C
 
+/* Register DEh */
+#define NU2112A_REG_DE 0xDE
+
+/* Register E7h */
+#define NU2112A_REG_E7 0xE7
 /************************UFCS REG***********************************/
 #define UFCS_BTB_TEMP_MAX 80
 #define UFCS_USB_TEMP_MAX 80
