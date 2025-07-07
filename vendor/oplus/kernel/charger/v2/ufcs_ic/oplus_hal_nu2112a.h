@@ -51,6 +51,7 @@
 
 /* Register 08h */
 #define NU2112A_REG_08 0x08
+#define NU2112A_WATCHDOG_MASK                0x07
 #define NU2112A_WATCHDOG_SHIFT               0
 #define NU2112A_WATCHDOG_DIS                 0
 #define NU2112A_WATCHDOG_200MS               1
@@ -237,6 +238,11 @@
 /* Register 3Ch */
 #define NU2112A_REG_3C 0x3C
 
+/* Register DEh */
+#define NU2112A_REG_DE 0xDE
+
+/* Register E7h */
+#define NU2112A_REG_E7 0xE7
 /************************UFCS REG***********************************/
 #define UFCS_BTB_TEMP_MAX 80
 #define UFCS_USB_TEMP_MAX 80
@@ -312,8 +318,8 @@
 
 #define NU2112A_ADDR_UFCS_OPTION (0x40)
 #define NU2112A_BUFFER_OPTION_CONFIG (0x4)
-
-
+#define NU2112A_BAUDRATE_CHECK_CONFIG BIT(1)
+#define NU2112A_END_CHECK_ENABLE BIT(0)
 
 /*tx_buffer*/
 #define NU2112A_ADDR_TX_LENGTH (0x65)

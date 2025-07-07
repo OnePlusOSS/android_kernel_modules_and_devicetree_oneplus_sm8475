@@ -664,7 +664,7 @@ unsigned int ux_task_exec_limit(struct task_struct *p)
 		ux_state & SA_TYPE_LISTPICK)
 		return exec_limit;
 
-	if (sched_assist_scene(SA_LAUNCH) && !(ux_state & SA_TYPE_INHERIT)) {
+	if (sched_assist_scene(SA_LAUNCH) && !(ux_state & SA_TYPE_INHERIT) && !(ux_state & SA_TYPE_SWIFT)) {
 		exec_limit *= 30;
 		return exec_limit;
 	}

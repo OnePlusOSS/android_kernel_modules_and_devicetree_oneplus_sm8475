@@ -273,6 +273,7 @@ enum battery_property_id {
 	BATT_SET_USED_FLAG,
 	BATT_DEEP_DISCHG_LAST_CC,
 	BATT_GET_UFCS_RUNNING_STATE,
+	BATT_VOLT_MIN,
 #endif
 	BATT_PROP_MAX,
 };
@@ -347,6 +348,7 @@ enum usb_property_id {
 	USB_SNS_STATUS,
 	USB_SET_UFCS_SM_PERIOD,
 	USB_SET_RERUN_AICL,
+	USB_SET_PLC_STATUS,
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 	USB_PROP_MAX,
 };
@@ -588,6 +590,8 @@ struct battery_chg_dev {
 	struct oplus_mms		*gauge_topic;
 	struct oplus_mms		*wls_topic;
 	struct oplus_mms		*err_topic;
+	struct oplus_mms		*plc_topic;
+	struct mms_subscribe		*plc_subs;
 	struct votable			*chg_disable_votable;
 	struct mutex			chg_en_lock;
 	bool 				    chg_en;
@@ -608,13 +612,13 @@ struct battery_chg_dev {
 	int				last_charger_type;
 	int				adsp_crash;
 	atomic_t			state;
-	int				g_icl_ma;
 	int				rerun_max;
 	int				pd_chg_volt;
 	struct work_struct		subsys_up_work;
 	struct work_struct		usb_type_work;
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	int ccdetect_irq;
+	struct work_struct	plc_status_update_work;
 	struct delayed_work	publish_close_cp_item_work;
 	struct delayed_work	suspend_check_work;
 	struct delayed_work	adsp_voocphy_status_work;
@@ -632,6 +636,7 @@ struct battery_chg_dev {
 	struct delayed_work	oem_lcm_en_check_work;
 	struct delayed_work	ctrl_lcm_frequency;
 	struct delayed_work	sourcecap_done_work;
+	struct delayed_work	sourcecap_suspend_recovery_work;
 	u32			oem_misc_ctl_data;
 	bool			oem_usb_online;
 	bool			oem_lcm_check;
@@ -716,6 +721,7 @@ struct battery_chg_dev {
 	struct completion	 ufcs_read_ack;
 
 	bool calib_info_init;
+	bool real_mvolts_min_support;
 	int cp_work_mode;
 	bool gauge_data_initialized;
 	int otg_scheme;

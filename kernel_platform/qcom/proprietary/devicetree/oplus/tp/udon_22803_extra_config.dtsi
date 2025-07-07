@@ -130,8 +130,8 @@
 		firmware_name = "SS", "SS";
 		platform_support_project = <21605 21606 21736 21738 21841 21842 22624 0x226AA 0x226AB 22625 0x226B2 0x226B3 22803 22881>;
 		platform_support_project_dir = <21605 21605 21605 21605 21841 21841 22624 22624 22624 22625 22625 22625 22803 22803>;
-		platform_support_project_commandline = 
-		"mdss_dsi_oplus_boe_rm692e5_1080_2412_dsc_cmd","mdss_dsi_oplus22803_nt37705_1240_2772_dsc_cmd";
+		platform_support_project_commandline = "mdss_dsi_oplus21606_nt37701b_1080_2412_dsc_cmd_udc",
+		"mdss_dsi_oplus21605_nt37701a_1080_2412_dsc_cmd","mdss_dsi_oplus_boe_rm692e5_1080_2412_dsc_cmd","mdss_dsi_oplus22803_nt37705_1240_2772_dsc_cmd"; 
 
 		/* SW Support Feature Control */
 		sportify_aod_gesture_support;
@@ -224,7 +224,7 @@
 		firmware_name = "Hbp", "Hbp";
 		platform_support_project = <22624 22625 0x226B2 0x226B3 22623 0x226A9 22803 22881>;
 		platform_support_project_dir = <22624 22624 22624 22624 22624 22624 22803 22803>;
-		platform_support_project_commandline = "mdss_dsi_oplus22803_nt37705_1240_2772_dsc_cmd";
+		platform_support_project_commandline = "mdss_dsi_oplus_senna_ab575_nt37705_1240_2772_dsc_cmd","mdss_dsi_oplus22803_nt37705_1240_2772_dsc_cmd";
 
 		/* SW Support Feature Control */
 

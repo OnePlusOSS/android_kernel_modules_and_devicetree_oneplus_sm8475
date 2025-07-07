@@ -50,6 +50,8 @@
 #include <oplus_chg_cpa.h>
 #include <oplus_battery_log.h>
 #include <oplus_chg_state_retention.h>
+#include <oplus_chg_ufcs.h>
+#include <oplus_chg_plc.h>
 
 #define VOOC_BAT_VOLT_REGION	4
 #define VOOC_SOC_RANGE_NUM	3
@@ -140,6 +142,7 @@ struct oplus_chg_vooc {
 	struct oplus_mms *main_gauge_topic;
 	struct oplus_mms *batt_bal_topic;
 	struct oplus_mms *retention_topic;
+	struct oplus_mms *ufcs_topic;
 	struct mms_subscribe *wired_subs;
 	struct mms_subscribe *comm_subs;
 	struct mms_subscribe *gauge_subs;
@@ -147,8 +150,11 @@ struct oplus_chg_vooc {
 	struct mms_subscribe *dual_chan_subs;
 	struct mms_subscribe *batt_bal_subs;
 	struct mms_subscribe *retention_subs;
+	struct mms_subscribe *ufcs_subs;
 	struct oplus_mms *cpa_topic;
 	struct mms_subscribe *cpa_subs;
+	struct oplus_mms *plc_topic;
+	struct mms_subscribe *plc_subs;
 
 	struct oplus_vooc_spec_config spec;
 	struct oplus_vooc_config config;
@@ -302,6 +308,7 @@ struct oplus_chg_vooc {
 	int slow_chg_pct;
 	int slow_chg_watt;
 	int slow_chg_batt_limit;
+	u16 ufcs_vid;
 	struct completion pdsvooc_check_ack;
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 	struct oplus_cfg spec_debug_cfg;
@@ -309,6 +316,9 @@ struct oplus_chg_vooc {
 #endif
 	uint32_t cp_cooldown_limit_percent_75;
 	uint32_t cp_cooldown_limit_percent_85;
+
+	struct oplus_plc_protocol *opp;
+	int plc_status;
 };
 
 struct oplus_adapter_struct {
@@ -780,6 +790,28 @@ static void oplus_vooc_set_online(struct oplus_chg_vooc *chip, bool online)
 		oplus_vooc_cpa_switch_end(chip);
 	chg_info("vooc_online = %s\n", online ? "true" : "false");
 }
+static void oplus_vooc_deep_ratio_limit_curr(struct oplus_chg_vooc *chip)
+{
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_RATIO_LIMIT_CURR, &data, true);
+	if (rc < 0)
+		return;
+
+	if (data.intval <= 0) {
+		chg_err("get ratio limit curr error, data.intval=%d\n", data.intval);
+		return;
+	}
+
+	chg_info("ration limit curr: %d", data.intval);
+	vote(chip->vooc_curr_votable, DEEP_RATIO_LIMIT_VOTER, true, data.intval, false);
+}
 
 static void oplus_vooc_set_online_keep(struct oplus_chg_vooc *chip, bool keep)
 {
@@ -810,6 +842,7 @@ static void oplus_vooc_set_vooc_charging(struct oplus_chg_vooc *chip,
 					 bool charging)
 {
 	struct mms_msg *msg;
+	enum oplus_plc_chg_mode chg_mode;
 	int rc;
 
 	if (chip->fastchg_ing == charging)
@@ -826,9 +859,29 @@ static void oplus_vooc_set_vooc_charging(struct oplus_chg_vooc *chip,
 	if (rc < 0) {
 		chg_err("publish vooc_charging msg error, rc=%d\n", rc);
 		kfree(msg);
+		return;
 	}
 
 	chg_info("fastchg_ing = %s\n", charging ? "true" : "false");
+
+	if (chip->plc_topic == NULL)
+		return;
+
+	if (charging && !chip->vooc_chg_bynormal_path)
+		chg_mode = PLC_CHG_MODE_CP;
+	else
+		chg_mode = PLC_CHG_MODE_BUCK;
+	msg = oplus_mms_alloc_int_msg(MSG_TYPE_ITEM, MSG_PRIO_HIGH,
+				      PLC_ITEM_CHG_MODE, chg_mode);
+	if (msg == NULL) {
+		chg_err("alloc msg error\n");
+		return;
+	}
+	rc = oplus_mms_publish_msg(chip->plc_topic, msg);
+	if (rc < 0) {
+		chg_err("publish plc chg mode msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
 }
 
 static void oplus_chg_clear_abnormal_adapter_var(struct oplus_chg_vooc *chip)
@@ -1616,6 +1669,7 @@ static int oplus_vooc_get_real_wired_type(struct oplus_chg_vooc *chip)
 }
 
 #define PDSVOOC_CHECK_WAIT_TIME_MS		350
+#define OPLUS_SVID	0x22d9
 static void oplus_vooc_switch_check_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -1701,6 +1755,11 @@ static void oplus_vooc_switch_check_work(struct work_struct *work)
 		chg_type = oplus_vooc_get_real_wired_type(chip);
 	else
 		chg_type = oplus_wired_get_chg_type();
+	if ((chip->ufcs_vid == OPLUS_SVID)  &&
+	    (chg_type == OPLUS_CHG_USB_TYPE_PD_PPS || chg_type == OPLUS_CHG_USB_TYPE_PD)) {
+		chg_err("chg type is pd/pps and get ufcs vid is 0x22d9, enable pd svooc\n");
+		vote(chip->pd_svooc_votable, SVID_VOTER, true, 1, false);
+	}
 	/* The cpa module will ensure the correctness of the type*/
 	if (!chip->cpa_support) {
 		switch (chg_type) {
@@ -2931,6 +2990,12 @@ static void oplus_vooc_adapter_data (struct oplus_chg_vooc *chip, int vooc_adapt
 	chip->adapter_model_factory = false;
 	chip->adapter_id = vooc_adapter_data;
 	oplus_vooc_set_sid(chip, oplus_get_adapter_sid(chip, vooc_adapter_data));
+	if (chip->opp != NULL) {
+		if (sid_to_adapter_chg_type(chip->sid) == CHARGER_TYPE_VOOC)
+			oplus_plc_protocol_set_strategy(chip->opp, "vooc");
+		else
+			oplus_plc_protocol_set_strategy(chip->opp, "svooc");
+	}
 	oplus_vooc_chg_bynormal_path(chip);
 	if (is_client_vote_enabled(chip->vooc_disable_votable, FASTCHG_DUMMY_VOTER) &&
 	    config->vooc_version >= VOOC_VERSION_5_0)
@@ -2990,6 +3055,7 @@ static void oplus_vooc_fastchg_work(struct work_struct *work)
 		chip->adapter_model_factory = false;
 		oplus_vooc_set_online(chip, true);
 		oplus_vooc_set_online_keep(chip, true);
+		oplus_vooc_deep_ratio_limit_curr(chip);
 		chip->temp_over_count = 0;
 		oplus_gauge_lock();
 		if (oplus_vooc_is_allow_fast_chg(chip)) {
@@ -3500,6 +3566,48 @@ static void oplus_vooc_subscribe_wired_topic(struct oplus_mms *topic,
 		vote(chip->vooc_boot_votable, WIRED_TOPIC_VOTER, false, 0, false);
 }
 
+static void oplus_vooc_ufcs_subs_callback(struct mms_subscribe *subs,
+						enum mms_msg_type type, u32 id, bool sync)
+{
+	 struct oplus_chg_vooc *chip = subs->priv_data;
+	 union mms_msg_data data = { 0 };
+
+	 switch (type) {
+	 case MSG_TYPE_ITEM:
+		 switch (id) {
+		 case UFCS_ITEM_UFCS_VID:
+			 oplus_mms_get_item_data(chip->ufcs_topic, id, &data, false);
+			 chip->ufcs_vid = data.intval;
+			 chg_err("chip->ufcs_vid=0x%x\n", chip->ufcs_vid);
+			 break;
+		 default:
+			 break;
+		 }
+		 break;
+	 default:
+		 break;
+	 }
+}
+
+static void oplus_vooc_subscribe_ufcs_topic(struct oplus_mms *topic,
+					     void *prv_data)
+{
+	struct oplus_chg_vooc *chip = prv_data;
+	union mms_msg_data data = { 0 };
+
+	chip->ufcs_topic = topic;
+	chip->ufcs_subs = oplus_mms_subscribe(chip->ufcs_topic, chip,
+					      oplus_vooc_ufcs_subs_callback,
+					      "vooc");
+	if (IS_ERR_OR_NULL(chip->ufcs_subs)) {
+		chg_err("subscribe ufcs topic error, rc=%ld\n", PTR_ERR(chip->ufcs_subs));
+		return;
+	}
+
+	oplus_mms_get_item_data(chip->ufcs_topic, UFCS_ITEM_UFCS_VID, &data, true);
+	chip->ufcs_vid = data.intval;
+};
+
 static void oplus_vooc_batt_bal_subs_callback(struct mms_subscribe *subs,
 					      enum mms_msg_type type, u32 id, bool sync)
 {
@@ -3551,6 +3659,172 @@ static void oplus_vooc_subscribe_batt_bal_topic(struct oplus_mms *topic,
 		chg_err("batt bal abnormal, online set false\n");
 	}
 
+}
+
+static int oplus_vooc_plc_enable(struct oplus_plc_protocol *opp, enum oplus_plc_chg_mode mode)
+{
+	struct oplus_chg_vooc *chip;
+	int rc;
+
+	chip = oplus_plc_protocol_get_priv_data(opp);
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (mode == PLC_CHG_MODE_AUTO) {
+		if (get_effective_result(chip->vooc_not_allow_votable) > 0) {
+			mode = PLC_CHG_MODE_BUCK;
+			chg_info("mode chang to %s by %s", oplus_plc_chg_mode_str(mode),
+				 get_effective_client(chip->vooc_not_allow_votable));
+		} else if (get_effective_result(chip->vooc_disable_votable) > 0) {
+			mode = PLC_CHG_MODE_BUCK;
+			chg_info("mode chang to %s by %s", oplus_plc_chg_mode_str(mode),
+				 get_effective_client(chip->vooc_disable_votable));
+		} else if (chip->vooc_chg_bynormal_path) {
+			mode = PLC_CHG_MODE_BUCK;
+			chg_info("mode chang to %s by normal_path", oplus_plc_chg_mode_str(mode));
+		} else {
+			mode = PLC_CHG_MODE_CP;
+			chg_info("mode chang to %s", oplus_plc_chg_mode_str(mode));
+		}
+		if (mode == PLC_CHG_MODE_BUCK)
+			return 0;
+	}
+
+	if (mode == PLC_CHG_MODE_BUCK)
+		rc = vote(chip->vooc_not_allow_votable, PLC_VOTER, true, 1, false);
+	else
+		rc = vote(chip->vooc_not_allow_votable, PLC_VOTER, false, 0, false);
+
+	return rc;
+}
+
+static int oplus_vooc_plc_disable(struct oplus_plc_protocol *opp)
+{
+	struct oplus_chg_vooc *chip;
+
+	chip = oplus_plc_protocol_get_priv_data(opp);
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	vote(chip->vooc_curr_votable, PLC_VOTER, false, 0, false);
+	vote(chip->vooc_not_allow_votable, PLC_VOTER, false, 0, false);
+
+	return 0;
+}
+
+static int oplus_vooc_plc_reset_protocol(struct oplus_plc_protocol *opp)
+{
+	return 0;
+}
+
+static int oplus_vooc_plc_set_ibus(struct oplus_plc_protocol *opp, int ibus_ma)
+{
+	struct oplus_chg_vooc *chip;
+
+	chip = oplus_plc_protocol_get_priv_data(opp);
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	vote(chip->vooc_curr_votable, PLC_VOTER, true, ibus_ma, false);
+	return 0;
+}
+
+static int oplus_vooc_plc_get_ibus(struct oplus_plc_protocol *opp)
+{
+	struct oplus_chg_vooc *chip;
+
+	chip = oplus_plc_protocol_get_priv_data(opp);
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	return get_client_vote(chip->vooc_curr_votable, PLC_VOTER);
+}
+
+static int oplus_vooc_plc_get_chg_mode(struct oplus_plc_protocol *opp)
+{
+	struct oplus_chg_vooc *chip;
+
+	chip = oplus_plc_protocol_get_priv_data(opp);
+	if (chip == NULL) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	if (chip->fastchg_ing && !chip->vooc_chg_bynormal_path)
+		return PLC_CHG_MODE_CP;
+	return PLC_CHG_MODE_BUCK;
+}
+
+static struct oplus_plc_protocol_desc g_plc_protocol_desc = {
+	.name = "vooc",
+	.protocol = BIT(CHG_PROTOCOL_VOOC),
+	.current_active = true,
+	.ops = {
+		.enable = oplus_vooc_plc_enable,
+		.disable = oplus_vooc_plc_disable,
+		.reset_protocol = oplus_vooc_plc_reset_protocol,
+		.set_ibus = oplus_vooc_plc_set_ibus,
+		.get_ibus = oplus_vooc_plc_get_ibus,
+		.get_chg_mode = oplus_vooc_plc_get_chg_mode,
+	}
+};
+
+static void oplus_vooc_plc_subs_callback(struct mms_subscribe *subs,
+					 enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_chg_vooc *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case PLC_ITEM_STATUS:
+			oplus_mms_get_item_data(chip->plc_topic, id, &data,
+						false);
+			chip->plc_status = data.intval;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_vooc_subscribe_plc_topic(struct oplus_mms *topic,
+					   void *prv_data)
+{
+	struct oplus_chg_vooc *chip = prv_data;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	chip->plc_topic = topic;
+	chip->plc_subs = oplus_mms_subscribe(chip->plc_topic, chip,
+					     oplus_vooc_plc_subs_callback,
+					     "vooc");
+	if (IS_ERR_OR_NULL(chip->plc_subs)) {
+		chg_err("subscribe plc topic error, rc=%ld\n",
+			PTR_ERR(chip->plc_subs));
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->plc_topic, PLC_ITEM_STATUS, &data, true);
+	if (rc >= 0)
+		chip->plc_status = data.intval;
+
+	chip->opp = oplus_plc_register_protocol(chip->plc_topic,
+		&g_plc_protocol_desc, chip->dev->of_node, chip);
+	if (chip->opp == NULL)
+		chg_err("register vooc plc protocol error");
 }
 
 static void oplus_vooc_plugin_work(struct work_struct *work)
@@ -3628,6 +3902,7 @@ static void oplus_vooc_plugin_work(struct work_struct *work)
 			     false, 0, false);
 		}
 		/* USER_VOTER and HIDL_VOTER need to be invalid when the usb is unplugged */
+		vote(chip->vooc_curr_votable, DEEP_RATIO_LIMIT_VOTER, false, 0, false);
 		vote(chip->vooc_curr_votable, USER_VOTER, false, 0, false);
 		vote(chip->vooc_curr_votable, HIDL_VOTER, false, 0, false);
 		vote(chip->vooc_curr_votable, SLOW_CHG_VOTER, false, 0, false);
@@ -3704,6 +3979,8 @@ static void oplus_abnormal_adapter_check_work(struct work_struct *work)
 
 	if (chip->wired_present == (!!data.intval))
 		return;
+	/* do not add any code here */
+	WRITE_ONCE(chip->wired_present, !!data.intval);
 
 	if (chip->cpa_current_type != CHG_PROTOCOL_VOOC && chip->retention_state) {
 		chg_info("clear_abnormal_adapter_dis_cnt\n");
@@ -3716,7 +3993,6 @@ static void oplus_abnormal_adapter_check_work(struct work_struct *work)
 		mmi_chg = !get_client_vote(chip->common_chg_suspend_votable,
 					   MMI_CHG_VOTER);
 
-	WRITE_ONCE(chip->wired_present, !!data.intval);
 	if (!chip->wired_present) {
 		chip->svooc_detach_time = local_clock() / 1000000;
 		/*pm8550bhs cid gpio9 pull out  by 50ms cycle pulse detect,when adapter pull out need to wait 50ms*/
@@ -5264,6 +5540,8 @@ static void oplus_vooc_init_work(struct work_struct *work)
 	oplus_mms_wait_topic("cpa", oplus_vooc_subscribe_cpa_topic, chip);
 	oplus_mms_wait_topic("batt_bal", oplus_vooc_subscribe_batt_bal_topic, chip);
 	oplus_mms_wait_topic("retention", oplus_vooc_subscribe_retention_topic, chip);
+	oplus_mms_wait_topic("ufcs", oplus_vooc_subscribe_ufcs_topic, chip);
+	oplus_mms_wait_topic("plc", oplus_vooc_subscribe_plc_topic, chip);
 	schedule_delayed_work(&chip->boot_fastchg_allow_work, 0);
 
 	return;
@@ -6071,6 +6349,7 @@ static void oplus_turn_off_fastchg(struct oplus_chg_vooc *chip)
 	oplus_vooc_chg_bynormal_path(chip);
 	oplus_set_fast_status(chip, CHARGER_STATUS_UNKNOWN);
 	oplus_vooc_fastchg_exit(chip, true);
+	oplus_plc_protocol_set_strategy(chip->opp, "default");
 }
 
 static void oplus_chg_vooc_turn_off_work(struct work_struct *work)
@@ -6198,6 +6477,7 @@ static int oplus_vooc_remove(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 	oplus_vooc_unreg_debug_config(chip);
 #endif
+	oplus_plc_release_protocol(chip->plc_topic, chip->opp);
 	if (!IS_ERR_OR_NULL(chip->comm_subs))
 		oplus_mms_unsubscribe(chip->comm_subs);
 	if (!IS_ERR_OR_NULL(chip->wired_subs))
@@ -6206,6 +6486,8 @@ static int oplus_vooc_remove(struct platform_device *pdev)
 		oplus_mms_unsubscribe(chip->cpa_subs);
 	if (!IS_ERR_OR_NULL(chip->retention_subs))
 		oplus_mms_unsubscribe(chip->retention_subs);
+	if (!IS_ERR_OR_NULL(chip->plc_subs))
+		oplus_mms_unsubscribe(chip->plc_subs);
 	oplus_vooc_awake_exit(chip);
 	remove_proc_entry("fastchg_fw_update", NULL);
 	if (chip->bypass_strategy)

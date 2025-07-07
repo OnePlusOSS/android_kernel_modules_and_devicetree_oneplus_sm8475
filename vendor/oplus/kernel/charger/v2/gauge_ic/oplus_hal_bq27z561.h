@@ -81,10 +81,9 @@
 #define BQ27Z561_SUBCMD_CAL_MODE		0x0040
 #define BQ27Z561_SUBCMD_RESET			0x0041
 #define BQ27Z561_SUBCMD_GAUGE_STATUS		0X0056
-#define BQ27Z561_SUBCMD_IT_STATUS1		0x0071
-#define BQ27Z561_SUBCMD_IT_STATUS2		0X0073
-#define BQ27Z561_SUBCMD_IT_STATUS3		0X0074
-#define BQ27Z561_SUBCMD_IT_STATUS4		0X0075
+#define BQ27Z561_SUBCMD_IT_STATUS1		0x0073
+#define BQ27Z561_SUBCMD_IT_STATUS2		0X0074
+#define BQ27Z561_SUBCMD_IT_STATUS3		0X0075
 #define BQ27Z561_SUBCMD_FILTERED_CAP		0X0078
 
 #define BQ27Z561_AUTHENDATA_1ST			0x40
@@ -100,6 +99,7 @@
 #define BQ27Z561_SUBCMD_TRY_COUNT 		3
 #define BQ27Z561_DATA_CLASS_ACCESS 		0x003e
 #define BQ27Z561_REG_CNTL1			0x3e
+#define GAUGE_EXTERN_DATAFLASHBLOCK	0x3e
 
 #define DEVICE_TYPE_BQ27541			0x0541
 #define DEVICE_TYPE_BQ27411			0x0421
@@ -115,6 +115,48 @@
 #define DEVICE_ZY0603				4
 #define DEVICE_NFG8011B				5
 #define DEVICE_BQ27Z561				6
+
+#define BQ27Z561_BATT_SN_EN_ADDR		0x3E
+#define BQ27Z561_BATT_SN_CMD			0x004C
+#define BQ27Z561_BATT_SN_READ_BUF_LEN		22
+#define BQ27Z561_BATTINFO_NO_CHECKSUM		0x00
+#define BQ27Z561_BATT_SN_RETRY_MAX		3
+#define BQ28Z610_BATT_FIRST_USAGE_DATE_WLEN	5
+#define BQ28Z610_BATT_FIRST_USAGE_DATE_WADDR	0x404E
+#define BQ28Z610_BATTINFO_DEFAULT_CHECKSUM	0xFF
+#define BQ28Z610_REG_CNTL1_SIZE			4
+#define BQ28Z610_REG_CNTL1			0x3e
+#define BQ28Z610_SEAL_STATUS			0x0054
+#define BQ28Z610_SEAL_BIT			(BIT(0) | BIT(1))
+#define BQ28Z610_SEAL_VALUE			3
+#define BQ28Z610_UNSEAL_SUBCMD1			0x0414
+#define BQ28Z610_UNSEAL_SUBCMD2			0x3672
+#define BQ28Z610_BATT_WRITE_CHECK_SUM_ADDR	0x60
+#define BQ28Z610_SEAL_SUBCMD			0x0030
+#define BQ28Z610_SEAL_POLLING_RETRY_LIMIT	20
+#define BQ28Z610_BATT_UI_CC_WLEN		5
+#define BQ28Z610_BATT_UI_CC_WADDR		0x4053
+#define BQ28Z610_BATT_UI_SOH_WLEN		4
+#define BQ28Z610_BATT_UI_SOH_WADDR		0x4051
+#define BQ28Z610_BATT_USED_FLAG_WLEN		4
+#define BQ28Z610_BATT_USED_FLAG_WADDR		0x4056
+#define BQ28Z610_BATT_MANU_DATE_READ_BUF_LEN	4
+#define BQ28Z610_BATTINFO_EN_ADDR		0x3E
+#define BQ28Z610_BATTINFO_MANUDATE_CMD		0x004D
+#define BQ28Z610_BATT_VDM_DATA_READ_BUF_LEN	34
+#define BQ28Z610_BATT_INFO_RETRY_MAX		3
+#define BQ28Z610_BATTINFO_VDMDATA_CMD		0x0070
+#define BQ28Z610_BATT_FIRST_USAGE_DATE_L	15
+#define BQ28Z610_BATT_FIRST_USAGE_DATE_H	16
+#define BQ28Z610_BATT_UI_SOH			18
+#define BQ28Z610_BATT_UI_CYCLE_COUNT_L		20
+#define BQ28Z610_BATT_UI_CYCLE_COUNT_H		21
+#define BQ28Z610_BATT_FIRST_USAGE_DATE_CHECK	17
+#define BQ28Z610_BATTINFO_NO_CHECKSUM		0x00
+#define BQ28Z610_BATT_UI_SOH_CHECK		19
+#define BQ28Z610_BATT_UI_CYCLE_COUNT_CHECK	22
+#define BQ28Z610_BATT_USED_FLAG_CHECK		24
+#define BQ28Z610_BATT_USED_FLAG			23
 
 #define BQ27Z561_AUTHENTICATE_OK		0x56
 #define AUTHEN_MESSAGE_MAX_COUNT		30
@@ -140,6 +182,13 @@ struct bq27z561_authenticate_data {
 #define BQ27Z561_DATAFLASHBLOCK					0x3e
 #define DEVICE_NAME_LEN 					12
 
+#define BQ27Z561_BLOCK_SIZE			32
+#define BQ27Z561_EXTEND_DATA_SIZE		34
+#define BQ27Z561_REG_TRUE_FCC			0x0073
+#define BQ27Z561_TRUE_FCC_NUM_SIZE		2
+#define BQ27Z561_TRUE_FCC_OFFSET		8
+#define BQ27Z561_FCC_SYNC_CMD			0x0043
+#define GAUGE_SUBCMD_TRY_COUNT			3
 struct cmd_address {
 	/* bq27z561 standard cmds */
 	u8 reg_cntl;
@@ -313,6 +362,9 @@ struct chip_bq27z561 {
 	int min_vol_pre;
 	int batt_num;
 
+	bool fcc_too_small_checking;
+	struct work_struct fcc_too_small_check_work;
+
 	bool modify_soc_smooth;
 	bool modify_soc_calibration;
 	bool remove_iterm_taper;
@@ -366,7 +418,7 @@ struct chip_bq27z561 {
 
 	bool support_sha256_hmac;
 	bool support_extern_cmd;
-
+	bool support_eco_design;
 	struct delayed_work check_iic_recover;
 	/* workaround for I2C pull SDA can't trigger error issue 230504153935012779 */
 	bool i2c_rst_ext;
@@ -387,12 +439,14 @@ struct chip_bq27z561 {
 	struct test_feature *fpga_fg_test;
 #endif
 	struct battery_manufacture_info battinfo;
+	struct delayed_work get_manu_battinfo_work;
 	int deep_dischg_count_pre;
 	int deep_term_volt_pre;
 	bool dsg_enable;
 	u8 chem_id[CHEM_ID_LENGTH + 1];
 	int last_cc_pre;
 	int gauge_type;
+	int bq27z561_seal_flag;
 };
 
 struct gauge_track_info_reg {

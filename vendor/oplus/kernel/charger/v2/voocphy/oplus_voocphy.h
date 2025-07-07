@@ -600,6 +600,9 @@ struct oplus_voocphy_manager {
 	struct power_supply *batt_psy;
 	void *priv_data;
 
+	struct oplus_mms *plc_topic;
+	struct mms_subscribe *plc_subs;
+
 	int irq_gpio;
 	int irq;
 
@@ -913,6 +916,8 @@ struct oplus_voocphy_manager {
 	int eis_status;
 	int eis_copycat_detect_cnt;
 	bool cp_err_uploading;
+
+	int plc_status;
 };
 
 struct oplus_voocphy_operations {
@@ -948,7 +953,7 @@ struct oplus_voocphy_operations {
 	int (*get_voocphy_enable)(struct oplus_voocphy_manager *chip, u8 *data);
 	void (*dump_voocphy_reg)(struct oplus_voocphy_manager *chip);
 	int (*get_chip_id)(struct oplus_voocphy_manager *chip);
-	int (*set_chg_pmid2out)(bool enable);
+	int (*set_chg_pmid2out)(bool enable, int reason);
 	bool (*get_chg_pmid2out)(void);
 	int (*reset_voocphy_ovp)(struct oplus_voocphy_manager *chip);
 	bool (*check_cp_int_happened)(struct oplus_voocphy_manager *chip, bool *dump_reg, bool *send_info);

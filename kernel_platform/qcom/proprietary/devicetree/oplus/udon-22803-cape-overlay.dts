@@ -4,9 +4,11 @@
 #include "../qcom/cape-mtp-pm8010-overlay.dts"
 #include "cape_overlay_common.dtsi"
 #include "udon_22803_overlay_common.dtsi"
+#include "nfc/jennie-nfc-sn100t.dtsi"
 #include "tp/udon_22803_extra_config.dtsi"
 #include "oplus_uff/oplus_uff_22015.dtsi"
 #include "oplus_chg/oplus-chg-22803.dtsi"
+#include "nfc/whiteswan-22001-nfc-sn110t.dtsi"
 #include "oplus_sensor/udon-22803-cape-oplus-sensor.dtsi"
 / {
         model = "Qualcomm Technologies, Inc. Cape MTP, Udon";

@@ -198,6 +198,7 @@ struct oplus_monitor {
 	int wls_vout_mv;
 	int wls_icl_ma;
 	int wls_charge_type;
+	int wls_pre_type;
 	int wls_magcvr_status;
 	unsigned int wls_err_code;
 	bool wls_online;
@@ -242,7 +243,7 @@ struct oplus_monitor {
 
 	/* plc */
 	int plc_status;
-	int plc_support;
+	bool plc_support;
 	int enable_count;
 	int plc_init_sm_soc;
 	int plc_init_ui_soc;
