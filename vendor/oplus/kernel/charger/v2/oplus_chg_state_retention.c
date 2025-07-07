@@ -572,6 +572,12 @@ static void oplus_retention_chg_subscribe_wired_topic(struct oplus_mms *topic,
 	chip->wired_online = !!data.intval;
 	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_CHG_TYPE, &data, true);
 	chip->wired_type = data.intval;
+	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_CC_DETECT, &data, true);
+	chip->cc_detect = data.intval;
+	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_PRESENT, &data, true);
+	chip->irq_plugin = data.intval;
+	if (chip->irq_plugin)
+		schedule_delayed_work(&chip->present_check_work, 0);
 }
 
 static void oplus_retention_chg_cpa_subs_callback(struct mms_subscribe *subs,

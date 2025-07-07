@@ -819,8 +819,6 @@ struct oplus_voocphy_manager {
 	int batt_fake_temp;
 	int batt_fake_soc;
 
-	bool full_limit_curr_support;
-
 	//adsp some status
 	int adsp_voocphy_rx_data;
 	int parallel_charge_support;
@@ -964,6 +962,7 @@ struct oplus_voocphy_operations {
 	int (*clk_err_clean)(void);
 	int (*set_ufcs_enable)(struct oplus_voocphy_manager *chip, bool enable);
 	void (*set_fix_mode)(bool val);
+	int (*set_sstimeout_ucp_enable)(struct oplus_voocphy_manager *chip, bool enable);
 };
 
 #define VOOCPHY_LOG_BUF_LEN 1024
@@ -1080,4 +1079,5 @@ int oplus_voocphy_get_cp_enable(void);
 int oplus_voocphy_set_ufcs_enable(bool enable);
 bool oplus_get_vooc_direct_charge_en(void);
 bool oplus_voocphy_get_vbatt_ovp_status(void);
+int oplus_voocphy_set_sstimeout_ucp_enable(bool enable);
 #endif /* _OPLUS_VOOCPHY_H_ */

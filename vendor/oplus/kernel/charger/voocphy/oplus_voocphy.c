@@ -35,7 +35,7 @@
 #include "../oplus_chg_audio_switch.h"
 
 #define AP_ALLOW_FASTCHG	(1 << 6)
-#define TARGET_VOL_OFFSET_THR	250
+#define TARGET_VOL_OFFSET_THR	1000 /* considering adapter error and adc error, changing from 0.25A to 1A */
 #define DELAY_TEMP_MONITOR_COUNTS		2
 #define trace_oplus_tp_sched_change_ux(x, y)
 #define CHARGER_UP_CPU_FREQ	2000000	//1.8 x 1000 x 1000
@@ -1875,6 +1875,11 @@ static void oplus_voocphy_update_data(struct oplus_voocphy_manager *chip)
 			chip->cp_ichg = chip->cp_ichg + slave_cp_ichg;
 			voocphy_err("total cp_ichg = %d div_ichg = %d\n", chip->cp_ichg, div_cp_ichg);
 		}
+	}
+
+	if (chip->ops && chip->ops->set_sstimeout_ucp_enable && chip->vooc_vbus_status == VOOC_VBUS_NORMAL) {
+		if (chip->cp_ichg > 600) /* ibus over 600ma need enable sstimeout_ucp */
+			oplus_voocphy_set_sstimeout_ucp_enable(true);
 	}
 
 	return;
@@ -5802,7 +5807,9 @@ static int oplus_voocphy_cal_full_limit_curr(struct oplus_voocphy_manager *chip)
 
 static int oplus_voocphy_check_full_limit_curr(struct oplus_voocphy_manager *chip)
 {
-	if (!chip || !chip->full_limit_curr_support)
+	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
+
+	if (!chip || !chg_chip || !chg_chip->full_limit_curr_support)
 		return -EINVAL;
 
 	if (!chip->full_limit_curr) {
@@ -5828,8 +5835,13 @@ static int oplus_voocphy_check_full_limit_curr(struct oplus_voocphy_manager *chi
 int oplus_voocphy_vol_event_handle(unsigned long data)
 {
 	struct oplus_voocphy_manager *chip = g_voocphy_chip;
+	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
+	bool full_limit_curr_support = false;
 	int status = VOOCPHY_SUCCESS;
 	static unsigned char fast_full_count = 0;
+
+	if (chg_chip)
+		full_limit_curr_support = chg_chip->full_limit_curr_support;
 
 	if (chip->fastchg_monitor_stop == true) {
 		voocphy_info( "oplus_voocphy_vol_event_handle ignore");
@@ -5875,7 +5887,7 @@ int oplus_voocphy_vol_event_handle(unsigned long data)
 		    || (chip->batt_temp_plugin == VOOCPHY_BATT_TEMP_WARM				/*43-52 chg to 4130mV*/
 		    	&& chip->vooc_warm_full_voltage != -EINVAL
 		        && chip->gauge_vbatt > chip->vooc_warm_full_voltage)
-		    || (chip->gauge_vbatt > chip->vooc_1time_full_voltage && !chip->full_limit_curr_support)) {
+		    || (chip->gauge_vbatt > chip->vooc_1time_full_voltage && !full_limit_curr_support)) {
 			voocphy_info( "vbatt 1time fastchg full: %d",chip->gauge_vbatt);
 			oplus_voocphy_set_status_and_notify_ap(g_voocphy_chip, FAST_NOTIFY_FULL);
 		} else if (chip->gauge_vbatt > chip->vooc_ntime_full_voltage) {
@@ -8174,8 +8186,6 @@ int oplus_voocphy_parse_batt_curves(struct oplus_voocphy_manager *chip)
 		chip->vooc_warm_full_voltage = -EINVAL;
 	}
 
-	chip->full_limit_curr_support = of_property_read_bool(node, "oplus,full_limit_curr_support");
-
 	rc = of_property_read_u32(node, "qcom,vooc_1time_full_voltage",
 	                                &chip->vooc_1time_full_voltage);
 	if (rc < 0) {
@@ -9216,6 +9226,26 @@ int oplus_voocphy_set_ufcs_enable(bool enable)
 		rc = g_voocphy_chip->ops->set_ufcs_enable(g_voocphy_chip, enable);
 		if (rc < 0) {
 			voocphy_info(" fail, rc=%d.\n", rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
+int oplus_voocphy_set_sstimeout_ucp_enable(bool enable)
+{
+	int rc = 0;
+	struct oplus_voocphy_manager *chip = g_voocphy_chip;
+	if (!chip) {
+		voocphy_info("%s, chip null\n", __func__);
+		return VOOCPHY_EFATAL;
+	}
+
+	if (chip->ops && chip->ops->set_sstimeout_ucp_enable) {
+		rc = chip->ops->set_sstimeout_ucp_enable(chip, enable);
+		if (rc < 0) {
+			voocphy_info("oplus_voocphy_set_sstimeout_ucp_enable, rc=%d.\n", rc);
 			return rc;
 		}
 	}

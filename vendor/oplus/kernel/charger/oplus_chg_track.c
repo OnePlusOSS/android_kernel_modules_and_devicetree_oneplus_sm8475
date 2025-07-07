@@ -272,6 +272,7 @@ struct oplus_chg_track_full_curr_limit {
 	int one_full_trigger_curr;
 	int one_full_trigger_temp;
 	int n_full_trigger_cnt;
+	int batt_r;
 };
 
 struct oplus_chg_track_app_ref {
@@ -893,6 +894,7 @@ static struct flag_reason_table track_flag_reason_table[] = {
 	{ TRACK_NOTIFY_FLAG_WLS_TRX_INFO, "WlsTrxInfo" },
 	{ TRACK_NOTIFY_FLAG_PARALLELCHG_FOLDMODE_INFO, "ParallelChgFoldModeInfo" },
 	{ TRACK_NOTIFY_FLAG_MMI_CHG_INFO, "MmiChgInfo" },
+	{ TRACK_NOTIFY_FLAG_PLC_CHG_INFO, "PlcChgInfo" },
 	{ TRACK_NOTIFY_FLAG_SLOW_CHG_INFO, "SlowChgInfo" },
 	{ TRACK_NOTIFY_FLAG_CHG_CYCLE_INFO, "ChgCycleInfo" },
 	{ TRACK_NOTIFY_FLAG_TTF_INFO, "TtfInfo" },
@@ -3595,6 +3597,20 @@ static int oplus_chg_track_pack_cool_down_stats(struct oplus_chg_track_status *t
 	return 0;
 }
 
+int oplus_chg_track_set_fcl_batt_r(int batt_r)
+{
+	struct oplus_chg_track *chip = g_track_chip;
+	struct oplus_chg_track_full_curr_limit *fcl;
+
+	if (!chip)
+		return -EINVAL;
+
+	fcl = &(chip->track_status.fcl);
+	fcl->batt_r = batt_r;
+
+	return 0;
+}
+
 int oplus_chg_track_set_fcl_info(int type, int batt_volt, int batt_curr, int batt_temp)
 {
 	int rc = 0;
@@ -3853,11 +3869,13 @@ static void oplus_chg_track_record_charger_info(struct oplus_chg_chip *chip, opl
 				  track_status->slow_chg_pct, track_status->slow_chg_watt);
 	}
 
-	index += snprintf(&(p_trigger_data->crux_info[index]),
-			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "$$fcl@@%d,%d,%d,%d,%d",
+	if (index < OPLUS_CHG_TRACK_CURX_INFO_LEN) {
+		index += scnprintf(&(p_trigger_data->crux_info[index]),
+			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "$$fcl@@%d,%d,%d,%d,%d,%d",
 			  track_status->fcl.one_full_trigger_cnt, track_status->fcl.one_full_trigger_volt,
 			  track_status->fcl.one_full_trigger_curr, track_status->fcl.one_full_trigger_temp,
-			  track_status->fcl.n_full_trigger_cnt);
+			  track_status->fcl.n_full_trigger_cnt, track_status->fcl.batt_r);
+	}
 
 	index += snprintf(&(p_trigger_data->crux_info[index]),
 			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index,

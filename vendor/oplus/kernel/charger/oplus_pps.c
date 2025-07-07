@@ -1803,7 +1803,7 @@ void oplus_pps_set_pps_mos_enable(bool enable)
 	oplus_pps_charging_enable_slave(chip, enable);
 	oplus_pps_charging_enable_slave_b(chip, enable);
 	if (!enable)
-		cancel_delayed_work(&chip->ucp_enable_work);
+		cancel_delayed_work(&chip->sstimeout_ucp_enable_work);
 }
 
 void oplus_pps_set_svooc_mos_enable(bool enable)
@@ -1820,9 +1820,9 @@ void oplus_pps_set_svooc_mos_enable(bool enable)
 		oplus_pps_charging_enable_slave(chip, enable);
 	}
 	if (enable)
-		schedule_delayed_work(&chip->ucp_enable_work, msecs_to_jiffies(500));
+		schedule_delayed_work(&chip->sstimeout_ucp_enable_work, msecs_to_jiffies(500));
 	else
-		cancel_delayed_work(&chip->ucp_enable_work);
+		cancel_delayed_work(&chip->sstimeout_ucp_enable_work);
 }
 
 static void oplus_pps_reset_temp_range(struct oplus_pps_chip *chip)
@@ -2894,6 +2894,7 @@ bool oplus_pps_get_btb_temp_over(void)
 		return (chip->pps_stop_status == PPS_STOP_VOTER_BTB_OVER);
 	}
 }
+
 struct pps_full_1time_table {
 	int volt_diff;
 	int curr_dec;
@@ -2918,13 +2919,22 @@ static int oplus_pps_1time_limit_curr(struct oplus_pps_chip *chip)
 	int normal_sw_vth = 0, normal_hw_vth = 0;
 	static bool  limit_status = false;
 	static int limit_cnts = 0;
+	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
+
+	if (!chip || !chg_chip) {
+		chg_err("chip is null\n");
+		return -EINVAL;
+	}
+
+	if (!chg_chip->full_limit_curr_support)
+		return 0;
 
 	if (chip->pps_status <= OPLUS_PPS_STATUS_OPEN_MOS) {
 		limit_status = false;
 		limit_cnts = 0;
 		return 0;
 	}
-	if (limit_status) {
+	if (limit_status && (chip->pps_adapter_type != PPS_ADAPTER_THIRD)) {
 		limit_cnts++;
 		if (limit_cnts > 3 && chip->ask_charger_current < chip->target_charger_current) {
 			limit_cnts = 0;
@@ -2973,9 +2983,8 @@ static int oplus_pps_1time_limit_curr(struct oplus_pps_chip *chip)
 		else
 			oplus_chg_track_set_fcl_info(
 				TRACK_N_TIME_FULL_CURR_LIMIT, vbat, abs(ibat), tbat);
-		pps_err(" [%d, %d, %d][%d, %d], [%d, %d, %d, %d, %d, %d][%d, %d, %d]\n", abs(ibat), vbat, tbat, normal_hw_vth, normal_sw_vth,
-			i, volt_diff, chip->cp_mode, chip->ilimit.full_1time_limit, limit_status, limit_cnts,
-			chip->batt_curve_index, chip->target_charger_current, chip->batt_curves.batt_curve_num);
+		pps_err(" [%d, %d, %d, %d, %d], [%d, %d, %d]\n", abs(ibat), vbat, tbat,
+			normal_hw_vth, normal_sw_vth, i, volt_diff, chip->ilimit.full_1time_limit);
 	}
 	return 0;
 }
@@ -3107,6 +3116,7 @@ static void oplus_pps_check_full(struct oplus_pps_chip *chip)
 	}
 }
 
+#define PPS_UCP_SS_IBUS_MIN 600
 static void oplus_pps_check_ibat_safety(struct oplus_pps_chip *chip)
 {
 	int chg_ith = 0;
@@ -3119,6 +3129,11 @@ static void oplus_pps_check_ibat_safety(struct oplus_pps_chip *chip)
 		return;
 
 	chip->timer.check_ibat_flag = 0;
+
+	if (((-chip->data.ap_batt_current / oplus_pps_get_cp_ratio()) > PPS_UCP_SS_IBUS_MIN) &&
+		chip->ops->pps_cp_sstimeout_ucp_enable)
+		chip->ops->pps_cp_sstimeout_ucp_enable(true);
+
 	if (chip->data.ap_batt_current > PPS_IBAT_LOW_MIN) {
 		chip->count.ibat_low++;
 		if (chip->count.ibat_low >= PPS_IBAT_LOW_CNT) {
@@ -3420,15 +3435,11 @@ static void oplus_pps_check_resistense(struct oplus_pps_chip *chip)
 	}
 }
 
-#define PPS_UCP_SS_IBUS_MIN 800
 static void oplus_pps_voter_charging_stop(struct oplus_pps_chip *chip);
 static void oplus_pps_check_disconnect(struct oplus_pps_chip *chip)
 {
 	if (chip->pps_status <= OPLUS_PPS_STATUS_OPEN_MOS)
 		return;
-
-	if ((chip->data.ap_input_current > PPS_UCP_SS_IBUS_MIN) && chip->ops->pps_cp_ucp_enable)
-		chip->ops->pps_cp_ucp_enable();
 
 	if (chip->pps_status > OPLUS_PPS_STATUS_OPEN_MOS) {
 		if (chip->data.ap_input_current < PPS_DISCONNECT_IOUT_MIN) {
@@ -3868,6 +3879,18 @@ static void oplus_pps_power_switch_check(struct oplus_pps_chip *chip)
 	}
 }
 
+static int oplus_pps_get_stat_curr_min(void)
+{
+	struct oplus_pps_chip *chip = &g_pps_chip;
+	if (!chip || !chip->pps_support_type) {
+		return PPS_ACTION_CURR_MIN_THIRD;
+	}
+	if (chip->pps_adapter_type == PPS_ADAPTER_THIRD)
+		return PPS_ACTION_CURR_MIN_THIRD;
+	else
+		return PPS_ACTION_CURR_MIN_OPLUS;
+}
+
 static int oplus_pps_action_status_start(struct oplus_pps_chip *chip)
 {
 	int update_size = 0, vbat = 0;
@@ -3894,10 +3917,10 @@ static int oplus_pps_action_status_start(struct oplus_pps_chip *chip)
 		else
 			chip->target_charger_volt = ((vbat * 4) / 100) * 100 +
 					    PPS_ACTION_START_DIFF_VOLT_V2;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else if (chip->cp_mode == PPS_BYPASS_MODE) {
 		chip->target_charger_volt = ((vbat * batt_num) / 100) * 100 + PPS_ACTION_START_DIFF_VOLT_V1;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else {
 		pps_err("Invalid argument!\n");
 		chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
@@ -3991,10 +4014,10 @@ static int oplus_pps_action_volt_change(struct oplus_pps_chip *chip)
 
 	if (chip->cp_mode == PPS_SC_MODE) {
 		chip->target_charger_volt = PPS_VOL_MAX_V2;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else if (chip->cp_mode == PPS_BYPASS_MODE) {
 		chip->target_charger_volt = PPS_VOL_MAX_V1;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else {
 		pps_err("Invalid argument!\n");
 		chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
@@ -4074,9 +4097,9 @@ static int oplus_pps_action_status_check(struct oplus_pps_chip *chip)
 	if (chip->ask_charger_volt != chip->target_charger_volt) {
 		chip->ask_charger_volt = chip->target_charger_volt;
 		if (chip->cp_mode == PPS_SC_MODE) {
-			chip->ask_charger_current = PPS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_pps_get_stat_curr_min();
 		} else if (chip->cp_mode == PPS_BYPASS_MODE) {
-			chip->ask_charger_current = PPS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_pps_get_stat_curr_min();
 		} else {
 			chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
 			pps_err("check curve Invalid argument!\n");
@@ -4817,24 +4840,17 @@ static void oplus_pps_update_work(struct work_struct *work)
 	}
 }
 
-static void oplus_pps_ucp_enable_work(struct work_struct *work)
+static void oplus_pps_sstimeout_ucp_enable_work(struct work_struct *work)
 {
-	bool rc = false;
-	struct oplus_pps_chip *chip = container_of(work, struct oplus_pps_chip, ucp_enable_work.work);
+	struct oplus_pps_chip *chip = container_of(work, struct oplus_pps_chip, sstimeout_ucp_enable_work.work);
 
-	if (!chip->ops || !chip->ops->pps_cp_ucp_enable)
+	if (!chip->ops || !chip->ops->pps_cp_sstimeout_ucp_enable)
 		return;
-
-	if (!oplus_cp_master_get_enable()) {
-		pps_info("cp not enable not handle\n");
-		return;
-	}
 
 	if (chip->data.ap_input_current > PPS_UCP_SS_IBUS_MIN)
-		rc = chip->ops->pps_cp_ucp_enable();
-
-	if (!rc)
-		schedule_delayed_work(&chip->ucp_enable_work, msecs_to_jiffies(500));
+		chip->ops->pps_cp_sstimeout_ucp_enable(true);
+	else
+		schedule_delayed_work(&chip->sstimeout_ucp_enable_work, msecs_to_jiffies(500));
 }
 
 static void oplus_pps_cancel_update_work_sync(void)
@@ -4844,7 +4860,7 @@ static void oplus_pps_cancel_update_work_sync(void)
 		return;
 	}
 	cancel_delayed_work_sync(&chip->update_pps_work);
-	cancel_delayed_work_sync(&chip->ucp_enable_work);
+	cancel_delayed_work_sync(&chip->sstimeout_ucp_enable_work);
 }
 
 static void oplus_pps_cancel_stop_work(void)
@@ -4854,7 +4870,7 @@ static void oplus_pps_cancel_stop_work(void)
 		return;
 	}
 	cancel_delayed_work(&chip->pps_stop_work);
-	cancel_delayed_work(&chip->ucp_enable_work);
+	cancel_delayed_work(&chip->sstimeout_ucp_enable_work);
 }
 
 static void oplus_pps_get_ops_work(struct work_struct *work)
@@ -5294,9 +5310,8 @@ void oplus_pps_variables_reset(bool in)
 	if (chip->update_pps_work.work.func) {
 		cancel_delayed_work_sync(&chip->update_pps_work);
 	}
-	if (chip->ucp_enable_work.work.func) {
-		cancel_delayed_work_sync(&chip->ucp_enable_work);
-	}
+	if (chip->sstimeout_ucp_enable_work.work.func)
+		cancel_delayed_work_sync(&chip->sstimeout_ucp_enable_work);
 }
 
 int oplus_pps_register_ops(struct oplus_pps_operations *ops)
@@ -5381,7 +5396,7 @@ int oplus_pps_init(struct oplus_chg_chip *g_chg_chip)
 	INIT_DELAYED_WORK(&chip->update_pps_work, oplus_pps_update_work);
 	INIT_DELAYED_WORK(&chip->check_vbat_diff_work, oplus_pps_vbat_diff_work);
 	INIT_DELAYED_WORK(&chip->ready_force2svooc_work, oplus_pps_ready_force2svooc_check_work);
-	INIT_DELAYED_WORK(&chip->ucp_enable_work, oplus_pps_ucp_enable_work);
+	INIT_DELAYED_WORK(&chip->sstimeout_ucp_enable_work, oplus_pps_sstimeout_ucp_enable_work);
 	oplus_pps_variables_reset(true);
 	oplus_pps_clear_dbg_info();
 	pps_track_init(chip);

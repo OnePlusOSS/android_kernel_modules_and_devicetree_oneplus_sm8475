@@ -691,7 +691,6 @@ int sc8571_master_cp_enable(int enable)
 {
 	struct chip_sc8571 *chip = chip_sc8571_master;
 	int ret = 0;
-
 	if (!chip) {
 		pps_err("chip is NULL\n");
 		return ret;
@@ -797,36 +796,41 @@ void sc8571_master_cfg_bypass(void)
 	sc8571_write_byte(SC8571_REG_42, 0xFC); /*0xFC*/
 }
 
-bool sc8571_master_enable_ibus_ucp(void)
+int sc8571_master_sstimeout_ucp_enable(bool enable)
 {
-	int ret;
+	int ret = 0;
 	u8 val_buf;
 
 	if (!chip_sc8571_master) {
 		pps_err("chip is NULL\n");
-		return false;
+		return ret;
 	}
 
 	ret = sc8571_read_byte(0x05, &val_buf);
 	if (ret < 0) {
 		pps_err("read 0x05 failed, ret = 0x%x\n", ret);
-		return false;
+		return ret;
 	}
 
-	if (!(val_buf & SC8571_BUS_UCP_DIS_MASK))
+	if ((enable && !(val_buf & SC8571_BUS_UCP_DIS_MASK)) || (!enable && (val_buf & SC8571_BUS_UCP_DIS_MASK)))
 		return true;
 
+	if (enable && (val_buf & SC8571_BUS_UCP_DIS_MASK)) {
+		sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 sstimeout*/
+		sc8571_write_byte(SC8571_REG_41, 0x20); /*0X11 IBUS UCP*/
+	} else {
+		sc8571_write_byte(SC8571_REG_05, 0x80); /*0X05 sstimeout*/
+		sc8571_write_byte(SC8571_REG_41, 0xA0); /*0X41 IBUS UCP*/
+	}
+
 	val_buf = 0x80;
-	sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 DIS_BATOCP_ALM*/
-	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X11  IBUS UCP*/
 	sc8571_read_byte(0x05, &val_buf);
 
 	if (val_buf & SC8571_BUS_UCP_DIS_MASK) {
-		pps_err("ucp enable failed, read 0x05 val_buf = 0x%x\n", val_buf);
+		pps_err("ucp enable failed, reg[05] = 0x%x\n", val_buf);
 		return false;
 	}
-
-	pps_info("read 0x05 val_buf = 0x%x\n", val_buf);
+	pps_err("set cp %sabled, val_buf[0x%x]", enable ? "en" : "dis", val_buf);
 
 	return true;
 }
@@ -850,6 +854,8 @@ void sc8571_master_hardware_init(void)
 	sc8571_write_byte(SC8571_REG_10, 0x84); /*0X10 disalbe watchdog*/
 	sc8571_write_byte(SC8571_REG_23, 0x00); /*0X23 adc disable continous*/
 	sc8571_write_byte(SC8571_REG_24, 0x0E); /*0X24 disalbe TSBUT_ADC/TSBAT_ADC/IBAT_ADC*/
+	sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 sstimeout*/
+	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X11 IBUS UCP*/
 	pps_err(" end!\n");
 }
 
@@ -860,6 +866,8 @@ void sc8571_master_reset(void)
 		return;
 	}
 	sc8571_write_byte(SC8571_REG_0F, 0x80); /*0x0F reset cp*/
+	sc8571_write_byte(SC8571_REG_05, 0x00); /*0X05 sstimeout*/
+	sc8571_write_byte(SC8571_REG_41, 0x20); /*0X11 IBUS UCP*/
 }
 
 int sc8571_master_dump_registers(void)

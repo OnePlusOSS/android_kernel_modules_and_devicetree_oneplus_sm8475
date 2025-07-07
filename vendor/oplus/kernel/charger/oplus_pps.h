@@ -74,7 +74,7 @@
 #define PPS_CURVE_OV_CNT 4
 #define PPS_CP_IBUS_ABORNAL_MIN 100
 #define PPS_CURVE_VBAT_DELTA_MV 5
-#define PPS_CURVE_VBAT_DELTA_CNT 1
+#define PPS_CURVE_VBAT_DELTA_CNT 2
 #define PPS_CURVE_IBUS_DELTA_MA 50
 
 #define PPS_FG_TEMP_PROTECTION 800
@@ -114,7 +114,8 @@
 #define PPS_ACTION_START_DIFF_VOLT_V2 600
 #define PPS_ACTION_START_DIFF_VOLT_3RD 450
 #define PPS_ACTION_VOLT_CHANGE_DIFF_VOLT_3RD 100
-#define PPS_ACTION_CURR_MIN 800
+#define PPS_ACTION_CURR_MIN_OPLUS 800
+#define PPS_ACTION_CURR_MIN_THIRD 1000
 
 #define PPS_ACTION_START_DELAY 300
 #define PPS_ACTION_MOS_DELAY 50
@@ -624,7 +625,7 @@ struct oplus_pps_chip {
 	struct delayed_work update_pps_work;
 	struct delayed_work check_vbat_diff_work;
 	struct delayed_work ready_force2svooc_work;
-	struct delayed_work ucp_enable_work;
+	struct delayed_work sstimeout_ucp_enable_work;
 
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 	struct oplus_cfg debug_cfg;
@@ -728,7 +729,7 @@ struct oplus_pps_operations {
 	void (*pps_cp_reset)(void);
 	int (*pps_cp_mode_init)(int mode);
 	void (*pps_cp_pmid2vout_enable)(bool enable);
-	bool (*pps_cp_ucp_enable)(void);
+	int (*pps_cp_sstimeout_ucp_enable)(bool enable);
 
 	int (*pps_mos_ctrl)(int on);
 	int (*pps_get_cp_master_vbus)(void);

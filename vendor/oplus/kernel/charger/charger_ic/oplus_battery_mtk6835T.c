@@ -5873,7 +5873,7 @@ static void oplus_ccdetect_enable(void)
 
 	/* set DRP mode */
 	if (pinfo != NULL && pinfo->tcpc != NULL) {
-		tcpm_typec_change_role(pinfo->tcpc, TYPEC_ROLE_TRY_SNK);
+		tcpm_typec_change_role_postpone(pinfo->tcpc, TYPEC_ROLE_TRY_SNK, true);
 		pr_err("%s: set typec role try sink", __func__);
 	}
 }
@@ -5893,7 +5893,7 @@ static void oplus_ccdetect_disable(void)
 
 	/* set SINK mode */
 	if (pinfo != NULL && pinfo->tcpc != NULL) {
-		tcpm_typec_change_role(pinfo->tcpc, TYPEC_ROLE_SNK);
+		tcpm_typec_change_role_postpone(pinfo->tcpc, TYPEC_ROLE_SNK, true);
 		pr_err("%s: set sink", __func__);
 	}
 }
@@ -7587,7 +7587,6 @@ static struct device_node *oplus_get_charge_node_by_charge_ic(struct device_node
 		if (sub_node) {
 			node = sub_node;
 			chr_err("current charger_sub node name str = %s\n", charge_node_name_str);
-			sgm41542_charger_exit();
 		}
 	}
 

@@ -649,6 +649,15 @@ typedef enum {
 	OPLUS_USBTEMP_TIMER_STAGE1,
 } OPLUS_USBTEMP_TIMER_STAGE;
 
+typedef enum {
+	PLC_STATUS_NOT_SUPPORT = 0,
+	PLC_STATUS_NOT_ALLOW,
+	PLC_STATUS_DISABLE,
+	PLC_STATUS_ENABLE,
+	PLC_STATUS_WAIT,
+	PLC_STATUS_MAX,
+} PLC_STATUS_TYPE;
+
 struct usbtemp_curr {
 	int batt_curr;
 	int temp_delta;
@@ -1298,6 +1307,7 @@ struct oplus_chg_chip {
 	int led_temp_status;
 	bool vooc_temp_change;
 	int vooc_temp_status;
+	bool full_limit_curr_support;
 	bool camera_on;
 	bool camera_on_pre;
 	bool calling_on;
@@ -1310,6 +1320,11 @@ struct oplus_chg_chip {
 	bool otg_switch;
 	bool ui_otg_switch;
 	int mmi_chg;
+	int plc_status;
+	int curr_plc_status;
+	bool plc_support;
+	int plc_buck;
+	struct delayed_work plc_disable_wait_work;
 	int unwakelock_chg;
 	int stop_chg;
 	int mmi_fastchg;
@@ -1549,15 +1564,18 @@ struct oplus_chg_chip {
 #endif
 
 	oplus_chg_track_trigger *mmi_chg_info_trigger;
+	oplus_chg_track_trigger *plc_chg_info_trigger;
 	oplus_chg_track_trigger *slow_chg_info_trigger;
 	oplus_chg_track_trigger *chg_cycle_info_trigger;
 	oplus_chg_track_trigger *dec_vol_info_trigger;
 	struct delayed_work mmi_chg_info_trigger_work;
+	struct delayed_work plc_chg_info_trigger_work;
 	struct delayed_work slow_chg_info_trigger_work;
 	struct delayed_work chg_cycle_info_trigger_work;
 	struct delayed_work dec_vol_info_trigger_work;
 
 	struct mutex mmi_chg_info_lock;
+	struct mutex plc_chg_info_lock;
 	struct mutex slow_chg_info_lock;
 	struct mutex chg_cycle_info_lock;
 	struct mutex dec_vol_info_lock;
@@ -1939,6 +1957,7 @@ int oplus_chg_get_cool_down_status(void);
 int oplus_chg_get_normal_cool_down_status(void);
 void oplus_smart_charge_by_cool_down(struct oplus_chg_chip *chip, int val);
 int oplus_convert_current_to_level(struct oplus_chg_chip *chip, int val);
+int oplus_convert_level_to_current(struct oplus_chg_chip *chip, int val);
 int oplus_convert_pps_current_to_level(struct oplus_chg_chip *chip, int val);
 void oplus_smart_charge_by_shell_temp(struct oplus_chg_chip *chip, int val);
 int oplus_smart_charge_by_bcc(struct oplus_chg_chip *chip, int val);
@@ -2075,5 +2094,6 @@ void oplus_charger_set_dec_delta(int val);
 int oplus_charger_get_dec_delta(void);
 void oplus_comm_set_rechg_soc_limit(int rechg_soc, bool en);
 void oplus_comm_get_rechg_soc_limit(int *rechg_soc, bool *en);
+int oplus_plc_based_buck_setting(struct oplus_chg_chip *chip, int enable);
 //#endif
 #endif /*_OPLUS_CHARGER_H_*/
