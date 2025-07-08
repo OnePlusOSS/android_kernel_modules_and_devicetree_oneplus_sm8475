@@ -468,5 +468,6 @@ int oplus_track_upload_ntc_abnormal_info(int ntc_temp, char *ntc_name,
 						   char *scene, char *reason, char *other);
 int oplus_chg_track_upload_rechg_info(void);
 int oplus_chg_track_set_fcl_info(int type, int batt_volt, int batt_curr, int batt_temp);
+int oplus_chg_track_set_fcl_batt_r(int batt_r);
 
 #endif

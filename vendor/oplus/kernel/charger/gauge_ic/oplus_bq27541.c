@@ -8840,13 +8840,19 @@ static int bq27541_driver_probe(struct i2c_client *client)
 static int bq27541_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
 #endif
 {
+	struct device_node *node = client->dev.of_node;
 	struct chip_bq27541 *fg_ic;
 	struct oplus_gauge_chip *chip;
 	int rerun_num = 3;
 	int rc = 0;
+	int gauge_num = 0;
 
-	if (!oplus_gauge_check_chip_is_null()) {
-		chg_err("gauge chip_is not null, skip %s\n", __func__);
+	rc = of_property_read_u32(node, "qcom,gauge_num", &gauge_num);
+	if (rc)
+		gauge_num = 0;
+	/* increase gauge_num condition avoid missing sub gauge initialization */
+	if (!oplus_gauge_check_chip_is_null() && (gauge_num == 0)) {
+		chg_err("gauge chip_is not null, skip %s, gauge_num %d \n", __func__, gauge_num);
 		return -ENOMEM;
 	}
 

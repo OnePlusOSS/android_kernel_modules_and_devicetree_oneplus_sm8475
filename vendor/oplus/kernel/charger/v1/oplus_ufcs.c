@@ -3068,6 +3068,18 @@ static int oplus_ufcs_get_ufcs_pdo_vmin(struct oplus_ufcs_chip *chip)
 	return pdo_vmin;
 }
 
+static int oplus_ufcs_get_stat_curr_min(void)
+{
+	struct oplus_ufcs_chip *chip = g_ufcs_chip;
+	if (!chip || !chip->ufcs_support_type)
+		return UFCS_ACTION_CURR_MIN_THIRD;
+
+	if (!chip->ufcs_authentication)
+		return UFCS_ACTION_CURR_MIN_THIRD;
+	else
+		return UFCS_ACTION_CURR_MIN_OPLUS;
+}
+
 static int oplus_ufcs_action_status_start(struct oplus_ufcs_chip *chip)
 {
 	int update_size = 0, vbat = 0;
@@ -3079,10 +3091,10 @@ static int oplus_ufcs_action_status_start(struct oplus_ufcs_chip *chip)
 
 	if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V2) {
 		chip->target_charger_volt = ((vbat * 4) / 100) * 100 + UFCS_ACTION_START_DIFF_VOLT_V2;
-		chip->target_charger_current = UFCS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_ufcs_get_stat_curr_min();
 	} else if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V1) {
 		chip->target_charger_volt = ((vbat * 2) / 100) * 100 + UFCS_ACTION_START_DIFF_VOLT_V1;
-		chip->target_charger_current = UFCS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_ufcs_get_stat_curr_min();
 	} else {
 		ufcs_err("Invalid argument!\n");
 		chip->ufcs_stop_status = UFCS_STOP_VOTER_OTHER_ABORMAL;
@@ -3178,9 +3190,9 @@ static int oplus_ufcs_action_volt_change(struct oplus_ufcs_chip *chip)
 
 	chip->target_charger_volt = oplus_ufcs_get_curve_vbus(chip);
 	if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V2) {
-		chip->target_charger_current = UFCS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_ufcs_get_stat_curr_min();
 	} else if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V1) {
-		chip->target_charger_current = UFCS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_ufcs_get_stat_curr_min();
 	} else {
 		ufcs_err("Invalid argument!\n");
 		chip->ufcs_stop_status = UFCS_STOP_VOTER_OTHER_ABORMAL;
@@ -3256,9 +3268,9 @@ static int oplus_ufcs_action_stable_check(struct oplus_ufcs_chip *chip)
 	if (chip->ask_charger_volt != chip->target_charger_volt) {
 		chip->ask_charger_volt = chip->target_charger_volt;
 		if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V2) {
-			chip->ask_charger_current = UFCS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_ufcs_get_stat_curr_min();
 		} else if (oplus_ufcs_get_curve_vbus(chip) == UFCS_VOL_MAX_V1) {
-			chip->ask_charger_current = UFCS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_ufcs_get_stat_curr_min();
 		} else {
 			chip->ufcs_stop_status = UFCS_STOP_VOTER_OTHER_ABORMAL;
 			ufcs_err("check curve Invalid argument!\n");

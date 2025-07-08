@@ -75,6 +75,7 @@
 #define ONE_MINUTE 		60
 #define MAX_UI_DECIMAL_TIME	24
 #define UPDATE_TIME		1
+#define PLUGOUT_SOC_THRESHOLD	95
 #define NORMAL_FULL_SOC		100
 #define VBAT_GAP_CHECK_CNT	3
 #define VBAT_MAX_GAP		50
@@ -376,7 +377,8 @@ struct oplus_chg_comm {
 	int delta_soc;
 	int uisoc_keep_2_err;
 	int shell_temp;
-	unsigned long soc_update_jiffies;
+	unsigned long soc_up_update_jiffies;
+	unsigned long soc_down_update_jiffies;
 	unsigned long vbat_uv_jiffies;
 	unsigned long batt_full_jiffies;
 	unsigned long sleep_tm_sec;
@@ -509,6 +511,22 @@ static const char *const POWER_SUPPLY_HEALTH_TEXT[] = {
 	[POWER_SUPPLY_HEALTH_COOL]		    = "Cool",
 	[POWER_SUPPLY_HEALTH_HOT]		    = "Hot",
 };
+
+static void oplus_comm_update_soc_jiffies(struct oplus_chg_comm *chip)
+{
+	chip->soc_up_update_jiffies = jiffies;
+	chip->soc_down_update_jiffies = jiffies;
+}
+
+static void oplus_comm_plugout_update_down_jiffies(struct oplus_chg_comm *chip, bool wired_online, bool wls_online)
+{
+	if (!wired_online && !wls_online && chip->smooth_soc >= PLUGOUT_SOC_THRESHOLD &&
+	    chip->ui_soc >= PLUGOUT_SOC_THRESHOLD) {
+		chg_info("smooth_soc=%d, ui_soc=%d, plugout soc_down from %ums to %ums\n", chip->smooth_soc,
+			 chip->ui_soc, jiffies_to_msecs(chip->soc_down_update_jiffies), jiffies_to_msecs(jiffies));
+		chip->soc_down_update_jiffies = jiffies;
+	}
+}
 
 bool oplus_comm_get_boot_completed(void)
 {
@@ -1687,7 +1705,7 @@ void oplus_comm_set_rechg_soc_limit(struct oplus_mms *topic, int rechg_soc, bool
 		chip->rechg_now = true;
 		chg_info("recharge directly if disable ui_soc rechg.\n");
 	} else if (en && (chip->ui_soc == 100)) {
-		chip->soc_update_jiffies = jiffies;
+		oplus_comm_update_soc_jiffies(chip);
 		chg_info("keep 100 for 5minutes when enable ui_soc rechg.\n");
 	}
 
@@ -2181,7 +2199,7 @@ static int oplus_comm_set_ui_soc(struct oplus_chg_comm *chip, int soc)
 	chip->ui_soc = soc;
 
 	chg_info("set ui_soc=%d\n", soc);
-	chip->soc_update_jiffies = jiffies;
+	oplus_comm_update_soc_jiffies(chip);
 	chip->batt_full_jiffies = jiffies;
 
 	if (soc == 0)
@@ -2621,13 +2639,13 @@ static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm
 					t_soc_x_to_2 = t_sum / (ui_soc - 2);
 					chg_err("ui_soc x to 2 smooth soc:%d temp:%d %d vbat_min:%d, term_v:%d %d jiff_n:%ld jiff:%ld t_soc:%d %d %d %d",
 					    ui_soc, chip->shell_temp, volt_diff_of_soc_2, chip->vbat_min_mv,
-					    term_voltage, vbat_low_soc_to_2, soc_down_jiffies, chip->soc_update_jiffies,
+					    term_voltage, vbat_low_soc_to_2, soc_down_jiffies, chip->soc_down_update_jiffies,
 					    t_soc_x_to_2, back_rm, load_current, chip->ibat_ma);
 				}
 
 				if (t_soc_x_to_2 < UI_SOC_DEC_SPEED_OF_LOW_BATT)
 					t_soc_x_to_2 = UI_SOC_DEC_SPEED_OF_LOW_BATT;
-				soc_down_jiffies = chip->soc_update_jiffies + (unsigned long)(t_soc_x_to_2 * HZ);
+				soc_down_jiffies = chip->soc_down_update_jiffies + (unsigned long)(t_soc_x_to_2 * HZ);
 				*p_force_down_1 = true;
 			}
 		} else {
@@ -2652,13 +2670,13 @@ static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm
 					t_soc_x_to_1 = t_sum / (ui_soc - 1);
 					chg_err("ui_soc x to 1 smooth soc:%d temp:%d %d vbat_min:%d, term_v:%d %d jiff_n:%ld jiff:%ld t_soc:%d %d %d %d\n",
 					    ui_soc, chip->shell_temp, volt_diff_of_soc_2, chip->vbat_min_mv,
-					    term_voltage, vbat_low_soc_to_1, soc_down_jiffies, chip->soc_update_jiffies,
+					    term_voltage, vbat_low_soc_to_1, soc_down_jiffies, chip->soc_down_update_jiffies,
 					    t_soc_x_to_1, *p_force_down_1, back_rm, load_current);
 				}
 
 				if (t_soc_x_to_1 < UI_SOC_DEC_SPEED_OF_UV_BATT)
 					t_soc_x_to_1 = UI_SOC_DEC_SPEED_OF_UV_BATT;
-				soc_down_jiffies = chip->soc_update_jiffies + (unsigned long)(t_soc_x_to_1 * HZ);
+				soc_down_jiffies = chip->soc_down_update_jiffies + (unsigned long)(t_soc_x_to_1 * HZ);
 			}
 		} else {
 			vbat_low_soc_to_1 = 0;
@@ -2713,25 +2731,25 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 	smooth_soc = chip->smooth_soc;
 	charging = chip->wired_online || chip->wls_online;
 
-	soc_up_jiffies = chip->soc_update_jiffies + (unsigned long)(10 * HZ);
+	soc_up_jiffies = chip->soc_up_update_jiffies + (unsigned long)(10 * HZ);
 	if (ui_soc == 100) {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(300 * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(300 * HZ);
 	} else if (ui_soc >= 95) {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(150 * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(150 * HZ);
 	} else if (ui_soc >= 60) {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(60 * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(60 * HZ);
 	} else if (charging && ui_soc == 1) {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(90 * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(90 * HZ);
 	} else if (ui_soc <= 10 && chip->config.support_uisoc_low_battery_control) {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(UI_SOC_DEC_SPEED_OF_LOW_BATT * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(UI_SOC_DEC_SPEED_OF_LOW_BATT * HZ);
 	} else {
 		soc_down_jiffies =
-			chip->soc_update_jiffies + (unsigned long)(40 * HZ);
+			chip->soc_down_update_jiffies + (unsigned long)(40 * HZ);
 	}
 
 	if (chip->config.support_uisoc_low_battery_control)
@@ -2795,7 +2813,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 				    chip->config.volt_of_fast_drop_soc_1, vbatt_too_low,
 				    charging, chip->vbat_min_mv, chip->vbat_mv,
 				    force_dec_interval, config->chg_shutdown_max_mv, chip->ui_soc);
-				soc_down_jiffies = chip->soc_update_jiffies +
+				soc_down_jiffies = chip->soc_down_update_jiffies +
 						   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
 				force_down_2 = true;
 			} else {
@@ -2812,7 +2830,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 	     (charging ? spec->sub_vbat_charging_uv_thr_mv : spec->sub_vbat_uv_thr_mv))) {
 		/* Force ui_soc to drop to 0 when the voltage is too low */
 		if (time_is_before_jiffies(vbat_uv_jiffies)) {
-			soc_down_jiffies = chip->soc_update_jiffies +
+			soc_down_jiffies = chip->soc_down_update_jiffies +
 					   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
 			force_down_2 = true;
 		} else {
@@ -4881,7 +4899,7 @@ static void oplus_comm_subscribe_gauge_topic(struct oplus_mms *topic,
 		oplus_hidden_soc_smooth(chip);
 	else
 		oplus_comm_set_smooth_soc(chip, chip->soc);
-	chip->soc_update_jiffies = jiffies;
+	oplus_comm_update_soc_jiffies(chip);
 	chip->vbat_uv_jiffies = jiffies;
 	chg_info("shutdown_soc=%d, soc=%d, partition_uisoc=%d, smooth_soc=%d\n",
 	    chip->shutdown_soc, chip->soc, chip->partition_uisoc, chip->smooth_soc);
@@ -4908,7 +4926,7 @@ static void oplus_comm_subscribe_gauge_topic(struct oplus_mms *topic,
 	else
 		chip->ui_soc = chip->smooth_soc > 0 ? chip->smooth_soc : 1;
 
-	chip->soc_update_jiffies = jiffies;
+	oplus_comm_update_soc_jiffies(chip);
 	chip->batt_full_jiffies = jiffies;
 
 	/* gauge is ready now!!! */
@@ -5090,6 +5108,7 @@ static void oplus_comm_wls_subs_callback(struct mms_subscribe *subs,
 		switch (id) {
 		case WLS_ITEM_PRESENT:
 			oplus_mms_get_item_data(chip->wls_topic, id, &data, false);
+			oplus_comm_plugout_update_down_jiffies(chip, chip->wired_online, !!data.intval);
 			chip->wls_online = !!data.intval;
 			schedule_work(&chip->plugin_work);
 			break;
@@ -5446,6 +5465,7 @@ static void oplus_comm_plugin_work(struct work_struct *work)
 
 	oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_ONLINE, &data,
 				false);
+	oplus_comm_plugout_update_down_jiffies(chip, !!data.intval, chip->wls_online);
 	chip->wired_online = data.intval;
 
 	chg_info("wired_online = %d, wls_online = %d\n", chip->wired_online, chip->wls_online);
