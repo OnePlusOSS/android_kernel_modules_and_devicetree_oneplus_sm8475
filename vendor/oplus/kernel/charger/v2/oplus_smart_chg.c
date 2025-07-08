@@ -53,6 +53,7 @@ struct oplus_smart_charge {
 	bool vooc_online;
 	bool wls_online;
 	bool vooc_charging;
+	bool voocphy_bcc_fastchg_ing;
 	unsigned int vooc_sid;
 
 	bool ufcs_online;
@@ -1029,7 +1030,8 @@ static void oplus_smart_chg_bcc_set_buffer(int *buffer)
 	    return;
 	}
 
-	if (true == oplus_voocphy_get_fastchg_ing() ||
+	g_smart_chg->voocphy_bcc_fastchg_ing = oplus_voocphy_get_fastchg_ing();
+	if (g_smart_chg->voocphy_bcc_fastchg_ing ||
 		(oplus_vooc_get_fastchg_ing() && oplus_vooc_get_fast_chg_type() != BCC_TYPE_IS_VOOC)){
 		bcc_current_max = oplus_vooc_check_bcc_max_curr();
 		bcc_current_min = oplus_vooc_check_bcc_min_curr();
@@ -1114,7 +1116,6 @@ int oplus_smart_chg_get_battery_bcc_parameters(char *buf)
 	struct oplus_mms *wired_topic;
 	bool vooc_get_fastchg_ing;
 	int vooc_get_fast_chg_type;
-	bool voocphy_get_fastchg_ing;
 	int vooc_check_bcc_temp_range;
 	bool wls_fastchg_charging;
 
@@ -1126,12 +1127,12 @@ int oplus_smart_chg_get_battery_bcc_parameters(char *buf)
 	oplus_smart_chg_bcc_set_buffer(buffer);
 	vooc_get_fastchg_ing = oplus_vooc_get_fastchg_ing();
 	vooc_get_fast_chg_type = oplus_vooc_get_fast_chg_type();
-	voocphy_get_fastchg_ing = oplus_voocphy_get_fastchg_ing();
 	vooc_check_bcc_temp_range = oplus_vooc_check_bcc_temp_range();
 	wls_fastchg_charging = oplus_wls_get_fastchg_ing();
 
 	if ((vooc_get_fastchg_ing && vooc_get_fast_chg_type != BCC_TYPE_IS_VOOC) ||
-	    voocphy_get_fastchg_ing || g_smart_chg->ufcs_charging || wls_fastchg_charging) {
+	    g_smart_chg->voocphy_bcc_fastchg_ing || g_smart_chg->ufcs_charging ||
+	    wls_fastchg_charging) {
 		buffer[15] = 1;
 	} else {
 		buffer[15] = 0;
@@ -1155,7 +1156,7 @@ int oplus_smart_chg_get_battery_bcc_parameters(char *buf)
 
 	buffer[16] = oplus_wired_get_bcc_curr_done_status(wired_topic);
 
-	if (voocphy_get_fastchg_ing ||
+	if (g_smart_chg->voocphy_bcc_fastchg_ing ||
 	    (vooc_get_fastchg_ing && (vooc_get_fast_chg_type != BCC_TYPE_IS_VOOC))) {
 		if (vooc_check_bcc_temp_range == BCC_TEMP_RANGE_WRONG) {
 			buffer[9] = 0;
@@ -1186,7 +1187,7 @@ int oplus_smart_chg_get_battery_bcc_parameters(char *buf)
 		buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
 		buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15], buffer[16],
 		buffer[17], buffer[18], vooc_get_fastchg_ing, vooc_get_fast_chg_type, vooc_check_bcc_temp_range,
-		voocphy_get_fastchg_ing, g_smart_chg->ufcs_charging, oplus_ufcs_check_bcc_temp_range(g_smart_chg),
+		g_smart_chg->voocphy_bcc_fastchg_ing, g_smart_chg->ufcs_charging, oplus_ufcs_check_bcc_temp_range(g_smart_chg),
 		wls_fastchg_charging, oplus_wls_check_bcc_temp_range(g_smart_chg));
 
 	memset(buf, 0, BCC_PAGE_SIZE);

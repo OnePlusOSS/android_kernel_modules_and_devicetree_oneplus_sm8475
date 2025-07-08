@@ -3879,6 +3879,18 @@ static void oplus_pps_power_switch_check(struct oplus_pps_chip *chip)
 	}
 }
 
+static int oplus_pps_get_stat_curr_min(void)
+{
+	struct oplus_pps_chip *chip = &g_pps_chip;
+	if (!chip || !chip->pps_support_type) {
+		return PPS_ACTION_CURR_MIN_THIRD;
+	}
+	if (chip->pps_adapter_type == PPS_ADAPTER_THIRD)
+		return PPS_ACTION_CURR_MIN_THIRD;
+	else
+		return PPS_ACTION_CURR_MIN_OPLUS;
+}
+
 static int oplus_pps_action_status_start(struct oplus_pps_chip *chip)
 {
 	int update_size = 0, vbat = 0;
@@ -3905,10 +3917,10 @@ static int oplus_pps_action_status_start(struct oplus_pps_chip *chip)
 		else
 			chip->target_charger_volt = ((vbat * 4) / 100) * 100 +
 					    PPS_ACTION_START_DIFF_VOLT_V2;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else if (chip->cp_mode == PPS_BYPASS_MODE) {
 		chip->target_charger_volt = ((vbat * batt_num) / 100) * 100 + PPS_ACTION_START_DIFF_VOLT_V1;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else {
 		pps_err("Invalid argument!\n");
 		chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
@@ -4002,10 +4014,10 @@ static int oplus_pps_action_volt_change(struct oplus_pps_chip *chip)
 
 	if (chip->cp_mode == PPS_SC_MODE) {
 		chip->target_charger_volt = PPS_VOL_MAX_V2;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else if (chip->cp_mode == PPS_BYPASS_MODE) {
 		chip->target_charger_volt = PPS_VOL_MAX_V1;
-		chip->target_charger_current = PPS_ACTION_CURR_MIN;
+		chip->target_charger_current = oplus_pps_get_stat_curr_min();
 	} else {
 		pps_err("Invalid argument!\n");
 		chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
@@ -4085,9 +4097,9 @@ static int oplus_pps_action_status_check(struct oplus_pps_chip *chip)
 	if (chip->ask_charger_volt != chip->target_charger_volt) {
 		chip->ask_charger_volt = chip->target_charger_volt;
 		if (chip->cp_mode == PPS_SC_MODE) {
-			chip->ask_charger_current = PPS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_pps_get_stat_curr_min();
 		} else if (chip->cp_mode == PPS_BYPASS_MODE) {
-			chip->ask_charger_current = PPS_ACTION_CURR_MIN;
+			chip->ask_charger_current = oplus_pps_get_stat_curr_min();
 		} else {
 			chip->pps_stop_status = PPS_STOP_VOTER_PDO_ERROR;
 			pps_err("check curve Invalid argument!\n");

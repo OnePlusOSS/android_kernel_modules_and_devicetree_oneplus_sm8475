@@ -651,20 +651,20 @@ recv:
 	}
 
 	if (ufcs_check_handshake(class))
-		return;
+		goto done;
 	ufcs_send_state(UFCS_NOTIFY_ERR_FLAG, &dev_err_flag);
 	rc = ufcs_check_error_info(class, dev_err_flag);
 	if (rc != 0)
-		return;
+		goto done;
 
 	rc = ufcs->ops->read_msg(ufcs, buf, sizeof(buf));
 	if (rc < 0) {
 		ufcs_err("read ufcs msg error, rc=%d\n", rc);
-		return;
+		goto done;
 	}
 	if (rc == 0) {
 		ufcs_err("msg buf size is 0\n");
-		return;
+		goto done;
 	}
 
 	if (ufcs_log_level >= LOG_LEVEL_DEBUG)
@@ -673,7 +673,7 @@ recv:
 	msg = ufcs_unpack_msg(class, buf, rc);
 	if (msg == NULL) {
 		ufcs_err("ufcs_unpack_msg error\n");
-		return;
+		goto done;
 	}
 	ufcs_dump_msg_info(msg, "recv");
 
@@ -685,7 +685,7 @@ recv:
 		 */
 		if (ufcs_recv_ack_nck_msg(class, &msg->ctrl_msg)) {
 			devm_kfree(&ufcs->dev, msg);
-			return;
+			goto done;
 		}
 	} else if (!class->config.reply_ack) {
 		/*
@@ -712,9 +712,11 @@ recv:
 	class->recv_msg = msg;
 	kthread_queue_work(class->worker, &class->event_work);
 
+done:
 	spin_lock(&class->err_flag_lock);
 	if (!kfifo_is_empty(&ufcs->err_flag_fifo)) {
 		spin_unlock(&class->err_flag_lock);
+		ufcs_info("err_flag_fifo not empty\n");
 		goto recv;
 	}
 	spin_unlock(&class->err_flag_lock);

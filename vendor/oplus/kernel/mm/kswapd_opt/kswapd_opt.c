@@ -38,7 +38,7 @@
 #define KBUF_LEN 10
 static bool is_digit_str(const char *str)
 {
-	return strspn(str, "0123456789") == strlen(str);
+	return strspn(str, "+-0123456789") == strlen(str);
 }
 #endif
 
@@ -513,6 +513,11 @@ static ssize_t kswapd_nice_write(struct file *file, const char __user *buf,
 	str = strstrip(kbuf);
 	if (!str) {
 		pr_warn("input empty\n");
+		return -EINVAL;
+	}
+
+	if (!is_digit_str(str)) {
+		pr_warn("input invalid, not a digit string\n");
 		return -EINVAL;
 	}
 
