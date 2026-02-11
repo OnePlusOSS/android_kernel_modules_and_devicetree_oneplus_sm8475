@@ -3295,6 +3295,24 @@ int oplus_ofp_set_longrui_aod_mode(void *buf)
 	OFP_INFO("longrui_aod_mode:0x%x\n", p_oplus_ofp_params->longrui_aod_mode);
 	OPLUS_OFP_TRACE_INT("oplus_ofp_longrui_aod_mode", p_oplus_ofp_params->longrui_aod_mode);
 
+	if (display->panel) {
+		if (!strcmp(display->panel->type, "primary")) {
+			p_oplus_ofp_params = oplus_ofp_get_params(OPLUS_OFP_SECONDARY_DISPLAY);
+		} else if (!strcmp(display->panel->type, "secondary")) {
+			p_oplus_ofp_params = oplus_ofp_get_params(OPLUS_OFP_PRIMARY_DISPLAY);
+		}
+		if (!p_oplus_ofp_params) {
+			OFP_ERR("Invalid params\n");
+			return -EINVAL;
+		}
+		p_oplus_ofp_params->longrui_aod_mode = (p_oplus_ofp_params->longrui_aod_mode & ~OPLUS_OFP_FULL_SCREEN_AOD_MODE)
+													| ((*longrui_aod_mode) & OPLUS_OFP_FULL_SCREEN_AOD_MODE);
+		if (p_oplus_ofp_params->longrui_aod_mode & OPLUS_OFP_FULL_SCREEN_AOD_MODE) {
+			p_oplus_ofp_params->longrui_aod_mode = p_oplus_ofp_params->longrui_aod_mode & ~OPLUS_OFP_A_MIRROR_TO_THE_END_AOD_MODE;
+		}
+		OFP_INFO("another panel longrui_aod_mode:0x%x\n", p_oplus_ofp_params->longrui_aod_mode);
+		p_oplus_ofp_params = oplus_ofp_get_params(oplus_ofp_display_id);
+	}
 	if (!oplus_ofp_is_supported()) {
 		OFP_DEBUG("ofp is not supported\n");
 		return 0;

@@ -1130,7 +1130,8 @@ static int __hdd_netdev_notifier_call(struct net_device *net_dev,
 		return NOTIFY_DONE;
 	}
 
-	hdd_debug("%s New Net Device State = %lu", net_dev->name, state);
+	hdd_debug("%s New Net Device State = %lu, flags 0x%x",
+			net_dev->name, state, net_dev->flags);
 
 	switch (state) {
 	case NETDEV_REGISTER:

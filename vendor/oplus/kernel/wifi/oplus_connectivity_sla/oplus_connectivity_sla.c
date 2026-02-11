@@ -1135,13 +1135,21 @@ static int oplus_sla_iface_changed(struct nlattr *nla)
 	char *p;
 	struct oplus_dev_info *node = NULL;
 	u32 mark = 0x0;
-
-	int *data = (int *)NLA_DATA(nla);
+	int *data;
+	/* Corrected check: ensures space for index, up, and at least one char for the interface name.*/
+	if (!nla || nla_len(nla) < (int)(2 * sizeof(int) + 1)) {
+		return -EINVAL;
+	}
+	data = (int *)NLA_DATA(nla);
 	index = data[0];
 	up = data[1];
 	p = (char *)(data + 2);
 	debug("oplus_sla_iface_changed index:%d, up:%d, ifname:%s\n",
 		index, up, p);
+	if (index < 0 || index >= IFACE_NUM) {
+		pr_err("oplus_sla_iface_changed: invalid interface index %d\n", index);
+		return -EINVAL;
+	}
 
 	if (index >= 0 && index < IFACE_NUM) {
 		if (up) {
@@ -1164,7 +1172,9 @@ static int oplus_sla_iface_changed(struct nlattr *nla)
 			if (p) {
 				node = &oplus_sla_info[index];
 				node->mark = mark;
-				memcpy(node->dev_name, p, IFACE_LEN);
+				if (strscpy(node->dev_name, p, IFACE_LEN) < 0) {
+					debug("oplus_sla_iface_changed: interface name was truncated\n");
+				}
 				debug("ifname = %s,ifup = %d\n", node->dev_name, node->if_up);
 			}
 
@@ -1182,12 +1192,26 @@ static int oplus_sla_iface_changed(struct nlattr *nla)
 
 static int oplus_sla_set_white_list_app_uid(struct nlattr *nla)
 {
-	u32 *info = (u32 *)NLA_DATA(nla);
+	u32 *info;
+	if (!nla || nla_len(nla) < (int)sizeof(u32)) {
+		return -EINVAL;
+	}
+	info = (u32 *)NLA_DATA(nla);
 	memset(&white_app_list, 0x0, sizeof(struct oplus_white_app_info));
 	white_app_list.count = info[0];
 
+	if (white_app_list.count > WHITE_APP_NUM) {
+		white_app_list.count = 0;
+		return -EINVAL;
+	}
 	if (white_app_list.count > 0 && white_app_list.count < WHITE_APP_NUM) {
 		int i;
+
+		size_t required_size = sizeof(u32) * (white_app_list.count + 1);
+		if (nla_len(nla) < (int)required_size) {
+			white_app_list.count = 0;
+			return -EINVAL;
+		}
 
 		for (i = 0; i < white_app_list.count; i++) {
 			white_app_list.uid[i] = info[i + 1];
@@ -1201,13 +1225,27 @@ static int oplus_sla_set_white_list_app_uid(struct nlattr *nla)
 
 static int oplus_sla_set_dual_wifi_app_uid(struct nlattr *nla)
 {
-	u32 *info = (u32 *)NLA_DATA(nla);
+	u32 *info;
+	if (!nla || nla_len(nla) < (int)sizeof(u32)) {
+		return -EINVAL;
+	}
+	info = (u32 *)NLA_DATA(nla);
 	memset(&dual_wifi_app_list, 0x0, sizeof(struct oplus_dual_sta_info));
 	dual_wifi_app_list.count = info[0];
+
+	if (dual_wifi_app_list.count > DUAL_STA_APP_NUM) {
+		dual_wifi_app_list.count = 0;
+		return -EINVAL;
+	}
 
 	if (dual_wifi_app_list.count > 0
 		&& dual_wifi_app_list.count < DUAL_STA_APP_NUM) {
 		int i;
+		size_t required_size = sizeof(u32) * (dual_wifi_app_list.count + 1);
+		if (nla_len(nla) < (int)required_size) {
+			dual_wifi_app_list.count = 0;
+			return -EINVAL;
+		}
 
 		for (i = 0; i < dual_wifi_app_list.count; i++) {
 			dual_wifi_app_list.uid[i] = info[i + 1];
@@ -1221,9 +1259,15 @@ static int oplus_sla_set_dual_wifi_app_uid(struct nlattr *nla)
 
 static int oplus_sla_set_game_app_uid(struct nlattr *nla)
 {
-	u32 *uidInfo = (u32 *)NLA_DATA(nla);
-	u32 index = uidInfo[0];
-	u32 uid = uidInfo[1];
+	u32 *uidInfo;
+	u32 index;
+	u32 uid;
+	if (!nla || nla_len(nla) < (int)(2 * sizeof(u32))) {
+		return -EINVAL;
+	}
+	uidInfo = (u32 *)NLA_DATA(nla);
+	index = uidInfo[0];
+	uid = uidInfo[1];
 
 	sla_game_write_lock();
 	if (index < GAME_NUM) {
@@ -1253,10 +1297,17 @@ static void init_game_info(void)
 
 static int oplus_sla_change_game_network(struct nlattr *nla)
 {
-	u32 *data = (u32 *)NLA_DATA(nla);
-	u32 game_index = data[0];
-	u32 network_index = data[1];
+	u32 *data;
+	u32 game_index;
+	u32 network_index;
 	int game_feed_back[2];
+
+	if (!nla || nla_len(nla) < (int)(2 * sizeof(u32))) {
+		return -EINVAL;
+	}
+	data = (u32 *)NLA_DATA(nla);
+	game_index = data[0];
+	network_index = data[1];
 
 	sla_game_write_lock();
 	if (CELL_INDEX == network_index) {
@@ -1277,12 +1328,25 @@ static int oplus_sla_change_game_network(struct nlattr *nla)
 
 static int oplus_sla_set_video_app_uid(struct nlattr *nla)
 {
-	u32 *info = (u32 *)NLA_DATA(nla);
+	u32 *info;
+	if (!nla || nla_len(nla) < (int)sizeof(u32)) {
+		return -EINVAL;
+	}
+	info = (u32 *)NLA_DATA(nla);
 	memset(&video_app_list, 0x0, sizeof(struct oplus_dual_sta_info));
 	video_app_list.count = info[0];
 
+	if (video_app_list.count > DUAL_STA_APP_NUM) {
+		video_app_list.count = 0;
+		return -EINVAL;
+	}
 	if (video_app_list.count > 0 && video_app_list.count < DUAL_STA_APP_NUM) {
 		int i;
+		size_t required_size = sizeof(u32) * (video_app_list.count + 1);
+		if (nla_len(nla) < (int)required_size) {
+			video_app_list.count = 0;
+			return -EINVAL;
+		}
 
 		for (i = 0; i < video_app_list.count; i++) {
 			video_app_list.uid[i] = info[i + 1];
@@ -1296,8 +1360,13 @@ static int oplus_sla_set_video_app_uid(struct nlattr *nla)
 
 static int oplus_sla_enable(struct nlattr *nla)
 {
-	int *data = (int *)NLA_DATA(nla);
-	int enable_type = data[0];
+	int *data;
+	int enable_type;
+	if (!nla || nla_len(nla) < (int)sizeof(int)) {
+		return -EINVAL;
+	}
+	data = (int *)NLA_DATA(nla);
+	enable_type = data[0];
 
 	sla_write_lock();
 
@@ -1315,8 +1384,11 @@ static int oplus_sla_enable(struct nlattr *nla)
 static int oplus_sla_disable(struct nlattr *nla)
 {
 	int disable_type = 0;
-
-	int *data = (int *)NLA_DATA(nla);
+	int *data;
+	if (!nla || nla_len(nla) < (int)sizeof(int)) {
+		return -EINVAL;
+	}
+	data = (int *)NLA_DATA(nla);
 	disable_type = data[0];
 
 	debug("type[%d] disable,oplus_sla_enable_status[%d],work_mode[%d]\n",
@@ -1343,7 +1415,11 @@ static int oplus_sla_disable(struct nlattr *nla)
 
 static int oplus_sla_update_weight(struct nlattr *nla)
 {
-	int *weight = (int *)NLA_DATA(nla);
+	int *weight;
+	if (!nla || nla_len(nla) < (int)(3 * sizeof(int))) {
+		return -EINVAL;
+	}
+	weight = (int *)NLA_DATA(nla);
 	sla_write_lock();
 	oplus_sla_info[0].weight = weight[0];
 	oplus_sla_info[1].weight = weight[1];
@@ -1356,6 +1432,9 @@ static int oplus_sla_update_weight(struct nlattr *nla)
 
 static int oplus_sla_change_default_network(struct nlattr *nla)
 {
+	if (!nla || nla_len(nla) < sizeof(u32)) {
+		return -EINVAL;
+	}
 	oplus_sla_def_net = *(u32 *)NLA_DATA(nla);
 	debug("oplus_sla_change_default_network = %d\n", oplus_sla_def_net);
     return 0;
@@ -1363,6 +1442,9 @@ static int oplus_sla_change_default_network(struct nlattr *nla)
 
 static int oplus_sla_set_kernel_debug(struct nlattr *nla)
 {
+	if (!nla || nla_len(nla) < sizeof(u32)) {
+		return -EINVAL;
+	}
 	oplus_sla_debug = *(u32 *)NLA_DATA(nla);
 	debug("oplus_sla_set_kernel_debug = %d\n", oplus_sla_debug);
 	return 0;
@@ -1370,6 +1452,9 @@ static int oplus_sla_set_kernel_debug(struct nlattr *nla)
 
 static int oplus_sla_change_vpn_state(struct nlattr *nla)
 {
+	if (!nla || nla_len(nla) < sizeof(u32)) {
+		return -EINVAL;
+	}
 	oplus_sla_vpn_connected = *(u32 *)NLA_DATA(nla);
 	debug("oplus_sla_vpn_connected = %d\n", oplus_sla_vpn_connected);
 	return 0;
@@ -1377,6 +1462,9 @@ static int oplus_sla_change_vpn_state(struct nlattr *nla)
 
 static int oplus_sla_change_video_app_network(struct nlattr *nla)
 {
+	if (!nla || nla_len(nla) < sizeof(u32)) {
+		return -EINVAL;
+	}
 	video_app_network = *(u32 *)NLA_DATA(nla);
 	debug("video_app_network = %d\n", video_app_network);
 	return 0;
@@ -1384,6 +1472,9 @@ static int oplus_sla_change_video_app_network(struct nlattr *nla)
 
 static int oplus_sla_change_dns_network(struct nlattr *nla)
 {
+	if (!nla || nla_len(nla) < sizeof(u32)) {
+		return -EINVAL;
+	}
 	dns_network = *(u32 *)NLA_DATA(nla);
 	debug("dns_network = %d\n", dns_network);
 	return 0;

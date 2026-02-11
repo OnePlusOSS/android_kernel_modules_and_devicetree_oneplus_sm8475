@@ -2035,6 +2035,46 @@ static int sc8547d_ufcs_cp_watchdog_config(struct ufcs_dev *ufcs, unsigned int t
 	return 0;
 }
 
+static u8 sc8547d_get_vbus_status(struct sc8547d_device *dev)
+{
+	int ret = 0;
+	u8 value = 0;
+	u8 vbus_status;
+
+	if (!dev) {
+		chg_err("dev is null\n");
+		return VOOC_VBUS_INVALID;
+	}
+
+	ret = sc8547_read_byte(dev->client, SC8547_REG_06, &value);
+	if (ret < 0) {
+		chg_err("failed to get vbus status(%d)\n", ret);
+		return VOOC_VBUS_INVALID;
+	}
+
+	if (value & SC8547_VBUS_ERRORHI_STAT_MASK)
+		vbus_status = VOOC_VBUS_HIGH;
+	else if (value & SC8547_VBUS_ERRORLO_STAT_MASK)
+		vbus_status = VOOC_VBUS_LOW;
+	else
+		vbus_status = VOOC_VBUS_NORMAL;
+
+	chg_info("reg06=0x%02x, vbus status: %d\n", value, vbus_status);
+
+	return vbus_status;
+}
+
+static u8 sc8547d_voocphy_get_vbus_status(struct oplus_voocphy_manager *chip)
+{
+	struct sc8547d_device *dev = chip->priv_data;
+	if (dev == NULL) {
+		chg_err("sc8547d chip is NULL\n");
+		return VOOC_VBUS_INVALID;
+	}
+
+	return sc8547d_get_vbus_status(dev);
+}
+
 static void sc8547_create_device_node(struct device *dev)
 {
 	device_create_file(dev, &dev_attr_registers);
@@ -2069,6 +2109,7 @@ static struct oplus_voocphy_operations oplus_sc8547_ops = {
 	.upload_cp_error = sc8547_track_upload_cp_err_info,
 	.get_cp_error_type = sc8547_get_cp_error_type,
 	.set_sstimeout_ucp_enable = sc8547d_voocphy_set_sstimeout_ucp_enable,
+	.get_vbus_status = sc8547d_voocphy_get_vbus_status,
 };
 
 static int sc8547_slave_hw_setting(struct oplus_voocphy_manager *voocphy_mg, int reason)
@@ -2100,7 +2141,6 @@ static int sc8547_slave_init_vooc(struct oplus_voocphy_manager *voocphy_mg)
 static void sc8547_slave_update_data(struct oplus_voocphy_manager *voocphy_mg)
 {
 	u8 data_block[2] = {0};
-	int i = 0;
 	u8 int_flag = 0;
 	s32 ret = 0;
 	s32 err_info[2] = { 0 };
@@ -2146,8 +2186,6 @@ static void sc8547_slave_update_data(struct oplus_voocphy_manager *voocphy_mg)
 	} else {
 		sc8547_i2c_error(chip, false, true, err_info);
 	}
-	for (i = 0; i < 2; i++)
-		chg_info("data_block[%d] = %u\n", i, data_block[i]);
 
 	voocphy_mg->slave_cp_ichg = (((data_block[0] & SC8547_IBUS_POL_H_MASK) << 8) | data_block[1]) * SC8547_IBUS_ADC_LSB;
 	chg_info("slave cp_ichg = %d int_flag = %d", voocphy_mg->slave_cp_ichg, int_flag);

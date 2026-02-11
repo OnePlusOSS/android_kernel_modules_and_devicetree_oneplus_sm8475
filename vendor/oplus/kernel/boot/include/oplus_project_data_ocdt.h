@@ -74,7 +74,7 @@ enum {
     REBOOT_KERNEL       = 0x27,
     REBOOT_MODEM        = 0x28,
     REBOOT_ANDROID      = 0x29,
-//Modify for PHOENIX_PROJECT and OPPO_DOCTOR use
+//Modify for PHOENIX_PROJECT and OPLUS_DOCTOR use
     REBOOT_SBL_DDRTEST  = 0x2B,  //Add for agingtest
     REBOOT_SBL_DDR_CUS  = 0x2C,
     REBOOT_AGINGTEST    = 0x2D,

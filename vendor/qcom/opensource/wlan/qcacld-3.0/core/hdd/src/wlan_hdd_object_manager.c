@@ -137,7 +137,10 @@ static int hdd_check_internal_netdev_state(struct net_device *netdev)
 	if (!adapter)
 		return false;
 
-	if (test_bit(DEVICE_IFACE_OPENED, &adapter->event_flags))
+	hdd_debug("netdev name %s, netdev flags 0x%x, event_flags %lu",
+			netdev->name, netdev->flags, adapter->event_flags);
+	if (test_bit(DEVICE_IFACE_OPENED, &adapter->event_flags) &&
+		(netdev->flags & IFF_UP))
 		return true;
 	else
 		return false;

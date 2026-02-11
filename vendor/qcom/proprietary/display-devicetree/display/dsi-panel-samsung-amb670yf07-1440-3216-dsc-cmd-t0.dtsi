@@ -2591,7 +2591,6 @@
 	oplus,mdss-dsi-manufacture = "samsung1024";
 	oplus,color_vivid_status;
 	oplus,color_srgb_status;
-	oplus,apollo_backlight_enable;
 	oplus,color_softiris_status;
 	oplus,color_dual_brightness_status;
 

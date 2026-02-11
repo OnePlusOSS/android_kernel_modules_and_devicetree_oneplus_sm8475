@@ -12,10 +12,10 @@ char charger_present[MAX_CMDLINE_PARAM_LEN];
 
 EXPORT_SYMBOL(charger_present);
 
-module_param_string(oppo_charger_present, charger_present, MAX_CMDLINE_PARAM_LEN,
+module_param_string(oplus_charger_present, charger_present, MAX_CMDLINE_PARAM_LEN,
 0600);
-MODULE_PARM_DESC(oppo_charger_present,
-"oppo_charger_present=<oppo_charger_present>");
+MODULE_PARM_DESC(oplus_charger_present,
+"oplus_charger_present=<oplus_charger_present>");
 
 MODULE_LICENSE("GPL v2");
 

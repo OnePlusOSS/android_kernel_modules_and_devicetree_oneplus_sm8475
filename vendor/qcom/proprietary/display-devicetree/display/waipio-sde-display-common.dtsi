@@ -50,6 +50,7 @@
 //#ifdef OPLUS_FEATURE_DISPLAY
 #include "dsi-panel-samsung-amb670yf07-1440-3216-dsc-cmd.dtsi"
 #include "dsi-panel-samsung-amb670yf07-1440-3216-dsc-cmd-t0.dtsi"
+#include "dsi-panel-samsung-amb670yf08-fs-1440-3216-dsc-cmd.dtsi"
 
 &soc {
 	oplus_display_dev: oplus,dsi-display-dev {
@@ -57,6 +58,7 @@
 			&dsi_oplus21631_samsung_1440_3216_dsc_cmd_t0
 			&dsi_panel_samsung_amb670yf07_1440_3216_dsc_cmd
 			&dsi_panel_samsung_amb670yf07_1440_3216_dsc_cmd_t0
+			&dsi_panel_samsung_amb670yf08_fs_1440_3216_dsc_cmd
 		>;
 		oplus,dsi-panel-secondary = <>;
 		oplus,dsi-panel-extended = <>;

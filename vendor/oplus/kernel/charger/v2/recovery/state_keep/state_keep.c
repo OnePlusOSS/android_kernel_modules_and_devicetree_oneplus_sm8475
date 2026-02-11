@@ -58,6 +58,8 @@ struct state_keep_data {
 	unsigned int current_protocol_count;
 	int protocol_power_mw;
 	int disconnect_time;
+
+	bool batt_status_delay_update;
 };
 
 struct state_keep_status_info {
@@ -117,19 +119,21 @@ struct state_keep {
 	struct work_struct client_check_work;
 
 	struct delayed_work abnormal_check_work;
+	struct delayed_work batt_status_delay_update_work;
 
 	struct wakeup_source *awake_lock;
 	bool wakeup_flag;
 };
 
-#define USER_BUFFER_SIZE		128
-#define TRACK_BUFFER_SIZE		4096
-#define ABNORMAL_CHECK_INTERVAL_MS	1000
-#define ABNORMAL_CHECK_COUNT_MAX	10
-#define TRACK_UPLOAD_COUNT_MAX		3
-#define TRACK_LOCAL_T_NS_TO_S_THD	1000000000
-#define TRACK_UPLOAD_PERIOD		(24 * 3600)
-#define PROTOCOL_COUNT_RESET_TIME_S	(6 * 60)
+#define USER_BUFFER_SIZE			128
+#define TRACK_BUFFER_SIZE			4096
+#define ABNORMAL_CHECK_INTERVAL_MS		1000
+#define ABNORMAL_CHECK_COUNT_MAX		10
+#define TRACK_UPLOAD_COUNT_MAX			3
+#define TRACK_LOCAL_T_NS_TO_S_THD		1000000000
+#define TRACK_UPLOAD_PERIOD			(24 * 3600)
+#define PROTOCOL_COUNT_RESET_TIME_S		(6 * 60)
+#define BATT_STATUS_DELAY_UPDATE_TIME_MS	1500
 
 struct item_show_info {
 	enum state_keep_topic_item id;
@@ -150,6 +154,14 @@ static struct item_show_info g_item_show_infos[] = {
 	{ STATE_KEEP_ITEM_UI_POWER, "ui_power" },
 	{ STATE_KEEP_ITEM_PLC_STATUS, "plc_status" },
 };
+
+static void state_keep_status_info_reset(struct state_keep *sk)
+{
+	int i;
+
+	for (i = 0; i < STATE_KEEP_STATUS_MAX; i++)
+		sk->status_info[i].initialized = false;
+}
 
 static void state_keep_set_awake(struct state_keep *sk, bool awake)
 {
@@ -336,6 +348,7 @@ static void state_keep_state_init(struct state_keep *sk)
 	sk->data.keep_count = 0;
 	sk->data.first_check = true;
 	sk->data.recording = true;
+	state_keep_status_info_reset(sk);
 	sk->data.current_protocol = CHG_PROTOCOL_INVALID;
 	sk->data.current_protocol_count = 0;
 	sk->data.pre_protocol = CHG_PROTOCOL_INVALID;
@@ -371,8 +384,10 @@ static void state_keep_enable(struct state_keep *sk)
 		return;
 
 	if (sk->data.wired_online) {
-		if (sk->data.first_check)
+		if (sk->data.first_check) {
 			sk->data.recording = true;
+			state_keep_status_info_reset(sk);
+		}
 		state_keep_set_ready(sk, false);
 		state_keep_set_wls_keep(sk, false);
 		state_keep_set_wired_keep(sk, true);
@@ -901,10 +916,22 @@ static int state_keep_update_wired_type(struct oplus_mms *mms, union mms_msg_dat
 	return 0;
 }
 
+static void state_keep_batt_status_delay_update_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct state_keep *sk =
+		container_of(dwork, struct state_keep, batt_status_delay_update_work);
+
+	sk->data.batt_status_delay_update = false;
+	chg_info("batt_status_delay_update=false\n");
+	schedule_work(&sk->batt_status_update_work);
+}
+
 static int state_keep_get_batt_status(struct state_keep *sk, bool update, int *batt_status)
 {
 	union mms_msg_data data = { 0 };
 	int rc;
+	bool batt_status_keep = false;
 
 	rc = oplus_mms_get_item_data(sk->comm_topic, COMM_ITEM_BATT_STATUS, &data, update);
 	if (rc < 0) {
@@ -913,7 +940,10 @@ static int state_keep_get_batt_status(struct state_keep *sk, bool update, int *b
 	}
 	chg_debug("recording=%d, batt_status=%d\n", sk->data.recording, data.intval);
 
-	if (!sk->data.disabled && sk->data.wired_keep) {
+	batt_status_keep = !sk->data.wired_online;
+	batt_status_keep |= sk->data.batt_status_delay_update;
+
+	if (!sk->data.disabled && sk->data.wired_keep && batt_status_keep) {
 		if (READ_ONCE(sk->data.recording))
 			*batt_status = data.intval;
 		else
@@ -967,14 +997,15 @@ static int state_keep_update_fast_chg_type(struct oplus_mms *mms, union mms_msg_
 		return -EINVAL;
 	}
 
-	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_FAST_CHG_TYPE))
+	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_FAST_CHG_TYPE) &&
+	    sk->data.fast_chg_type != CHARGER_SUBTYPE_DEFAULT)
 		goto done;
 	if (sk->status_info[STATE_KEEP_STATUS_FAST_CHG_TYPE].get_status == NULL)
 		return -ENOTSUPP;
 	fast_chg_type = sk->status_info[STATE_KEEP_STATUS_FAST_CHG_TYPE].get_status(
 		sk->status_info[STATE_KEEP_STATUS_FAST_CHG_TYPE].priv_data);
 	sk->status_info[STATE_KEEP_STATUS_FAST_CHG_TYPE].initialized = true;
-	chg_debug("recording=%d, fast_chg_type=%d\n", sk->data.recording, fast_chg_type);
+	chg_info("recording=%d, fast_chg_type=%d\n", sk->data.recording, fast_chg_type);
 
 	if (sk->data.pre_fast_chg_type != CHARGER_SUBTYPE_DEFAULT &&
 	    fast_chg_type == CHARGER_SUBTYPE_DEFAULT) {
@@ -1000,13 +1031,15 @@ static int state_keep_update_cpa_power(struct oplus_mms *mms, union mms_msg_data
 		return -EINVAL;
 	}
 
-	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_CPA_POWER))
+	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_CPA_POWER) &&
+	    sk->data.cpa_power != 0)
 		goto done;
 	if (sk->status_info[STATE_KEEP_STATUS_CPA_POWER].get_status == NULL)
 		return -ENOTSUPP;
 	sk->data.cpa_power = sk->status_info[STATE_KEEP_STATUS_CPA_POWER].get_status(
 		sk->status_info[STATE_KEEP_STATUS_CPA_POWER].priv_data);
 	sk->status_info[STATE_KEEP_STATUS_CPA_POWER].initialized = true;
+	chg_info("recording=%d, cpa_power=%d\n", sk->data.recording, sk->data.cpa_power);
 
 done:
 	data->intval = sk->data.cpa_power;
@@ -1023,7 +1056,8 @@ static int state_keep_update_ui_power(struct oplus_mms *mms, union mms_msg_data 
 		return -EINVAL;
 	}
 
-	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_UI_POWER))
+	if (state_keep_skip_recording(sk, STATE_KEEP_STATUS_UI_POWER) &&
+	    sk->data.ui_power != 0)
 		goto done;
 
 	if (sk->status_info[STATE_KEEP_STATUS_UI_POWER].get_status == NULL)
@@ -1031,6 +1065,7 @@ static int state_keep_update_ui_power(struct oplus_mms *mms, union mms_msg_data 
 	sk->data.ui_power = sk->status_info[STATE_KEEP_STATUS_UI_POWER].get_status(
 		sk->status_info[STATE_KEEP_STATUS_UI_POWER].priv_data);
 	sk->status_info[STATE_KEEP_STATUS_UI_POWER].initialized = true;
+	chg_info("recording=%d, ui_power=%d\n", sk->data.recording, sk->data.ui_power);
 
 done:
 	data->intval = sk->data.ui_power;
@@ -1330,15 +1365,20 @@ static void state_keep_wired_online_update_work(struct work_struct *work)
 
 	wired_online = sk->data.wired_online;
 	cancel_work_sync(&sk->client_check_work);
+	cancel_delayed_work_sync(&sk->batt_status_delay_update_work);
 	if (!sk->data.disabled) {
 		if (sk->data.wired_online) {
 			state_keep_set_ready(sk, false);
 			state_keep_set_wls_keep(sk, false);
 			state_keep_set_wired_keep(sk, true);
+			sk->data.batt_status_delay_update = true;
+			schedule_delayed_work(&sk->batt_status_delay_update_work,
+				msecs_to_jiffies(BATT_STATUS_DELAY_UPDATE_TIME_MS));
 		} else {
 			state_keep_set_awake(sk, true);
 			state_keep_client_start_check(sk);
 			schedule_work(&sk->client_check_work);
+			sk->data.batt_status_delay_update = false;
 		}
 	}
 
@@ -1470,6 +1510,7 @@ static void state_keep_wired_subs_callback(struct mms_subscribe *subs,
 			if (!sk->data.disabled) {
 				if (sk->data.wired_online && sk->data.first_check) {
 					sk->data.recording = true;
+					state_keep_status_info_reset(sk);
 				} else if (!sk->data.wired_online) {
 					sk->data.recording = false;
 					sk->data.first_check = false;
@@ -1523,6 +1564,7 @@ static void state_keep_subscribe_wired_topic(struct oplus_mms *topic, void *prv_
 		sk->data.wired_online = !!data.intval;
 	if (sk->data.wired_online) {
 		sk->data.recording = true;
+		state_keep_status_info_reset(sk);
 		schedule_work(&sk->wired_online_update_work);
 	}
 	(void)oplus_mms_get_item_data(sk->wired_topic, WIRED_ITEM_CHG_TYPE, &data, true);
@@ -1621,6 +1663,14 @@ static void state_keep_power_change_work(struct work_struct *work)
 		sk->data.protocol_power_mw = data.intval;
 	chg_debug("%s: %dmW\n", get_protocol_name_str(sk->data.current_protocol),
 		  sk->data.protocol_power_mw);
+
+	/*
+	 * Actively update the state to prevent the HAL layer from not
+	 * obtaining the state in a timely manner.
+	 */
+	(void)oplus_mms_get_item_data(sk->keep_topic, STATE_KEEP_ITEM_FAST_CHG_TYPE, &data, true);
+	(void)oplus_mms_get_item_data(sk->keep_topic, STATE_KEEP_ITEM_CPA_POWER, &data, true);
+	(void)oplus_mms_get_item_data(sk->keep_topic, STATE_KEEP_ITEM_UI_POWER, &data, true);
 }
 
 static void state_keep_cpa_subs_callback(struct mms_subscribe *subs,
@@ -2059,6 +2109,7 @@ int state_keep_init(struct device *dev, struct device_node *node)
 	INIT_WORK(&sk->plc_status_update_work, state_keep_plc_status_update_work);
 
 	INIT_DELAYED_WORK(&sk->abnormal_check_work, state_keep_abnormal_check_work);
+	INIT_DELAYED_WORK(&sk->batt_status_delay_update_work, state_keep_batt_status_delay_update_work);
 
 	state_keep_debugfs_init(sk);
 	state_keep_init_detection_algorithm(sk);
@@ -2097,6 +2148,7 @@ void state_keep_exit(struct device *dev)
 		return;
 
 	cancel_delayed_work_sync(&sk->abnormal_check_work);
+	cancel_delayed_work_sync(&sk->batt_status_delay_update_work);
 
 	if (!IS_ERR_OR_NULL(sk->wired_subs))
 		oplus_mms_unsubscribe(sk->wired_subs);

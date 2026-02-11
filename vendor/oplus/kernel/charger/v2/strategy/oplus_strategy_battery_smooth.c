@@ -1209,6 +1209,51 @@ static int parse_reserve_config(struct device_node *node, struct bs_strategy *bs
 	return rc;
 }
 
+static int bs_dump_log_data(char *buffer, int size, void *dev_data)
+{
+	struct bs_strategy *bs = dev_data;
+
+	if (!buffer || !bs)
+		return -ENOMEM;
+
+	mutex_lock(&bs->lock);
+	if (bs->inited) {
+		bs_battery_log_fifo_pop_and_encode(bs);
+		snprintf(buffer, size, ",%d.%02d,%d,%d.%02d,%d.%02d,%d.%02d,%s",
+			bs->soc_centi / PERCENT_SCALE, bs->soc_centi % PERCENT_SCALE,
+			bs->smooth_soc,
+			bs->smooth_soc_centi / PERCENT_SCALE, bs->smooth_soc_centi % PERCENT_SCALE,
+			bs->smooth_map_lower / PERCENT_SCALE, bs->smooth_map_lower % PERCENT_SCALE,
+			bs->smooth_map_upper / PERCENT_SCALE, bs->smooth_map_upper % PERCENT_SCALE,
+			bs->battery_log_cache);
+		memset(bs->battery_log_cache, 0, BATTERY_LOG_CACHE_SIZE);
+	} else {
+		snprintf(buffer, size, ",,,,,,");
+	}
+	mutex_unlock(&bs->lock);
+
+	return 0;
+}
+
+static int bs_get_log_head(char *buffer, int size, void *dev_data)
+{
+	struct oplus_monitor *chip = dev_data;
+
+	if (!buffer || !chip)
+		return -ENOMEM;
+
+	snprintf(buffer, size,
+		",bs_soc_centi,bs_smooth_soc,bs_smooth_soc_centi,bs_smooth_map_lower,bs_smooth_map_upper,bs_formula");
+
+	return 0;
+}
+
+static struct battery_log_ops battlog_bs_ops = {
+	.dev_name = "bs_info",
+	.dump_log_head = bs_get_log_head,
+	.dump_log_content = bs_dump_log_data,
+};
+
 static struct oplus_chg_strategy *bs_strategy_alloc_by_node(struct device_node *node)
 {
 	struct bs_strategy *bs;
@@ -1239,6 +1284,8 @@ static struct oplus_chg_strategy *bs_strategy_alloc_by_node(struct device_node *
 		goto free_battery_log;
 
 	mutex_init(&bs->lock);
+	battlog_bs_ops.dev_data = (void *)bs;
+	battery_log_ops_register(&battlog_bs_ops);
 	INIT_DELAYED_WORK(&bs->map_update_work, bs_map_update_work);
 	bs->smooth_soc = -EINVAL;
 	bs->init_ui_soc = -EINVAL;
@@ -1276,47 +1323,6 @@ static int bs_strategy_release(struct oplus_chg_strategy *strategy)
 	return 0;
 }
 
-static int bs_dump_log_data(char *buffer, int size, void *dev_data)
-{
-	struct bs_strategy *bs = dev_data;
-
-	if (!buffer || !bs)
-		return -ENOMEM;
-
-	mutex_lock(&bs->lock);
-	bs_battery_log_fifo_pop_and_encode(bs);
-	snprintf(buffer, size, ",%d.%02d,%d,%d.%02d,%d.%02d,%d.%02d,%s",
-		bs->soc_centi / PERCENT_SCALE, bs->soc_centi % PERCENT_SCALE,
-		bs->smooth_soc,
-		bs->smooth_soc_centi / PERCENT_SCALE, bs->smooth_soc_centi % PERCENT_SCALE,
-		bs->smooth_map_lower / PERCENT_SCALE, bs->smooth_map_lower % PERCENT_SCALE,
-		bs->smooth_map_upper / PERCENT_SCALE, bs->smooth_map_upper % PERCENT_SCALE,
-		bs->battery_log_cache);
-	memset(bs->battery_log_cache, 0, BATTERY_LOG_CACHE_SIZE);
-	mutex_unlock(&bs->lock);
-
-	return 0;
-}
-
-static int bs_get_log_head(char *buffer, int size, void *dev_data)
-{
-	struct oplus_monitor *chip = dev_data;
-
-	if (!buffer || !chip)
-		return -ENOMEM;
-
-	snprintf(buffer, size,
-		",bs_soc_centi,bs_smooth_soc,bs_smooth_soc_centi,bs_smooth_map_lower,bs_smooth_map_upper,bs_formula");
-
-	return 0;
-}
-
-static struct battery_log_ops battlog_bs_ops = {
-	.dev_name = "bs_info",
-	.dump_log_head = bs_get_log_head,
-	.dump_log_content = bs_dump_log_data,
-};
-
 static int bs_strategy_init(struct oplus_chg_strategy *strategy)
 {
 	struct bs_strategy *bs;
@@ -1330,9 +1336,6 @@ static int bs_strategy_init(struct oplus_chg_strategy *strategy)
 	mutex_lock(&bs->lock);
 	bs->inited = true;
 	mutex_unlock(&bs->lock);
-
-	battlog_bs_ops.dev_data = (void *)bs;
-	battery_log_ops_register(&battlog_bs_ops);
 
 	return 0;
 }

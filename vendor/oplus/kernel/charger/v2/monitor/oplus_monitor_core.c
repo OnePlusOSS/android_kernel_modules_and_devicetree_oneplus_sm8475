@@ -2153,6 +2153,12 @@ static struct mms_item oplus_monitor_item[] = {
 			.str_data = true,
 		}
 	},
+	{
+		.desc = {
+			.item_id = ERR_ITEM_SEC_IC_MEM_INFO,
+			.str_data = true,
+		}
+	}
 };
 
 static const struct oplus_mms_desc oplus_monitor_desc = {

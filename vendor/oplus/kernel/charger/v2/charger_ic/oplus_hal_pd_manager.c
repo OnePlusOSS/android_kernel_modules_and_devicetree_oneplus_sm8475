@@ -756,7 +756,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event,
 				chip->bc12_completed = true;
 			else
 				chip->bc12_completed = false;
-			chip->bc12_ready = false;
+
 			chip->start_peripheral = false;
 			cancel_delayed_work_sync(&chip->usb_dwork);
 			chip->usb_dr = DR_DEVICE;
@@ -786,6 +786,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event,
 			 * and disable device connection
 			 */
 			chip->pd_svooc = false;
+			chip->bc12_ready = false;
 			cancel_delayed_work_sync(&chip->usb_dwork);
 			chip->usb_dr = DR_IDLE;
 			schedule_delayed_work(&chip->usb_dwork, 0);

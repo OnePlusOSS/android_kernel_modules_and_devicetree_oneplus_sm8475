@@ -3533,7 +3533,11 @@ static int oplus_third_pps_target_voltage_check(struct oplus_pps *chip)
 	} else {
 		allowed_vbus_min = msg_data.intval * batt_num * chip->cp_ratio;
 	}
-
+	if (chip->curr_set_ma != chip->target_curr_ma) {
+		chg_info("Now current is %d, Adapter Request current is %d, Now voltage is %d\n",
+			chip->curr_set_ma, chip->target_curr_ma, chip->vol_set_mv);
+		return chip->vol_set_mv;
+	}
 	if (!chip->support_cp_ibus) {
 		/* default common resistor 0.35ohm, calculate the best request-vbus */
 		vtarget_mv = allowed_vbus_min + chip->target_curr_ma * 35 / 100;
@@ -3790,23 +3794,22 @@ static void oplus_pps_current_work(struct work_struct *work)
 #define PPS_CURR_CHANGE_UPDATE_DELAY	500
 #define PPS_CURR_NO_CHANGE_UPDATE_DELAY	500
 
-	if (chip->oplus_pps_adapter) {
-		if (abs(chip->curr_set_ma - chip->target_curr_ma) >= OPLUS_PPS_CURR_UPDATE_300MA)
-			update_size = OPLUS_PPS_CURR_UPDATE_300MA;
-		else
-			update_size = OPLUS_PPS_CURR_UPDATE_100MA;
-		curr_set = chip->curr_set_ma;
+	if (abs(chip->curr_set_ma - chip->target_curr_ma) >= OPLUS_PPS_CURR_UPDATE_500MA)
+		update_size = OPLUS_PPS_CURR_UPDATE_500MA;
+	else if (abs(chip->curr_set_ma - chip->target_curr_ma) >= OPLUS_PPS_CURR_UPDATE_300MA)
+		update_size = OPLUS_PPS_CURR_UPDATE_300MA;
+	else if (abs(chip->curr_set_ma - chip->target_curr_ma) >= OPLUS_PPS_CURR_UPDATE_100MA)
+		update_size = OPLUS_PPS_CURR_UPDATE_100MA;
+	else
+		update_size = OPLUS_PPS_CURR_UPDATE_50MA;
+	curr_set = chip->curr_set_ma;
 
-		if ((curr_set > chip->target_curr_ma) && ((curr_set - chip->target_curr_ma) >= update_size))
-			curr_set -= update_size;
-		else if ((chip->target_curr_ma > curr_set) && ((chip->target_curr_ma - curr_set) >= update_size))
-			curr_set += update_size;
-		else
-			curr_set = chip->target_curr_ma;
-	} else {
-		/* third pps adapter */
+	if ((curr_set > chip->target_curr_ma) && ((curr_set - chip->target_curr_ma) >= update_size))
+		curr_set -= update_size;
+	else if ((chip->target_curr_ma > curr_set) && ((chip->target_curr_ma - curr_set) >= update_size))
+		curr_set += update_size;
+	else
 		curr_set = chip->target_curr_ma;
-	}
 
 #define OPLUS_PPS_STATUS_ABNORMAL (7000)
 	if (chip->enable_pps_status && !chip->support_cp_ibus && chip->support_pps_status) {

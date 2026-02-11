@@ -110,6 +110,7 @@ struct oplus_chg_plc {
 	struct votable *wired_suspend_votable;
 
 	struct delayed_work plc_disable_wait_work;
+	struct delayed_work plc_enable_timeout_work;
 	struct delayed_work charger_disable_work;
 	struct work_struct protocol_change_work;
 	struct work_struct chg_mode_change_work;
@@ -143,6 +144,7 @@ struct oplus_chg_plc {
 	int plc_status;
 	int plc_buck;
 	int plc_soc;
+	bool plc_support_timeout;
 	int enable_cnts;
 
 	struct plc_track_info track_info;
@@ -1705,6 +1707,28 @@ static void oplus_plc_disable_wait_work(struct work_struct *work)
 	mutex_unlock(&chip->status_control_lock);
 }
 
+static void oplus_plc_enable_timeout_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_chg_plc *chip = container_of(dwork, struct oplus_chg_plc, plc_enable_timeout_work);
+	int rc;
+
+	chg_info("timeout\n");
+	mutex_lock(&chip->status_control_lock);
+	if (chip->plc_status != PLC_STATUS_ENABLE)
+		goto done;
+	rc = oplus_plc_protocol_reset_protocol(chip);
+	if (rc < 0)
+		chg_err("plc reset protocol error, rc=%d\n", rc);
+	__oplus_chg_plc_disable(chip);
+	if (!oplus_plc_protocol_support(chip) || !chip->wired_online)
+		oplus_plc_set_status(chip, PLC_STATUS_NOT_ALLOW);
+	else
+		oplus_plc_set_status(chip, PLC_STATUS_TIMEOUT);
+done:
+	mutex_unlock(&chip->status_control_lock);
+}
+
 static void oplus_plc_chg_mode_change_work(struct work_struct *work)
 {
 	struct oplus_chg_plc *chip =
@@ -2301,6 +2325,7 @@ static int oplus_plc_parse_dt(struct oplus_chg_plc *chip)
 		chip->plc_soc = 90;
 	}
 
+	chip->plc_support_timeout = of_property_read_bool(node, "oplus,plc_support_timeout");
 	return 0;
 }
 
@@ -2456,6 +2481,7 @@ static int oplus_chg_plc_probe(struct platform_device *pdev)
 	mutex_init(&chip->restore_lock);
 #endif
 	INIT_DELAYED_WORK(&chip->plc_disable_wait_work, oplus_plc_disable_wait_work);
+	INIT_DELAYED_WORK(&chip->plc_enable_timeout_work, oplus_plc_enable_timeout_work);
 	INIT_DELAYED_WORK(&chip->charger_disable_work, oplus_plc_charger_disable_work);
 	INIT_WORK(&chip->protocol_change_work, oplus_plc_protocol_change_work);
 	INIT_WORK(&chip->chg_mode_change_work, oplus_plc_chg_mode_change_work);
@@ -2906,12 +2932,26 @@ int oplus_plc_protocol_set_strategy(struct oplus_plc_protocol *opp, const char *
 	return 0;
 }
 
+#define PLC_ENABLE_TIMEOUT_DELAY	300000
+static int oplus_chg_plc_schedule_timeout_work(struct oplus_chg_plc *chip)
+{
+	if (!chip->plc_support_timeout)
+		return 0;
+
+	schedule_delayed_work(&chip->plc_enable_timeout_work,
+			msecs_to_jiffies(PLC_ENABLE_TIMEOUT_DELAY));
+
+	return 0;
+}
+
 static int oplus_chg_plc_enable_action(struct oplus_chg_plc *chip, bool enable)
 {
 	int rc = 0;
 
 #define PLC_DISABLE_WAIT_DELAY		1000
 	chg_info("plc enable: %d\n", enable);
+
+	cancel_delayed_work_sync(&chip->plc_enable_timeout_work);
 
 	mutex_lock(&chip->status_control_lock);
 	if (!enable) {
@@ -2932,8 +2972,10 @@ static int oplus_chg_plc_enable_action(struct oplus_chg_plc *chip, bool enable)
 	 * Check the plc_status again to determine
 	 * if it needs to be reopened
 	 */
-	if (chip->plc_status == PLC_STATUS_ENABLE)
+	if (chip->plc_status == PLC_STATUS_ENABLE) {
+		oplus_chg_plc_schedule_timeout_work(chip);
 		goto out;
+	}
 	if (!chip->wired_online) {
 		chg_err("wired_online is false\n");
 		rc = -EFAULT;
@@ -2952,6 +2994,7 @@ static int oplus_chg_plc_enable_action(struct oplus_chg_plc *chip, bool enable)
 		chg_err("plc enbale error, rc=%d\n", rc);
 	} else {
 		oplus_plc_set_status(chip, PLC_STATUS_ENABLE);
+		oplus_chg_plc_schedule_timeout_work(chip);
 	}
 out:
 	mutex_unlock(&chip->status_control_lock);

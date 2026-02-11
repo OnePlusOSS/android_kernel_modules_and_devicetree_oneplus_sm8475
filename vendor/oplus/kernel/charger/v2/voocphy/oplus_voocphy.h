@@ -948,6 +948,12 @@ struct oplus_voocphy_manager {
 	struct oplus_chg_strategy *svooc_pcc_strategy;
 
 	bool cancel_primary_switch; /* add for cancel usb switch */
+
+	bool vbus_adjust_new_method;
+	bool vbus_adjust_done;
+	bool in_vbus_adjust_trans;
+	u8 vbus_adjust_hold_cnt;
+	u8 last_vooc_vbus_status;
 };
 
 struct oplus_voocphy_operations {

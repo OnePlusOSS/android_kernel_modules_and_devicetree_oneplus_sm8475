@@ -1057,6 +1057,7 @@ struct oplus_chg_track {
 	oplus_chg_track_trigger *soccp_crash_trigger;
 	oplus_chg_track_trigger *bs_info_trigger;
 	oplus_chg_track_trigger *state_keep_info_trigger;
+	oplus_chg_track_trigger *sec_ic_meminfo_trigger;
 
 	struct delayed_work mmi_chg_info_trigger_work;
 	struct delayed_work slow_chg_info_trigger_work;
@@ -1074,6 +1075,7 @@ struct oplus_chg_track {
 	struct delayed_work soccp_crash_trigger_work;
 	struct delayed_work bs_info_trigger_work;
 	struct delayed_work state_keep_info_trigger_work;
+	struct delayed_work sec_ic_meminfo_trigger_work;
 
 	struct mutex mmi_chg_info_lock;
 	struct mutex slow_chg_info_lock;
@@ -1092,6 +1094,7 @@ struct oplus_chg_track {
 	struct mutex soccp_crash_lock;
 	struct mutex bs_info_lock;
 	struct mutex state_keep_info_lock;
+	struct mutex sec_ic_meminfo_lock;
 
 	char voocphy_name[OPLUS_CHG_TRACK_VOOCPHY_NAME_LEN];
 
@@ -1314,6 +1317,7 @@ static struct flag_reason_table track_flag_reason_table[] = {
 	{ TRACK_NOTIFY_FLAG_EIS_ABNORMAL, "EisAbnormal" },
 	{ TRACK_NOTIFY_FLAG_BAL_ABNORMAL, "BalAbnormal" },
 	{ TRACK_NOTIFY_FLAG_STATE_KEEP_ABNORMAL, "StateKeepAbnormal" },
+	{ TRACK_NOTIFY_FLAG_SEC_IC_MEMINFO, "SecICMemInfo" },
 
 	{ TRACK_NOTIFY_FLAG_UPLOAD_BREAK_LOG, "UploadBreakLog" },
 	{ TRACK_NOTIFY_FLAG_UPLOAD_NO_CHG_LOG, "UploadNoChgLog" },
@@ -4811,6 +4815,19 @@ static void oplus_chg_track_state_keep_info_trigger_work(struct work_struct *wor
 	mutex_unlock(&chip->state_keep_info_lock);
 }
 
+static void oplus_chg_track_sec_ic_meminfo_trigger_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_chg_track *chip = container_of(dwork, struct oplus_chg_track, sec_ic_meminfo_trigger_work);
+
+	if (chip->sec_ic_meminfo_trigger) {
+		oplus_chg_track_upload_trigger_data(chip->sec_ic_meminfo_trigger);
+		kfree(chip->sec_ic_meminfo_trigger);
+		chip->sec_ic_meminfo_trigger = NULL;
+	}
+	mutex_unlock(&chip->sec_ic_meminfo_lock);
+}
+
 static void oplus_chg_track_eis_timeout_info_trigger_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -5473,6 +5490,7 @@ static int oplus_chg_track_init(struct oplus_chg_track *track_dev)
 	INIT_DELAYED_WORK(&chip->soccp_crash_trigger_work, oplus_chg_track_soccp_crash_trigger_work);
 	INIT_DELAYED_WORK(&chip->bs_info_trigger_work, oplus_chg_track_bs_info_trigger_work);
 	INIT_DELAYED_WORK(&chip->state_keep_info_trigger_work, oplus_chg_track_state_keep_info_trigger_work);
+	INIT_DELAYED_WORK(&chip->sec_ic_meminfo_trigger_work, oplus_chg_track_sec_ic_meminfo_trigger_work);
 
 	return ret;
 }
@@ -10824,6 +10842,44 @@ static int oplus_chg_track_upload_state_keep_abnormal(struct oplus_chg_track *ch
 	return 0;
 }
 
+static int oplus_chg_track_upload_sec_ic_mem_info(struct oplus_chg_track *chip)
+{
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	if (!chip)
+		return -EINVAL;
+
+	mutex_lock(&chip->sec_ic_meminfo_lock);
+	if (chip->sec_ic_meminfo_trigger)
+		kfree(chip->sec_ic_meminfo_trigger);
+
+	chip->sec_ic_meminfo_trigger = kzalloc(sizeof(oplus_chg_track_trigger), GFP_KERNEL);
+	if (!chip->sec_ic_meminfo_trigger) {
+		chg_err("memory alloc fail\n");
+		mutex_unlock(&chip->sec_ic_meminfo_lock);
+		return -ENOMEM;
+	}
+
+	chip->sec_ic_meminfo_trigger->type_reason = TRACK_NOTIFY_TYPE_GENERAL_RECORD;
+	chip->sec_ic_meminfo_trigger->flag_reason = TRACK_NOTIFY_FLAG_SEC_IC_MEMINFO;
+
+	rc = oplus_mms_get_item_data(chip->monitor->err_topic, ERR_ITEM_SEC_IC_MEM_INFO, &data, false);
+	if (rc < 0) {
+		chg_err("get sec ic meminfo error, rc=%d\n", rc);
+		kfree(chip->sec_ic_meminfo_trigger);
+		chip->sec_ic_meminfo_trigger = NULL;
+		mutex_unlock(&chip->sec_ic_meminfo_lock);
+		return -ENOMEM;
+	}
+
+	scnprintf(chip->sec_ic_meminfo_trigger->crux_info,
+		OPLUS_CHG_TRACK_CURX_INFO_LEN, "%s", data.strval);
+	schedule_delayed_work(&chip->sec_ic_meminfo_trigger_work, 0);
+	chg_info("success\n");
+	return 0;
+}
+
 static int
 oplus_chg_track_cal_period_chg_capaticy(struct oplus_chg_track *track_chip)
 {
@@ -12918,6 +12974,9 @@ static void oplus_chg_track_err_subs_callback(struct mms_subscribe *subs,
 			break;
 		case ERR_ITEM_STATE_KEEP_ABNORMAL:
 			oplus_chg_track_upload_state_keep_abnormal(track);
+			break;
+		case ERR_ITEM_SEC_IC_MEM_INFO:
+			oplus_chg_track_upload_sec_ic_mem_info(track);
 			break;
 		default:
 			break;

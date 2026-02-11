@@ -2768,8 +2768,8 @@ static void oplus_mms_gauge_init_work(struct work_struct *work)
 		chip->sub_btb_curr_limit = BATT_SUB_BTB_ABNORMAL_MAX_CURR;
 
 	chip->support_subboard_ntc = of_property_read_bool(node, "oplus,support_subboard_ntc");
-	chg_info("hmac=%d, support_subboard_ntc=%d, sub_btb_curr_limit=%d \n",
-		  chip->hmac, chip->support_subboard_ntc, chip->sub_btb_curr_limit);
+	chg_info("hmac=%d, support_subboard_ntc=%d, sub_btb_curr_limit=%d, sn_match=%d\n",
+		  chip->hmac, chip->support_subboard_ntc, chip->sub_btb_curr_limit, chip->sn_match);
 
 	chip->check_subboard_ntc_err = false;
 
