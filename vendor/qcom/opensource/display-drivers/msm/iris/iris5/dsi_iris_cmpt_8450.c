@@ -69,6 +69,8 @@ void iris_set_msg_flags(struct dsi_cmd_desc *pdesc, int type)
 	case BATCH_FLAG:
 		pdesc->msg.flags |= MIPI_DSI_MSG_BATCH_COMMAND;
 		break;
+	default:
+		break;
 	}
 }
 
@@ -82,6 +84,8 @@ int iris_switch_cmd_type(int type)
 		break;
 	case MIPI_DSI_PICTURE_PARAMETER_SET:
 		s_type = MIPI_DSI_DCS_LONG_WRITE;
+		break;
+	default:
 		break;
 	}
 	return s_type;

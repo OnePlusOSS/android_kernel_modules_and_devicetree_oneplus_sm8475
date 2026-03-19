@@ -113,6 +113,7 @@ enum {
 
 #define SVOOC_COPYCAT_CHECK_CHG_OUT_DELAY_MS	1700
 #define SVOOC_MAX_IS_VBUS_OK_CMD_CNT		80
+#define VOOC_MAX_IS_VBUS_OK_CMD_CNT		120
 #define COPYCAT_ADAPTER_CUR_EXCEEDS_THRESHOLD	400
 #define COPYCAT_ADAPTER_EFFECTIVE_IBATTHRESHOLD	1500
 #define VOOCPHY_NEED_CHANGE_CUR_MAXCNT		5
@@ -3051,8 +3052,10 @@ static int oplus_voocphy_handle_is_vbus_ok_cmd(struct oplus_voocphy_manager *chi
 	* VBUS up: 8V-->9V: 1000/50=20 (times)
 	* Considering the margin and the actual pressure regulation time, the number of times is limited to 80 times.*/
 	if (chip->copycat_vooc_support &&
-	    chip->adapter_type == ADAPTER_SVOOC && chip->adapter_is_vbus_ok_count > SVOOC_MAX_IS_VBUS_OK_CMD_CNT) {
-		chip->copycat_type = FAST_COPYCAT_SVOOC_IS_VBUS_OK_EXCEED_MAXCNT;
+	    ((chip->adapter_type == ADAPTER_SVOOC && chip->adapter_is_vbus_ok_count > SVOOC_MAX_IS_VBUS_OK_CMD_CNT) ||
+		((chip->adapter_type == ADAPTER_VOOC20 || chip->adapter_type == ADAPTER_VOOC30) &&
+					chip->adapter_is_vbus_ok_count > VOOC_MAX_IS_VBUS_OK_CMD_CNT))) {
+		chip->copycat_type = FAST_COPYCAT_IS_VBUS_OK_EXCEED_MAXCNT;
 		oplus_voocphy_set_status_and_notify_ap(chip, FAST_NOTIFY_ADAPTER_COPYCAT);
 		return VOOCPHY_EUNSUPPORTED;
 	}
@@ -5244,49 +5247,50 @@ static int oplus_voocphy_ap_event_handle(struct device *dev, unsigned long data)
 	return status;
 }
 
-static void oplus_voocphy_set_chg_pmid2out(bool enable, int reason)
+static void oplus_voocphy_set_chg_pmid2out(struct oplus_voocphy_manager *chip, bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->ops && g_voocphy_chip->ops->set_chg_pmid2out) {
-		g_voocphy_chip->ops->set_chg_pmid2out(enable, reason);
+		g_voocphy_chip->ops->set_chg_pmid2out(chip, enable, reason);
 	} else {
 		return;
 	}
 }
 
-static bool oplus_voocphy_get_chg_pmid2out(void)
+static bool oplus_voocphy_get_chg_pmid2out(struct oplus_voocphy_manager *chip)
 {
 	if (!g_voocphy_chip)
 		return false;
 
 	if (g_voocphy_chip->ops && g_voocphy_chip->ops->get_chg_pmid2out) {
-		return g_voocphy_chip->ops->get_chg_pmid2out();
+		return g_voocphy_chip->ops->get_chg_pmid2out(chip);
 	} else {
 		return false;
 	}
 }
 
-static void oplus_voocphy_set_slave_chg_pmid2out(bool enable, int reason)
+static void oplus_voocphy_set_slave_chg_pmid2out(struct oplus_voocphy_manager *chip,
+	bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->slave_ops && g_voocphy_chip->slave_ops->set_chg_pmid2out) {
-		g_voocphy_chip->slave_ops->set_chg_pmid2out(enable, reason);
+		g_voocphy_chip->slave_ops->set_chg_pmid2out(chip, enable, reason);
 	} else {
 		return;
 	}
 }
 
-static bool oplus_voocphy_get_slave_chg_pmid2out(void)
+static bool oplus_voocphy_get_slave_chg_pmid2out(struct oplus_voocphy_manager *chip)
 {
 	if (!g_voocphy_chip)
 		return false;
 
 	if (g_voocphy_chip->slave_ops && g_voocphy_chip->slave_ops->get_chg_pmid2out) {
-		return g_voocphy_chip->slave_ops->get_chg_pmid2out();
+		return g_voocphy_chip->slave_ops->get_chg_pmid2out(chip);
 	} else {
 		return false;
 	}
@@ -5414,23 +5418,23 @@ static int oplus_voocphy_curr_event_handle(struct device *dev, unsigned long dat
 		}
 
 		if (chip->chip_id == CHIP_ID_NU2112A) {
-			pmid2out_status = oplus_voocphy_get_chg_pmid2out();
+			pmid2out_status = oplus_voocphy_get_chg_pmid2out(chip);
 			voocphy_err("pmid2out master = %d, chip->master_cp_ichg = %d\n", pmid2out_status, chip->master_cp_ichg);
 			if (pmid2out_status == false && chip->master_cp_ichg > 500) {
 				voocphy_err("IBUS > 500mA set 0x5 !\n");
 				if (chip->adapter_type == ADAPTER_SVOOC)
-					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_SVOOC);
+					oplus_voocphy_set_chg_pmid2out(chip, true, SETTING_REASON_SVOOC);
 				else
-					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_VOOC);
+					oplus_voocphy_set_chg_pmid2out(chip, true, SETTING_REASON_VOOC);
 			}
-			pmid2out_status = oplus_voocphy_get_slave_chg_pmid2out();
+			pmid2out_status = oplus_voocphy_get_slave_chg_pmid2out(chip);
 			voocphy_err("pmid2out slave = %d, chip->cp_ichg = %d\n", pmid2out_status, chip->cp_ichg);
 			if (pmid2out_status == false && (chip->cp_ichg - chip->master_cp_ichg)> 500) {
 				voocphy_err("slave cp IBUS > 500mA set 0x5 !\n");
 				if (chip->adapter_type == ADAPTER_SVOOC)
-					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_SVOOC);
+					oplus_voocphy_set_slave_chg_pmid2out(chip, true, SETTING_REASON_SVOOC);
 				else
-					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_VOOC);
+					oplus_voocphy_set_slave_chg_pmid2out(chip, true, SETTING_REASON_VOOC);
 			}
 		}
 	}

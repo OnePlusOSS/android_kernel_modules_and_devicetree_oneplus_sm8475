@@ -962,8 +962,8 @@ int iris_dbgfs_fw_calibrate_status_init(void)
 		}
 	}
 
-	debugfs_create_u16("fw_calibrated_status", 0644, pcfg->dbg_root,
-			&fw_calibrated_status);
+	//debugfs_create_u16("fw_calibrated_status", 0644, pcfg->dbg_root,
+	//		&fw_calibrated_status);
 
 	return 0;
 }

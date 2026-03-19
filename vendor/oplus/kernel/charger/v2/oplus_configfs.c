@@ -38,10 +38,12 @@
 #include <linux/completion.h>
 #include <linux/mutex.h>
 #include <oplus_sec.h>
+#include <oplus_reverse_chg.h>
 #ifndef CONFIG_DISABLE_OPLUS_FUNCTION
 #include <soc/oplus/system/oplus_project.h>
 #endif
 #include <recovery/state_keep.h>
+#include <oplus_chg_dual_cells_protection.h>
 
 struct oplus_sec_ic_test_res {
 	struct completion ack;
@@ -73,13 +75,16 @@ struct oplus_configfs_device {
 	struct oplus_mms *pps_topic;
 	struct oplus_mms *err_topic;
 	struct oplus_mms *cpa_topic;
+	struct oplus_mms *reverse_topic;
 	struct oplus_mms *batt_bal_topic;
+	struct oplus_mms *protection_topic;
 	struct oplus_mms *retention_topic;
 	struct oplus_mms *plc_topic;
 	struct oplus_mms *keep_topic;
 	struct mms_subscribe *ufcs_subs;
 	struct mms_subscribe *pps_subs;
 	struct mms_subscribe *plc_subs;
+	struct mms_subscribe *reverse_subs;
 
 	struct work_struct gauge_update_work;
 	struct work_struct eis_reset_work;
@@ -126,6 +131,7 @@ struct oplus_configfs_device {
 
 	bool wired_online;
 	int wired_type;
+	int power_role;
 
 	bool wls_online;
 	int wls_type;
@@ -158,11 +164,13 @@ struct oplus_configfs_device {
 
 	int vbat_uv_thr;
 	int real_cool_down;
+	int reverse_chg_type;
 	unsigned int nvid_support_flags;
 	int eis_status;
 	int eis_current;
 	int plc_status;
 	bool plc_user_enable;
+	bool batt_health;
 };
 
 static struct oplus_configfs_device *g_cfg_dev;
@@ -512,6 +520,43 @@ static ssize_t fast_chg_type_store(struct device *dev, struct device_attribute *
 }
 static DEVICE_ATTR_RW(fast_chg_type);
 
+static ssize_t reverse_chg_type_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+
+	chg_info("reverse_chg_type = %d\n", chip->reverse_chg_type);
+	return sprintf(buf, "%d\n", chip->reverse_chg_type);
+}
+
+static ssize_t reverse_chg_type_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+	int rc;
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	rc = oplus_set_reverse_chg_type(chip->reverse_topic, val);
+	if (rc < 0)
+		chg_err("set reverse_chg_type %d error\n", val);
+
+	return count;
+}
+static DEVICE_ATTR_RW(reverse_chg_type);
+
+static ssize_t power_role_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+
+	return sprintf(buf, "%d\n", chip->power_role);
+}
+static DEVICE_ATTR_RO(power_role);
+
 static ssize_t otg_online_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
@@ -615,6 +660,8 @@ static struct device_attribute *oplus_usb_attributes[] = {
 	&dev_attr_fast_chg_type,
 	&dev_attr_usbtemp_volt_l,
 	&dev_attr_usbtemp_volt_r,
+	&dev_attr_reverse_chg_type,
+	&dev_attr_power_role,
 	NULL
 };
 
@@ -2476,6 +2523,52 @@ static ssize_t sec_ic_test_show(
 }
 static DEVICE_ATTR_RW(sec_ic_test);
 
+#define REVERSE_CHG_INFO_LEN 20
+static ssize_t reverse_chg_info_store(
+	struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret = 0;
+	struct oplus_configfs_device *chip = dev->driver_data;
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	chg_err(" %s\n", buf);
+	ret = oplus_reverse_chg_set_level(buf, count);
+	if (ret < 0) {
+		chg_err("error\n");
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static ssize_t reverse_chg_info_show(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int val;
+	ssize_t len = 0;
+	struct oplus_configfs_device *chip = dev->driver_data;
+
+	if (!chip) {
+		chg_err("reverse_chg_info_show chip is NULL\n");
+		return -EINVAL;
+	}
+
+	val = oplus_reverse_chg_info_show(buf);
+	if (val < 0) {
+		chg_err("reverse_chg_info_show bcc parms get error\n");
+		return val;
+	}
+
+	len = strlen(buf);
+
+	chg_err(" reverse_chg_info_show end %s  %ld \n", buf, len);
+	return len;
+}
+static DEVICE_ATTR_RW(reverse_chg_info);
+
 #define GAUGE_CAR_C_BUFF_LEN 16
 static ssize_t gauge_car_c_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
@@ -2490,6 +2583,51 @@ static ssize_t gauge_car_c_show(
 	return scnprintf(buf, GAUGE_CAR_C_BUFF_LEN, "%d\n", chip->gauge_car_c);
 }
 static DEVICE_ATTR_RO(gauge_car_c);
+
+static ssize_t dual_cells_batt_health_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int health_status;
+	int health_reason;
+	int ret;
+	struct oplus_configfs_device *chip = dev->driver_data;
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	ret = oplus_chg_get_dual_cells_batt_health(
+			chip->protection_topic, &health_status, &health_reason);
+	if (ret < 0)
+		return sprintf(buf, "unsupport");
+
+	chip->batt_health = health_status;
+	return sprintf(buf, "%d,%d\n", health_reason, health_status);
+}
+
+static ssize_t dual_cells_batt_health_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+	if (!buf) {
+		chg_err("buf is NULL\n");
+		return -EINVAL;
+	}
+
+	if (kstrtos32(buf, 0, &val)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	oplus_chg_set_dual_cells_batt_health(chip->protection_topic, val);
+
+	return count;
+}
+static DEVICE_ATTR_RW(dual_cells_batt_health);
 
 static ssize_t chg_path_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -2717,6 +2855,7 @@ static struct device_attribute *oplus_battery_attributes[] = {
 	&dev_attr_bdd_voltdiff_trend,
 	&dev_attr_gauge_nvram_stress_test,
 	&dev_attr_get_three_level_term_volt,
+	&dev_attr_dual_cells_batt_health,
 	NULL
 };
 
@@ -3496,7 +3635,6 @@ static ssize_t adapter_power_store(struct device *dev, struct device_attribute *
 	return count;
 }
 static DEVICE_ATTR_RW(adapter_power);
-
 
 static int protocol_type_by_user = -1;
 static int protocol_type_get(void *priv_data)
@@ -4397,6 +4535,7 @@ static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_lpd_config,
 	&dev_attr_byb_status,
 	&dev_attr_byb_vout,
+	&dev_attr_reverse_chg_info,
 	NULL
 };
 
@@ -5027,6 +5166,10 @@ static void oplus_configfs_wired_subs_callback(struct mms_subscribe *subs,
 						false);
 			chip->wired_type = data.intval;
 			break;
+		case WIRED_ITEM_POWER_ROLE:
+			oplus_mms_get_item_data(chip->wired_topic, id, &data, false);
+			chip->power_role = data.intval;
+			break;
 		default:
 			break;
 		}
@@ -5501,6 +5644,19 @@ static void oplus_configfs_subscribe_retention_topic(struct oplus_mms *topic,
 		chip->retention_state = !!data.intval;
 }
 
+static void oplus_configfs_subscribe_protection_topic(struct oplus_mms *topic,
+					     void *prv_data)
+{
+	struct oplus_configfs_device *chip = prv_data;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	chip->protection_topic = topic;
+	rc = oplus_mms_get_item_data(chip->protection_topic, DUAL_CELLS_BATT_STATUS, &data, true);
+	if (rc >= 0)
+		chip->batt_health = !!data.intval;
+}
+
 static void oplus_configfs_plc_subs_callback(struct mms_subscribe *subs,
 					      enum mms_msg_type type, u32 id, bool sync)
 {
@@ -5574,6 +5730,46 @@ static void oplus_configfs_subscribe_keep_topic(struct oplus_mms *topic,
 }
 #endif
 
+static void oplus_configfs_reverse_subs_callback(struct mms_subscribe *subs,
+					     enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_configfs_device *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case REVERSE_ITEM_REVERSE_CHG_TYPE:
+			oplus_mms_get_item_data(chip->reverse_topic, id, &data, false);
+			chip->reverse_chg_type = data.intval;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_configfs_subscribe_reverse_topic(struct oplus_mms *topic, void *prv_data)
+{
+	struct oplus_configfs_device *chip = prv_data;
+	union mms_msg_data data = { 0 };
+
+	chip->reverse_topic = topic;
+	chip->reverse_subs = oplus_mms_subscribe(chip->reverse_topic, chip,
+					      oplus_configfs_reverse_subs_callback,
+					      "configfs");
+	if (IS_ERR_OR_NULL(chip->reverse_subs)) {
+		chg_err("subscribe reverse topic error, rc=%ld\n", PTR_ERR(chip->reverse_subs));
+		return;
+	}
+
+	oplus_mms_get_item_data(chip->reverse_topic, REVERSE_ITEM_REVERSE_CHG_TYPE, &data, true);
+	chip->reverse_chg_type = data.intval;
+};
+
 static __init int oplus_configfs_init(void)
 {
 	struct oplus_configfs_device *chip;
@@ -5633,9 +5829,11 @@ static __init int oplus_configfs_init(void)
 	oplus_mms_wait_topic("pps", oplus_configfs_subscribe_pps_topic, chip);
 	oplus_mms_wait_topic("retention", oplus_configfs_subscribe_retention_topic, chip);
 	oplus_mms_wait_topic("plc", oplus_configfs_subscribe_plc_topic, chip);
+	oplus_mms_wait_topic("reverse", oplus_configfs_subscribe_reverse_topic, chip);
 #if IS_ENABLED(CONFIG_OPLUS_CHG_STATE_KEEP)
 	oplus_mms_wait_topic("state_keep", oplus_configfs_subscribe_keep_topic, chip);
 #endif
+	oplus_mms_wait_topic("protection", oplus_configfs_subscribe_protection_topic, chip);
 
 	return 0;
 

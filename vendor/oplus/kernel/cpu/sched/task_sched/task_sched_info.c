@@ -436,6 +436,7 @@ static ssize_t proc_pids_set_write(struct file *file, const char __user *buf, si
 	const char *target = NULL;
 	int err;
 	struct timespec64 ts;
+	unsigned int local_target_pids_num;
 
 	if (!task_sched_info_enable)
 		return -EFAULT;
@@ -450,18 +451,19 @@ static ssize_t proc_pids_set_write(struct file *file, const char __user *buf, si
 
 	all = buffer;
 
-	target_pids_num = 2;
-	while ((single = strsep(&all, " ")) != NULL && target_pids_num < MAX_PID_NUM) {
+	local_target_pids_num = 2;
+	while ((single = strsep(&all, " ")) != NULL && local_target_pids_num < MAX_PID_NUM) {
 		target = single;
 
-		err = kstrtouint(target, 0, &target_pids[target_pids_num]);
+		err = kstrtouint(target, 0, &target_pids[local_target_pids_num]);
 		if (err) {
 			target = NULL;
 			continue;
 		}
 		target = NULL;
-		target_pids_num++;
+		local_target_pids_num++;
 	}
+	target_pids_num = local_target_pids_num;
 
 	ktime_get_real_ts64(&ts);
 	write_pid_time = (u64)ts.tv_sec * 1000000 + (u64)(ts.tv_nsec/1000);

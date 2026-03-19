@@ -120,6 +120,7 @@ struct state_keep {
 
 	struct delayed_work abnormal_check_work;
 	struct delayed_work batt_status_delay_update_work;
+	struct delayed_work restore_recording_work;
 
 	struct wakeup_source *awake_lock;
 	bool wakeup_flag;
@@ -134,6 +135,7 @@ struct state_keep {
 #define TRACK_UPLOAD_PERIOD			(24 * 3600)
 #define PROTOCOL_COUNT_RESET_TIME_S		(6 * 60)
 #define BATT_STATUS_DELAY_UPDATE_TIME_MS	1500
+#define RESTORE_RECORDING_INTERVAL_MS		1000
 
 struct item_show_info {
 	enum state_keep_topic_item id;
@@ -161,6 +163,9 @@ static void state_keep_status_info_reset(struct state_keep *sk)
 
 	for (i = 0; i < STATE_KEEP_STATUS_MAX; i++)
 		sk->status_info[i].initialized = false;
+
+	sk->data.pre_wired_type = OPLUS_CHG_USB_TYPE_UNKNOWN;
+	sk->data.pre_fast_chg_type = CHARGER_SUBTYPE_DEFAULT;
 }
 
 static void state_keep_set_awake(struct state_keep *sk, bool awake)
@@ -343,11 +348,41 @@ static void state_keep_set_switch_protocol(struct state_keep *sk)
 	}
 }
 
+static void state_keep_restore_recording_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct state_keep *sk =
+		container_of(dwork, struct state_keep, restore_recording_work);
+
+	if (sk->data.recording)
+		return;
+	if (!sk->data.wired_online)
+		return;
+
+	chg_err("restore recording, wired_online=%d\n", sk->data.wired_online);
+	sk->data.recording = true;
+}
+
+static void state_keep_stop_recording(struct state_keep *sk, bool restore_check)
+{
+	cancel_delayed_work_sync(&sk->restore_recording_work);
+	sk->data.recording = false;
+	if (sk->data.wired_online && restore_check)
+		schedule_delayed_work(&sk->restore_recording_work,
+			msecs_to_jiffies(RESTORE_RECORDING_INTERVAL_MS));
+}
+
+static void state_keep_start_recording(struct state_keep *sk)
+{
+	sk->data.recording = true;
+	cancel_delayed_work_sync(&sk->restore_recording_work);
+}
+
 static void state_keep_state_init(struct state_keep *sk)
 {
 	sk->data.keep_count = 0;
 	sk->data.first_check = true;
-	sk->data.recording = true;
+	state_keep_start_recording(sk);
 	state_keep_status_info_reset(sk);
 	sk->data.current_protocol = CHG_PROTOCOL_INVALID;
 	sk->data.current_protocol_count = 0;
@@ -385,7 +420,7 @@ static void state_keep_enable(struct state_keep *sk)
 
 	if (sk->data.wired_online) {
 		if (sk->data.first_check) {
-			sk->data.recording = true;
+			state_keep_start_recording(sk);
 			state_keep_status_info_reset(sk);
 		}
 		state_keep_set_ready(sk, false);
@@ -865,6 +900,7 @@ static int state_keep_update_wired_online(struct oplus_mms *mms, union mms_msg_d
 static int state_keep_get_wired_type(struct state_keep *sk, bool update, int *wired_type)
 {
 	union mms_msg_data data = { 0 };
+	bool recording;
 	int rc;
 
 	rc = oplus_mms_get_item_data(sk->wired_topic, WIRED_ITEM_CHG_TYPE, &data, update);
@@ -875,11 +911,14 @@ static int state_keep_get_wired_type(struct state_keep *sk, bool update, int *wi
 	chg_debug("recording=%d, wired_type=%d, pre_wired_type=%d\n",
 		  sk->data.recording, data.intval, sk->data.pre_wired_type);
 
+	recording = READ_ONCE(sk->data.recording);
+	recording = recording || (sk->data.wired_type == OPLUS_CHG_USB_TYPE_UNKNOWN);
+
 	if (!sk->data.disabled && sk->data.wired_keep) {
-		if (READ_ONCE(sk->data.recording)) {
+		if (recording) {
 			if (sk->data.pre_wired_type != OPLUS_CHG_USB_TYPE_UNKNOWN &&
 			    data.intval == OPLUS_CHG_USB_TYPE_UNKNOWN) {
-				sk->data.recording = false;
+				state_keep_stop_recording(sk, true);
 				*wired_type = sk->data.wired_type;
 				chg_info("wired type change to unknown, stop recording\n");
 			} else {
@@ -1010,7 +1049,7 @@ static int state_keep_update_fast_chg_type(struct oplus_mms *mms, union mms_msg_
 	if (sk->data.pre_fast_chg_type != CHARGER_SUBTYPE_DEFAULT &&
 	    fast_chg_type == CHARGER_SUBTYPE_DEFAULT) {
 		    chg_info("fast chg type change to default, stop recording\n");
-		    sk->data.recording = false;
+		    state_keep_stop_recording(sk, true);
 		    goto done;
 	}
 	sk->data.fast_chg_type = fast_chg_type;
@@ -1509,10 +1548,10 @@ static void state_keep_wired_subs_callback(struct mms_subscribe *subs,
 			chg_info("wired online: %d\n", sk->data.wired_online);
 			if (!sk->data.disabled) {
 				if (sk->data.wired_online && sk->data.first_check) {
-					sk->data.recording = true;
+					state_keep_start_recording(sk);
 					state_keep_status_info_reset(sk);
 				} else if (!sk->data.wired_online) {
-					sk->data.recording = false;
+					state_keep_stop_recording(sk, false);
 					sk->data.first_check = false;
 					schedule_delayed_work(&sk->abnormal_check_work,
 						msecs_to_jiffies(ABNORMAL_CHECK_INTERVAL_MS));
@@ -1563,7 +1602,7 @@ static void state_keep_subscribe_wired_topic(struct oplus_mms *topic, void *prv_
 	else
 		sk->data.wired_online = !!data.intval;
 	if (sk->data.wired_online) {
-		sk->data.recording = true;
+		state_keep_start_recording(sk);
 		state_keep_status_info_reset(sk);
 		schedule_work(&sk->wired_online_update_work);
 	}
@@ -2110,6 +2149,7 @@ int state_keep_init(struct device *dev, struct device_node *node)
 
 	INIT_DELAYED_WORK(&sk->abnormal_check_work, state_keep_abnormal_check_work);
 	INIT_DELAYED_WORK(&sk->batt_status_delay_update_work, state_keep_batt_status_delay_update_work);
+	INIT_DELAYED_WORK(&sk->restore_recording_work, state_keep_restore_recording_work);
 
 	state_keep_debugfs_init(sk);
 	state_keep_init_detection_algorithm(sk);
@@ -2149,6 +2189,7 @@ void state_keep_exit(struct device *dev)
 
 	cancel_delayed_work_sync(&sk->abnormal_check_work);
 	cancel_delayed_work_sync(&sk->batt_status_delay_update_work);
+	cancel_delayed_work_sync(&sk->restore_recording_work);
 
 	if (!IS_ERR_OR_NULL(sk->wired_subs))
 		oplus_mms_unsubscribe(sk->wired_subs);

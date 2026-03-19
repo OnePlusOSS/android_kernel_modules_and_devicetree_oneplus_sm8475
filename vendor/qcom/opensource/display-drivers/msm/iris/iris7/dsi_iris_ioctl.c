@@ -528,14 +528,16 @@ static int _iris_configure(u32 display, u32 type, u32 value)
 		iris_set_metadata(false);
 		break;
 	case IRIS_SDR2HDR_LCE:
-		if (value < IRIS_LCE_LEVEL_MAX) {
+		if (value <= IRIS_LCE_LEVEL_MAX) {
 			pqlt_cur_setting->sdr2hdr_lce = value;
 			iris_sdr2hdr_set_lce(value);
 		}
 		break;
 	case IRIS_SDR2HDR_DE:
-		pqlt_cur_setting->sdr2hdr_de = value;
-		iris_sdr2hdr_set_de(value);
+		if (value <= IRIS_DE_LEVEL_MAX) {
+			pqlt_cur_setting->sdr2hdr_de = value;
+			iris_sdr2hdr_set_de(value);
+		}
 		break;
 	case IRIS_SDR2HDR_TF_COEF:
 		if (value != pqlt_cur_setting->sdr2hdr_tf_coef) {
@@ -714,6 +716,8 @@ int iris_configure_t(uint32_t display, u32 type, void __user *argp)
 		IRIS_LOGE("can not copy from user");
 		return -EPERM;
 	}
+	value = value & 0xFFFFFFFF;
+
 	iris_ioctl_lock();
 	ret = iris_configure(display, type, value);
 	iris_ioctl_unlock();
@@ -1149,9 +1153,9 @@ static int _iris_configure_ex(u32 display, u32 type, u32 count, u32 *values)
 		break;
 	case IRIS_DEMURA_XY_LUT_SET:
 		iris_demura_lut_xy = iris_get_demura_xy();
-		iris_demura_xy = *(struct msmfb_iris_demura_xy *)(values);
 
 		if (values != NULL) {
+			iris_demura_xy = *(struct msmfb_iris_demura_xy *)(values);
 			ret = copy_from_user(iris_demura_lut_xy->lut_xypayload,
 				iris_demura_xy.lut_xypayload, sizeof(uint32_t)*2048);
 			if (ret) {
@@ -1205,6 +1209,7 @@ static int iris_configure_ex_t(uint32_t display, uint32_t type,
 {
 	int ret = -1;
 	uint32_t *val = NULL;
+	uint32_t i = 0;
 
 	val = vmalloc(sizeof(uint32_t) * count);
 	if (!val) {
@@ -1217,6 +1222,10 @@ static int iris_configure_ex_t(uint32_t display, uint32_t type,
 		vfree(val);
 		return -EPERM;
 	}
+
+	for (i = 0; i < count; i++)
+		val[i] = val[i] & 0xFFFFFFFF;
+
 	ret = iris_configure_ex(display, type, count, val);
 	vfree(val);
 	return ret;
@@ -1475,7 +1484,7 @@ int iris_configure_get(u32 display, u32 type, u32 count, u32 *values)
 		values[6] = pcfg->pt_sr_DLTI_level;
 		break;
 	case IRIS_FW_UPDATE:
-		*values = fw_calibrated_status;
+		*values = iris_get_fw_calibrated_status();
 		break;
 	default:
 		return -EFAULT;

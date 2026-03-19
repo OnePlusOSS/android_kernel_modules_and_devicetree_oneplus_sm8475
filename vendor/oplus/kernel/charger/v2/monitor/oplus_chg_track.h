@@ -76,7 +76,9 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_BS_INFO,
 	TRACK_NOTIFY_FLAG_STATE_KEEP_INFO,
 	TRACK_NOTIFY_FLAG_SEC_IC_MEMINFO,
-	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_SEC_IC_MEMINFO,
+	TRACK_NOTIFY_FLAG_WIRED_REVERSE_CHG_INFO,
+	TRACK_NOTIFY_FLAG_WIRED_HIGH_REVERSE_ERR,
+	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_WIRED_HIGH_REVERSE_ERR,
 
 	TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
 	TRACK_NOTIFY_FLAG_NO_CHARGING = TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
@@ -235,4 +237,6 @@ int oplus_chg_track_check_wired_mul_break_stat(int vbus_rising);
 int oplus_chg_track_check_wls_mul_break_stat(int wls_connect);
 void oplus_chg_track_update_break_ui_online(void);
 void oplus_chg_track_update_prechg_r_data(struct oplus_monitor *monitor);
+void oplus_chg_track_upload_reverse_chg_info(struct oplus_monitor *monitor);
+void oplus_chg_track_upload_high_reverse_err_info(struct oplus_monitor *monitor);
 #endif /* __OPLUS_CHG_TRACK_H__ */

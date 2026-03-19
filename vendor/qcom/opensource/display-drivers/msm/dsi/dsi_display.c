@@ -6275,7 +6275,7 @@ static struct device_node *_iris_dsi_display_get_panel_node(struct platform_devi
 {
 	struct device_node *node = NULL, *mdp_node = NULL;
 	const char *disp_name = NULL;
-	int i = 0;
+	int rc = 0, i = 0;
 	static const char * const disp_name_type[] = {
 		"pxlw,dsi-display-primary-active",
 		"pxlw,dsi-display-secondary-active"};
@@ -6305,17 +6305,17 @@ static struct device_node *_iris_dsi_display_get_panel_node(struct platform_devi
 	for (i = 0; i < MAX_DSI_ACTIVE_DISPLAY; i++) {
 		switch (panel_index) {
 			case IRIS_PANEL_SUPPORT_1:
-				of_property_read_string(mdp_node, disp_name_type[i], &disp_name);
+				rc = of_property_read_string(mdp_node, disp_name_type[i], &disp_name);
 				break;
 
 			case IRIS_PANEL_SUPPORT_2:
-				of_property_read_string(mdp_node, disp_name_type_2nd[i], &disp_name);
+				rc = of_property_read_string(mdp_node, disp_name_type_2nd[i], &disp_name);
 				break;
 			case IRIS_PANEL_SUPPORT_3:
-				of_property_read_string(mdp_node, disp_name_type_third[i], &disp_name);
+				rc = of_property_read_string(mdp_node, disp_name_type_third[i], &disp_name);
 				break;
 			case IRIS_PANEL_SUPPORT_4:
-				of_property_read_string(mdp_node, disp_name_type_fourth[i], &disp_name);
+				rc = of_property_read_string(mdp_node, disp_name_type_fourth[i], &disp_name);
 				break;
 			default:
 				DSI_ERR("IRIS_LOG I iris not support panel!\n");

@@ -69,6 +69,7 @@
 #include <oplus_chg_mutual.h>
 #include <oplus_chg_cpa.h>
 #include <recovery/state_keep.h>
+#include <oplus_reverse_chg.h>
 
 #define FULL_COUNTS_SW		5
 #define FULL_COUNTS_HW		4
@@ -96,6 +97,7 @@
 #define FLASH_MODE_SAFETY_VOLTAGE	5400
 #define FLASH_MODE_SAFETY_VOLTAGE_DETECT_COUNT		25
 #define FLASH_MODE_SAFETY_VOLTAGE_QUERY_INTERVAL	40
+#define SOC_DOWN_DELAY_FOR_REVERSE_CHARGING		30
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
 #define pde_data(inode) PDE_DATA(inode)
@@ -161,6 +163,12 @@ enum dec_cv_support_type {
 	DEC_CV_SUPPORT_LITE,
 	DEC_CV_SUPPORT_FULL,
 	DEC_CV_SUPPORT_MAX,
+};
+
+enum power_role_type {
+	POWER_ROLE_UNKNOWN = -1,
+	POWER_ROLE_SINK = 0,
+	POWER_ROLE_SOURCE = 1,
 };
 
 enum bdd_voltdiff_trend {
@@ -319,6 +327,7 @@ struct oplus_chg_comm {
 	struct oplus_mms *plc_topic;
 	struct oplus_mms *cpa_topic;
 	struct oplus_mms *keep_topic;
+	struct oplus_mms *reverse_topic;
 	struct mms_subscribe *gauge_subs;
 	struct mms_subscribe *wired_subs;
 	struct mms_subscribe *vooc_subs;
@@ -329,6 +338,7 @@ struct oplus_chg_comm {
 	struct mms_subscribe *retention_subs;
 	struct mms_subscribe *plc_subs;
 	struct mms_subscribe *keep_subs;
+	struct mms_subscribe *reverse_subs;
 
 	spinlock_t remuse_lock;
 
@@ -340,6 +350,7 @@ struct oplus_chg_comm {
 	struct work_struct gauge_check_work;
 	struct work_struct plugin_work;
 	struct work_struct chg_type_change_work;
+	struct work_struct chg_power_role_change_work;
 	struct work_struct gauge_remuse_work;
 	struct work_struct noplug_batt_volt_work;
 	struct work_struct wired_chg_check_work;
@@ -444,6 +455,9 @@ struct oplus_chg_comm {
 	int shutdown_soc;
 	int partition_uisoc;
 	bool need_start_timeout_work;
+	enum power_role_type power_role;
+	enum oplus_wired_cc_detect_status cc_detect_status;
+	bool high_reverse_charging;
 
 	unsigned int wired_err_code;
 	unsigned int wls_err_code;
@@ -3663,6 +3677,8 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 	int dex = 0;
 	static unsigned long begin_vbatt_uv_jiffies = 0;
 	int vbat_min = chip->vbat_min_mv;
+	int power_role = chip->power_role;
+	int cc_detect_status = chip->cc_detect_status;
 
 	if (g_ui_soc_ready == false) {
 		chg_err("g_ui_soc_ready is false %d", chip->ui_soc);
@@ -3681,6 +3697,11 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 	soc_up_jiffies = chip->soc_up_update_jiffies + (unsigned long)(10 * HZ);
 	soc_down_jiffies = chip->soc_down_update_jiffies +
 		(calculate_soc_down_jiffies(config, ui_soc, charging) * HZ);
+	if (!charging) {
+		if (power_role == POWER_ROLE_SOURCE && cc_detect_status != CC_DETECT_NOTPLUG) {
+			soc_down_jiffies = chip->soc_down_update_jiffies + SOC_DOWN_DELAY_FOR_REVERSE_CHARGING * HZ;
+		}
+	}
 
 	if (chip->config.support_uisoc_low_battery_control)
 		soc_down_jiffies = oplus_comm_ui_soc_low_battery_control(chip, soc_down_jiffies, vbat_min, &force_down_1);
@@ -5528,7 +5549,8 @@ static bool oplus_comm_override_by_shell_temp(struct oplus_chg_comm *chip,
 	batt_temp_thr =
 		min(spec->batt_temp_thr[ARRAY_SIZE(spec->batt_temp_thr) - 1],
 		    BATT_NTC_CTRL_THRESHOLD_HIGH);
-	if (chip->wired_online && (temp > BATT_NTC_CTRL_THRESHOLD_LOW) &&
+	if ((chip->wired_online || chip->high_reverse_charging) &&
+	    (temp > BATT_NTC_CTRL_THRESHOLD_LOW) &&
 	    (temp < batt_temp_thr))
 		return true;
 
@@ -6132,8 +6154,16 @@ static void oplus_comm_wired_subs_callback(struct mms_subscribe *subs,
 		case WIRED_ITEM_CHG_TYPE:
 			schedule_work(&chip->chg_type_change_work);
 			break;
+		case WIRED_ITEM_POWER_ROLE:
+			schedule_work(&chip->chg_power_role_change_work);
+			break;
 		case WIRED_ITEM_CC_MODE:
+			break;
 		case WIRED_ITEM_CC_DETECT:
+			oplus_mms_get_item_data(chip->wired_topic, id, &data, false);
+			chip->cc_detect_status = data.intval;
+			chg_info("cc_detect_status = %d\n", chip->cc_detect_status);
+			break;
 		default:
 			break;
 		}
@@ -6255,6 +6285,46 @@ static void oplus_comm_subscribe_vooc_topic(struct oplus_mms *topic,
 				true);
 	chip->vooc_by_normal_path = data.intval;
 }
+
+static void oplus_comm_reverse_subs_callback(struct mms_subscribe *subs,
+					     enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_chg_comm *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case HIGH_REVERSE_ITEM_STATUS:
+			oplus_mms_get_item_data(chip->reverse_topic, id, &data, false);
+			chip->high_reverse_charging = !!data.intval;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_comm_subscribe_reverse_topic(struct oplus_mms *topic, void *prv_data)
+{
+	struct oplus_chg_comm *chip = prv_data;
+	union mms_msg_data data = { 0 };
+
+	chip->reverse_topic = topic;
+	chip->reverse_subs = oplus_mms_subscribe(chip->reverse_topic, chip,
+					      oplus_comm_reverse_subs_callback,
+					      "chg_comm");
+	if (IS_ERR_OR_NULL(chip->reverse_subs)) {
+		chg_err("subscribe reverse topic error, rc=%ld\n", PTR_ERR(chip->reverse_subs));
+		return;
+	}
+
+	oplus_mms_get_item_data(chip->reverse_topic, HIGH_REVERSE_ITEM_STATUS, &data, true);
+	chip->high_reverse_charging = !!data.intval;
+};
 
 static void oplus_comm_wls_subs_callback(struct mms_subscribe *subs,
 					 enum mms_msg_type type, u32 id, bool sync)
@@ -6839,6 +6909,17 @@ static void oplus_comm_chg_type_change_work(struct work_struct *work)
 
 	/* Ensure that the charging status is updated in a timely manner */
 	schedule_work(&chip->gauge_check_work);
+}
+
+static void oplus_comm_chg_power_role_change_work(struct work_struct *work)
+{
+	struct oplus_chg_comm *chip =
+		container_of(work, struct oplus_chg_comm, chg_power_role_change_work);
+	union mms_msg_data power_role = { -1 };
+	oplus_mms_get_item_data(chip->wired_topic,
+		WIRED_ITEM_POWER_ROLE, &power_role, false);
+	chip->power_role = power_role.intval;
+	chg_info("actual power role = %d", chip->power_role);
 }
 
 int oplus_comm_get_vbatt_over_threshold(struct oplus_mms *topic)
@@ -9596,6 +9677,7 @@ static ssize_t proc_hmac_read(struct file *filp, char __user *buff,
 	if (chip == NULL)
 		return -EFAULT;
 
+	chip->hmac = oplus_gauge_get_batt_hmac();
 	if (chip->hmac || chip->config.not_pop_up)
 		buf[0] = '1';
 	else
@@ -10598,6 +10680,7 @@ static int oplus_comm_driver_probe(struct platform_device *pdev)
 	INIT_WORK(&comm_dev->plugin_work, oplus_comm_plugin_work);
 	INIT_WORK(&comm_dev->chg_type_change_work,
 		  oplus_comm_chg_type_change_work);
+	INIT_WORK(&comm_dev->chg_power_role_change_work, oplus_comm_chg_power_role_change_work);
 	INIT_WORK(&comm_dev->gauge_check_work, oplus_comm_gauge_check_work);
 	INIT_WORK(&comm_dev->gauge_remuse_work, oplus_comm_gauge_remuse_work);
 	INIT_WORK(&comm_dev->noplug_batt_volt_work, oplus_comm_noplug_batt_volt_work);
@@ -10629,6 +10712,7 @@ static int oplus_comm_driver_probe(struct platform_device *pdev)
 	oplus_mms_wait_topic("pps", oplus_comm_subscribe_pps_topic, comm_dev);
 	oplus_mms_wait_topic("retention", oplus_comm_subscribe_retention_topic, comm_dev);
 	oplus_mms_wait_topic("plc", oplus_comm_subscribe_plc_topic, comm_dev);
+	oplus_mms_wait_topic("reverse", oplus_comm_subscribe_reverse_topic, comm_dev);
 #if IS_ENABLED(CONFIG_OPLUS_CHG_STATE_KEEP)
 	oplus_mms_wait_topic("state_keep", oplus_comm_subscribe_keep_topic, comm_dev);
 #endif

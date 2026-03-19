@@ -95,7 +95,7 @@ static u32 iris_lce_level[][IRIS_LCE_LEVEL_MAX] = {
 	{40, 80, 100, 180, 240},		//LCE_HC_MID_UPPER
 };
 
-static u32 iris_de_level[][4] = {
+static u32 iris_de_level[][IRIS_DE_LEVEL_MAX] = {
 	{128, 160, 196, 80},				//DETAIL_GAINP0
 	{200, 250, 300, 80},				//DETAIL_GAINP1
 	{250, 300, 400, 80},				//DETAIL_GAINP2
@@ -103,7 +103,7 @@ static u32 iris_de_level[][4] = {
 	{200, 300, 350, 80},				//DETAIL_GAINP4
 };
 
-static u32 iris_ftc_level[6] = {
+static u32 iris_ftc_level[IRIS_FTC_LEVEL_MAX] = {
 	0, 32, 37, 48, 56, 72		//FLESH_DET_RATIO
 };
 
@@ -1420,6 +1420,15 @@ void iris_dpp_fingerDisplay_set(u8 enable, u8 shapeInFill, u32 radius_a, u32 rad
 	IRIS_LOGI("%s enable: %d, shape: %d, radius:%d %d %d %d, position:0x%x, fillcolor:0x%x",
 				__func__, enable, shapeInFill, radius_a, radius_b, radius_c, radius_d, position, fillcolor);
 
+	if ((radius_a <=  0x0) || (radius_a > 0x3ff))
+		return;
+	if ((radius_b <=  0x0) || (radius_b > 0x3ff))
+		return;
+	if ((radius_c <=  0x0) || (radius_c > 0x3ff))
+		return;
+	if ((radius_d <=  0x0) || (radius_d > 0x3ff))
+		return;
+
 	regval.ip = IRIS_IP_DPP;
 	regval.opt_id = 0x60;    //DIM_CTRL
 	regval.mask = 0x06;
@@ -2349,12 +2358,14 @@ void iris_sdr2hdr_set_ftc(u32 value)
 	if (!iris_sdr2hdr_valid(pqlt_cur_setting->pq_setting.sdr2hdr))
 		return;
 
-	payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR_2, option, 4);
-	payload[0] = (payload[0] & 0x00ffffff) + (iris_ftc_level[value] << 24);
-	iris_init_update_ipopt_t(IRIS_IP_SDR2HDR_2, option, option, 0x01);
+	if (value < IRIS_FTC_LEVEL_MAX) {
+		payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR_2, option, 4);
+		if (payload)
+			payload[0] = (payload[0] & 0x00ffffff) + (iris_ftc_level[value] << 24);
+		iris_init_update_ipopt_t(IRIS_IP_SDR2HDR_2, option, option, 0x01);
 
-	iris_end_hdr(true);
-
+		iris_end_hdr(true);
+	}
 	IRIS_LOGI("%s(), value: %u", __func__, value);
 }
 

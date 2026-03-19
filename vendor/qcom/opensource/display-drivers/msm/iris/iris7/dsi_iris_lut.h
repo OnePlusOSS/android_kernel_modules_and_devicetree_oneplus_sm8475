@@ -34,6 +34,7 @@ int iris_parse_lut_cmds(uint32_t flag);
 int iris_send_lut(u8 lut_type, u8 lut_table_index);
 void iris_update_ambient_lut(enum LUT_TYPE lutType, u32 lutPos);
 void iris_update_maxcll_lut(enum LUT_TYPE lutType, u32 lutpos);
+u16 iris_get_fw_calibrated_status(void);
 u8 iris_get_fw_load_status(void);
 void iris_update_fw_load_status(u8 value);
 void iris_update_gamma(void);

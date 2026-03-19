@@ -592,7 +592,7 @@ enum oplus_fastchg_copycat_type {
 	FAST_COPYCAT_OVER_VBAT_CURRENT,
 	FAST_COPYCAT_VOOC20_REPEAT_FASTCHG_ORNOT,
 	FAST_COPYCAT_VOOC20_REPEAT_IS_VBUS_OK,
-	FAST_COPYCAT_SVOOC_IS_VBUS_OK_EXCEED_MAXCNT,
+	FAST_COPYCAT_IS_VBUS_OK_EXCEED_MAXCNT,
 	FAST_COPYCAT_SVOOC_MISS_ASK_CUR_LEVEL,
 	FAST_COPYCAT_VOOC20_NON_EXPECT_CMD,
 	FAST_COPYCAT_TYPE_MAX,
@@ -989,8 +989,8 @@ struct oplus_voocphy_operations {
 	int (*get_voocphy_enable)(struct oplus_voocphy_manager *chip, u8 *data);
 	void (*dump_voocphy_reg)(struct oplus_voocphy_manager *chip);
 	int (*get_chip_id)(struct oplus_voocphy_manager *chip);
-	int (*set_chg_pmid2out)(bool enable, int reason);
-	bool (*get_chg_pmid2out)(void);
+	int (*set_chg_pmid2out)(struct oplus_voocphy_manager *chip, bool enable, int reason);
+	bool (*get_chg_pmid2out)(struct oplus_voocphy_manager *chip);
 	int (*reset_voocphy_ovp)(struct oplus_voocphy_manager *chip);
 	bool (*check_cp_int_happened)(struct oplus_voocphy_manager *chip, bool *dump_reg, bool *send_info);
 	void (*dual_chan_buck_set_ucp)(struct oplus_voocphy_manager *chip, int ucp_value);

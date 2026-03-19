@@ -578,6 +578,10 @@ void iris_pq_adjust_set(u32 *csc_value)
 	}
 
 	psopt = iris_find_ip_opt(IRIS_IP_CM, 0x40);
+	if (psopt == NULL) {
+		IRIS_LOGE("%s(), Can't find ip[%#x]", __func__, IRIS_IP_CM);
+		return;
+	}
 
 	data = (uint32_t *)psopt->cmd[0].msg.tx_buf;
 	val = csc_value[0];
@@ -1099,7 +1103,7 @@ static int iris_lce_gamm1k_set(
 		+ pqlt_cur_setting->pq_setting.lcelevel;
 	payload = iris_get_ipopt_payload_data(IRIS_IP_LCE, level, 5);
 
-	if (pqlt_cur_setting->pq_setting.alenable == true) {
+	if (payload && (pqlt_cur_setting->pq_setting.alenable == true)) {
 		if (pqlt_cur_setting->luxvalue > 20000)
 			pqlt_cur_setting->luxvalue = 20000;
 
@@ -1163,14 +1167,16 @@ static int iris_lce_gamm1k_restore(
 		+ pqlt_cur_setting->pq_setting.lcelevel;
 	payload = iris_get_ipopt_payload_data(IRIS_IP_LCE, level, 5);
 
-	regval.ip = IRIS_IP_LCE;
-	regval.opt_id = 0xfd;
-	regval.mask = 0xffffffff;
-	regval.value = *payload;
-	iris_update_bitmask_regval_nonread(&regval, false);
-	len = iris_init_update_ipopt_t(
-			popt, IP_OPT_MAX, IRIS_IP_LCE,
-			0xfd, 0xfd, skip_last);
+	if (payload) {
+		regval.ip = IRIS_IP_LCE;
+		regval.opt_id = 0xfd;
+		regval.mask = 0xffffffff;
+		regval.value = *payload;
+		iris_update_bitmask_regval_nonread(&regval, false);
+		len = iris_init_update_ipopt_t(
+				popt, IP_OPT_MAX, IRIS_IP_LCE,
+				0xfd, 0xfd, skip_last);
+	}
 
 	IRIS_LOGI("%s, len = %d", __func__, len);
 	return len;
@@ -1518,14 +1524,17 @@ void iris_ambient_light_lut_set(uint32_t lut_offset)
 
 			if (!(iris_sdr2hdr_lut2ctl & 0xFFE00000)) {
 				payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 2), 83);
-				iris_sdr2hdr_lut2ctl = payload[0];
-				iris_sdr2hdr_lut2ctl = ((lut_offset<<19) | (0x17FFFF & iris_sdr2hdr_lut2ctl));
-				iris_set_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 2), 83, iris_sdr2hdr_lut2ctl);
+				if (payload) {
+					iris_sdr2hdr_lut2ctl = payload[0];
+					iris_sdr2hdr_lut2ctl = ((lut_offset<<19) | (0x17FFFF & iris_sdr2hdr_lut2ctl));
+					iris_set_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 2), 83, iris_sdr2hdr_lut2ctl);
+				}
 			}
 
 			if (!(iris_sdr2hdr_lutyctl & 0xFFFF0000)) {
 				payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 2), 23);
-				iris_sdr2hdr_lutyctl = payload[0];
+				if (payload)
+					iris_sdr2hdr_lutyctl = payload[0];
 			}
 
 			iris_update_ip_opt(popt, IP_OPT_MAX, IRIS_IP_SDR2HDR,
@@ -1539,13 +1548,16 @@ void iris_ambient_light_lut_set(uint32_t lut_offset)
 
 			if (!(iris_sdr2hdr_lut2ctl & 0xFFE00000)) {
 				payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 5), 83);
-				iris_sdr2hdr_lut2ctl = payload[0];
-				iris_sdr2hdr_lut2ctl = ((lut_offset<<19) | (0x17FFFF & iris_sdr2hdr_lut2ctl));
-				iris_set_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 5), 83, iris_sdr2hdr_lut2ctl);
+				if (payload) {
+					iris_sdr2hdr_lut2ctl = payload[0];
+					iris_sdr2hdr_lut2ctl = ((lut_offset<<19) | (0x17FFFF & iris_sdr2hdr_lut2ctl));
+					iris_set_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 5), 83, iris_sdr2hdr_lut2ctl);
+				}
 			}
 			if (!(iris_sdr2hdr_lutyctl & 0xFFFF0000)) {
 				payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, (AL_SDR2HDR_INDEX_OFFSET + 5), 23);
-				iris_sdr2hdr_lutyctl = payload[0];
+				if (payload)
+					iris_sdr2hdr_lutyctl = payload[0];
 			}
 			iris_update_ip_opt(popt, IP_OPT_MAX, IRIS_IP_SDR2HDR,
 					(AL_SDR2HDR_INDEX_OFFSET + 5), 0x01);
@@ -1563,11 +1575,13 @@ void iris_ambient_light_lut_set(uint32_t lut_offset)
 
 		if (!(iris_sdr2hdr_lut2ctl&0xFFE00000)) {
 			payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, pqlt_cur_setting->pq_setting.sdr2hdr, 83);
-			iris_sdr2hdr_lut2ctl = payload[0];
+			if (payload)
+				iris_sdr2hdr_lut2ctl = payload[0];
 		}
 		if (!(iris_sdr2hdr_lutyctl&0xFFFF0000)) {
 			payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, pqlt_cur_setting->pq_setting.sdr2hdr, 23);
-			iris_sdr2hdr_lutyctl = payload[0];
+			if (payload)
+				iris_sdr2hdr_lutyctl = payload[0];
 		}
 
 		if (pqlt_cur_setting->pq_setting.sdr2hdr >= HDR10In_ICtCp && pqlt_cur_setting->pq_setting.sdr2hdr <= ICtCpIn_YCbCr) {
@@ -1819,13 +1833,15 @@ void iris_sdr2hdr_level_set(u32 level)
 			pwil_csc, 0x01);
 
 	payload = iris_get_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 2);
-	IRIS_LOGI("pwil ctrl1 %x", payload[0]);
-	pwil_datapath = (payload[2] & (~0x4018000)) | pwil_datapath;  //CSC_MODE 18000  POST_PQ_PROCESS_EN 4000000
-	pwil_datapath1 = (payload[3] & (~0x8020)) | pwil_datapath1;   //UNPACK_BYPASS_EN
-	pwil_ctrl1 = (payload[1] & (~0x40)) | (iris_yuv_datapath ? 0x40 : 0x00);
-	iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 3, pwil_ctrl1);
-	iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 4, pwil_datapath);
-	iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 5, pwil_datapath1);
+	if (payload) {
+		IRIS_LOGI("pwil ctrl1 %x", payload[0]);
+		pwil_datapath = (payload[2] & (~0x4018000)) | pwil_datapath;  //CSC_MODE 18000  POST_PQ_PROCESS_EN 4000000
+		pwil_datapath1 = (payload[3] & (~0x8020)) | pwil_datapath1;   //UNPACK_BYPASS_EN
+		pwil_ctrl1 = (payload[1] & (~0x40)) | (iris_yuv_datapath ? 0x40 : 0x00);
+		iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 3, pwil_ctrl1);
+		iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 4, pwil_datapath);
+		iris_set_ipopt_payload_data(IRIS_IP_PWIL, 0xF1, 5, pwil_datapath1);
+	}
 	iris_update_ip_opt(popt, IP_OPT_MAX, IRIS_IP_PWIL,
 			0xF1, 0x01);
 
@@ -1834,11 +1850,13 @@ void iris_sdr2hdr_level_set(u32 level)
 
 	if (!(iris_sdr2hdr_lut2ctl & 0xFFE00000)) {
 		payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, level, 83);
-		iris_sdr2hdr_lut2ctl = payload[0];
+		if (payload)
+			iris_sdr2hdr_lut2ctl = payload[0];
 	}
 	if (!(iris_sdr2hdr_lutyctl & 0xFFFF0000)) {
 		payload = iris_get_ipopt_payload_data(IRIS_IP_SDR2HDR, level, 23);
-		iris_sdr2hdr_lutyctl = payload[0];
+		if (payload)
+			iris_sdr2hdr_lutyctl = payload[0];
 	}
 
 	if (!pcfg->dual_setting)
@@ -3054,7 +3072,6 @@ void iris_brightness_level_set(u32 *value)
 	struct iris_update_ipopt popt[IP_OPT_MAX];
 	bool is_ulps_enable = 0;
 	uint8_t path = iris_pq_update_path;
-	struct iris_cfg *pcfg = NULL;
 
 	iris_init_ipopt_ip(popt,  IP_OPT_MAX);
 	len = iris_capture_disable_pq(popt, &skiplast);
@@ -3064,11 +3081,6 @@ void iris_brightness_level_set(u32 *value)
 	is_ulps_enable = iris_disable_ulps(path);
 	iris_update_pq_opt(popt, len, path);
 	iris_enable_ulps(path, is_ulps_enable);
-
-	if (pcfg && pcfg->osd_enable && pcfg->dynamic_vfr && pcfg->display->panel->is_secondary){
-		IRIS_LOGV("clean video_update_wo_osd when update brightness in dual frc mode");
-		iris_dynamic_vfr(pcfg,pcfg->display);
-	}
 }
 
 int32_t iris_parse_color_temp_range(struct device_node *np, struct iris_cfg *pcfg)

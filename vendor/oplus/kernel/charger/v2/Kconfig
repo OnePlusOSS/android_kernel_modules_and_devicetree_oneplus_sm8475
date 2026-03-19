@@ -345,6 +345,11 @@ config OPLUS_SEC_IC_SC5891
         help
           Say Y here to declare encryption ic sc5891 support
 
+config OPLUS_DUAL_CELLS_PROTECTION
+	bool "enable dual cells protection support"
+	help
+	  Say Y here to declare dual cells protection support
+
 endif #OPLUS_CHG_VOOCPHY
 
 config OPLUS_LIQUID_DETECTION

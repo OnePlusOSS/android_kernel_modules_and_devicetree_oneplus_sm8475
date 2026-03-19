@@ -73,7 +73,7 @@ void iris_ocp_write_val(u32 address, u32 value)
 		{{0, MIPI_DSI_GENERIC_LONG_WRITE, 0, 0, 0,
 			 CMD_PKT_SIZE, ocp_cmd.cmd, 0, NULL},
 		1, 0} };
-	struct dsi_cmd_desc iris_ocp_cmd[1];
+	struct dsi_cmd_desc iris_ocp_cmd[1] = {0};
 
 	remap_to_qcom_style(iris_ocp_cmd, iris_ocp_cmd_pxlw, 1);
 
@@ -96,7 +96,7 @@ void iris_ocp_write_vals(u32 header, u32 address, u32 size, u32 *pvalues, enum d
 		{{0, MIPI_DSI_GENERIC_LONG_WRITE, 0, 0, 0,
 			 CMD_PKT_SIZE, ocp_cmd.cmd, 0, NULL},
 		1, 0} };
-	struct dsi_cmd_desc iris_ocp_cmd[1];
+	struct dsi_cmd_desc iris_ocp_cmd[1] = {0};
 
 	u32 max_size = CMD_PKT_SIZE / 4 - 2;
 	u32 i;
@@ -201,7 +201,7 @@ static void _iris_ocp_write_addr(u32 address, u32 mode)
 		{{0, MIPI_DSI_GENERIC_LONG_WRITE, 0, 0, 0,
 			 CMD_PKT_SIZE, ocp_cmd.cmd, 0, NULL},
 		1, 0} };
-	struct dsi_cmd_desc iris_ocp_cmd[1];
+	struct dsi_cmd_desc iris_ocp_cmd[1] = {0};
 
 	remap_to_qcom_style(iris_ocp_cmd, iris_ocp_cmd_pxlw, 1);
 

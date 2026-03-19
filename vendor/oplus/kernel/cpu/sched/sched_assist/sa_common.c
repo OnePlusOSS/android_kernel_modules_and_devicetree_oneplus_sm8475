@@ -467,6 +467,7 @@ void oplus_set_ux_state_lock(struct task_struct *t, int ux_state, bool need_lock
 	if (need_lock_rq)
 		task_rq_unlock(rq, t, &flags);
 }
+EXPORT_SYMBOL(oplus_set_ux_state_lock);
 
 noinline int tracing_mark_write(const char *buf)
 {

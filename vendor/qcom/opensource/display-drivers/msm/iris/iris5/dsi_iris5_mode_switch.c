@@ -1881,8 +1881,10 @@ void iris_debug_mode_switch_set(int type, int value)
 		break;
 	case IRIS_DEBUG_TRACE_EN:
 		iris_debug_trace_en = value;
+		break;
 	case IRIS_DEBUG_CHECK_PWIL:
 		iris_check_pwil_intstat = value;
+		break;
 	default:
 		break;
 	}

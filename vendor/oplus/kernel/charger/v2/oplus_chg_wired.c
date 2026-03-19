@@ -133,6 +133,7 @@ struct oplus_chg_wired {
 	struct delayed_work retention_disconnect_work;
 	struct delayed_work switch_end_recheck_work;
 	struct delayed_work pd_config_work;
+	struct delayed_work source_pdo_work;
 	struct delayed_work qc_config_work;
 	struct delayed_work pd_boost_icl_disable_work;
 	struct delayed_work common_power_check_recover_work;
@@ -182,6 +183,7 @@ struct oplus_chg_wired {
 	bool pdqc12v_support;
 	bool charging_disable;
 
+	int pdo_volt;
 	int chg_type;
 	int vbus_set_mv;
 	int vbus_mv;
@@ -525,8 +527,14 @@ static int oplus_wired_current_set(struct oplus_chg_wired *chip,
 	case OPLUS_CHG_USB_TYPE_ACA:
 	case OPLUS_CHG_USB_TYPE_C:
 	case OPLUS_CHG_USB_TYPE_APPLE_BRICK_ID:
-	case OPLUS_CHG_USB_TYPE_PD_SDP:
 		chip->chg_mode = OPLUS_WIRED_CHG_MODE_DCP;
+		break;
+	case OPLUS_CHG_USB_TYPE_PD_SDP:
+		if (chip->pdo_volt > 0)
+			chip->chg_mode = (chip->vbus_status == VBUS_STS_12V_RDY) ?
+			OPLUS_WIRED_CHG_MODE_PD12V : OPLUS_WIRED_CHG_MODE_PD;
+		else
+			chip->chg_mode = OPLUS_WIRED_CHG_MODE_DCP;
 		break;
 	case OPLUS_CHG_USB_TYPE_QC2:
 	case OPLUS_CHG_USB_TYPE_QC3:
@@ -1164,7 +1172,8 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 		goto set_curr;
 	}
 
-	if (chip->cpa_support) {
+
+	if (chip->cpa_support && chip->chg_type != OPLUS_CHG_USB_TYPE_PD_SDP) {
 		oplus_mms_get_item_data(chip->cpa_topic, CPA_ITEM_ALLOW, &data, false);
 		if (data.intval != CHG_PROTOCOL_PD) {
 			chg_err("switched to other protocol, not change vbus.");
@@ -1486,6 +1495,21 @@ static void oplus_wired_subscribe_gauge_topic(struct oplus_mms *topic,
 	chg_info("hmac=%d, authenticate=%d\n", chip->hmac, chip->authenticate);
 }
 
+static void oplus_wired_source_pdo_work(struct work_struct *work)
+{
+	struct oplus_chg_wired *chip =
+		container_of(work, struct oplus_chg_wired, source_pdo_work.work);
+
+	chg_info("source_pdo_work:pdo_volt:%d, chg_type:%d\n", chip->pdo_volt, chip->chg_type);
+	if (chip->pdo_volt == OPLUS_CHG_VBUS_9V && chip->chg_type == OPLUS_CHG_USB_TYPE_PD_SDP) {
+		chip->chg_mode = OPLUS_WIRED_CHG_MODE_PD;
+		chip->pd_action = OPLUS_ACTION_BOOST;
+		schedule_delayed_work(&chip->pd_config_work, 0);
+		chg_info("requese 9v");
+		chg_info("schedule pd_config_work:pd_action:%d\n", chip->pd_action);
+	}
+}
+
 static void oplus_wired_wired_subs_callback(struct mms_subscribe *subs,
 					    enum mms_msg_type type, u32 id, bool sync)
 {
@@ -1544,6 +1568,11 @@ static void oplus_wired_wired_subs_callback(struct mms_subscribe *subs,
 			oplus_mms_get_item_data(chip->wired_topic, id, &data, false);
 			chip->charging_disable = !!data.intval;
 			schedule_work(&chip->chg_status_buckboost_work);
+			break;
+		case WIRED_ITEM_SOURCE_PDO_VOLT:
+			oplus_mms_get_item_data(chip->wired_topic, id, &data, false);
+			chip->pdo_volt = data.intval;
+			schedule_delayed_work(&chip->source_pdo_work, 0);
 			break;
 		default:
 			break;
@@ -1772,6 +1801,18 @@ static void oplus_wired_chg_type_change_work(struct work_struct *work)
 			OPLUS_WIRED_CHG_MODE_PD12V : OPLUS_WIRED_CHG_MODE_PD;
 		chip->pd_action = OPLUS_ACTION_BOOST;
 		schedule_delayed_work(&chip->pd_config_work, 0);
+		break;
+	case OPLUS_CHG_USB_TYPE_PD_SDP:
+		if (chip->pdo_volt > 0) {
+			chip->chg_mode = OPLUS_WIRED_CHG_MODE_PD;
+			if (chip->pdo_volt == OPLUS_CHG_VBUS_9V)
+				chip->pd_action = OPLUS_ACTION_BOOST;
+			else
+				chip->pd_action = OPLUS_ACTION_BUCK;
+			schedule_delayed_work(&chip->pd_config_work, 0);
+			chg_info("chg_mode:%d\n", chip->chg_mode);
+			chg_info("schedule pd_config_work:pd_action:%d\n", chip->pd_action);
+		}
 		break;
 	default:
 		oplus_wired_current_set(chip, false);
@@ -2900,6 +2941,7 @@ static void oplus_wired_shutdown(struct platform_device *pdev)
 	case OPLUS_CHG_USB_TYPE_PD:
 	case OPLUS_CHG_USB_TYPE_PD_DRP:
 	case OPLUS_CHG_USB_TYPE_PD_PPS:
+	case OPLUS_CHG_USB_TYPE_PD_SDP:
 		if (chip->chg_mode == OPLUS_WIRED_CHG_MODE_PD ||
 		    chip->chg_mode == OPLUS_WIRED_CHG_MODE_PD12V) {
 			oplus_wired_set_pd_config(OPLUS_PD_5V_PDO);
@@ -2963,6 +3005,7 @@ static int oplus_wired_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&chip->pd_boost_icl_disable_work, oplus_wired_pd_boost_icl_disable_work);
 	INIT_DELAYED_WORK(&chip->qc_config_work, oplus_wired_qc_config_work);
 	INIT_DELAYED_WORK(&chip->pd_config_work, oplus_wired_pd_config_work);
+	INIT_DELAYED_WORK(&chip->source_pdo_work, oplus_wired_source_pdo_work);
 	INIT_DELAYED_WORK(&chip->retention_disconnect_work,
 		  oplus_pdqc_retention_disconnect_work);
 	INIT_DELAYED_WORK(&chip->common_power_check_recover_work, oplus_common_power_check_recover_work);

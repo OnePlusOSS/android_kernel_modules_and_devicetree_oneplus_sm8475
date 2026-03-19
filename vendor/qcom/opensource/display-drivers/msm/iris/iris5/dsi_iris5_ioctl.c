@@ -97,7 +97,17 @@ static int mdss_mipi_dsi_command(void __user *values)
 		}
 
 		cmd_cnt = *((u8 *)desc.msg.tx_buf);
+		cmd_cnt = cmd_cnt & 0xFF;
+		if (cmd_cnt == 0 ) {
+			ret = -EINVAL;
+			goto err;
+		}
 		pdesc_multi = vmalloc(sizeof(struct dsi_cmd_desc) * cmd_cnt);
+		if (!pdesc_multi) {
+			ret = -ENOMEM;
+			goto err;
+		}
+		memset(pdesc_multi, 0x00, sizeof(struct dsi_cmd_desc) * cmd_cnt);
 		pcmd_indx = (char *)desc.msg.tx_buf + cmd_cnt + 1;
 		for (indx = 0; indx < cmd_cnt; indx++) {
 			pdesc = pdesc_multi + indx;
@@ -244,6 +254,8 @@ static bool iris_special_config(u32 type)
 	case IRIS_FW_UPDATE:
 	case IRIS_DEBUG_SET:
 		return true;
+	default:
+		break;
 	}
 
 	return false;
@@ -758,6 +770,8 @@ int iris_configure(u32 display, u32 type, u32 value)
 	case IRIS_SET_METADATA:
 		/* don't lock panel_lock */
 		return _iris_configure(display, type, value);
+	default:
+		break;
 	}
 
 	if (IRIS_IF_LOGI())
@@ -786,6 +800,7 @@ int iris_configure_t(uint32_t display, u32 type, void __user *argp)
 		IRIS_LOGE("can not copy from user");
 		return -EPERM;
 	}
+	value = value & 0xFFFFFFFF;
 
 	ret = iris_configure(display, type, value);
 	return ret;
@@ -968,7 +983,7 @@ static int _iris_configure_ex(u32 display, u32 type, u32 count, u32 *values)
 
 			memset(dump_buf,  0, sizeof(dump_buf));
 			len = 0;
-			for (j = 0; j < dump_reg_cnt; j++)
+			//for (j = 0; j < dump_reg_cnt; j++)
 				len += snprintf(dump_buf+len, DUMP_REG_BUF_SIZE,
 					", addr = 0x%08x, value = 0x%08x",
 					dump_reg_addr[j], dump_reg_val[j]);
@@ -1075,6 +1090,8 @@ int iris_configure_ex(u32 display, u32 type, u32 count, u32 *values)
 	case IRIS_DEBUG_SET:
 		/* don't lock panel_lock */
 		return _iris_configure_ex(display, type, count, values);
+	default:
+		break;
 	}
 
 	mutex_lock(&pcfg->panel->panel_lock);
@@ -1088,6 +1105,7 @@ static int iris_configure_ex_t(uint32_t display, uint32_t type,
 {
 	int ret = -1;
 	uint32_t *val = NULL;
+	uint32_t i = 0;
 
 	val = vmalloc(sizeof(uint32_t) * count);
 	if (!val) {
@@ -1100,6 +1118,10 @@ static int iris_configure_ex_t(uint32_t display, uint32_t type,
 		vfree(val);
 		return -EPERM;
 	}
+
+	for (i = 0; i < count; i++)
+		val[i] = val[i] & 0xFFFFFFFF;
+
 	ret = iris_configure_ex(display, type, count, val);
 	vfree(val);
 	return ret;
@@ -1142,6 +1164,7 @@ int iris_configure_get(u32 display, u32 type, u32 count, u32 *values)
 		break;
 	case IRIS_LCE_GAIN:
 		*values = pqlt_cur_setting->lce_gain_reset;
+		break;
 	case IRIS_GRAPHIC_DET_ENABLE:
 		*values = pqlt_cur_setting->pq_setting.graphicdet;
 		break;

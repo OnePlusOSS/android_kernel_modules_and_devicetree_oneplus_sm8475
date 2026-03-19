@@ -48,6 +48,17 @@ static DEFINE_MUTEX(fw_attach_cmd_lock);
 static DEFINE_SPINLOCK(fw_status_lock);
 static u16 gamma_apl_status;
 
+u16 iris_get_fw_calibrated_status(void)
+{
+	u16 status = 0;
+
+	spin_lock(&fw_status_lock);
+	status = fw_calibrated_status;
+	spin_unlock(&fw_status_lock);
+
+	return	status;
+}
+
 u8 iris_get_fw_load_status(void)
 {
 	u8 status = 0;
@@ -1108,8 +1119,8 @@ int iris_dbgfs_fw_calibrate_status_init(void)
 		}
 	}
 
-	debugfs_create_u16("fw_calibrated_status", 0644, pcfg->dbg_root,
-			&fw_calibrated_status);
+	//debugfs_create_u16("fw_calibrated_status", 0644, pcfg->dbg_root,
+	//		&fw_calibrated_status);
 
 	return 0;
 }

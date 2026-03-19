@@ -128,7 +128,7 @@ void iris_send_one_wired_cmd(IRIS_ONE_WIRE_TYPE type)
 	struct iris_cfg *pcfg = iris_get_cfg();
 	int one_wired_gpio = pcfg->iris_wakeup_gpio;
 	const int pulse_count[IRIS_ONE_WIRE_CMD_CNT] = {
-		1, 2, 3, 4, 5, 6, 7, 8, 9,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 	};
 
 	if (!gpio_is_valid(one_wired_gpio)) {

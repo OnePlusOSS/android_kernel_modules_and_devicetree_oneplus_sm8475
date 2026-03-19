@@ -686,20 +686,6 @@ void android_vh_binder_restore_priority_handler(void *unused,
 		}
 	}
 #endif
-
-	if (!is_task_servicemg(task)) {
-		return;
-	}
-
-	if (t) {
-		trace_binder_ux_task(1, INVALID_VALUE, INVALID_VALUE, task,
-			INVALID_VALUE, t, NULL, "sync_ux unset binder_reply");
-		binder_unset_inherit_ux(task, SYNC_UNSET, t, NULL);
-	} else {
-		trace_binder_ux_task(1, INVALID_VALUE, INVALID_VALUE, task,
-			INVALID_VALUE, t, NULL, "sync_ux unset restore_prio t NULL");
-		binder_unset_inherit_ux(task, SYNC_OR_ASYNC_UNSET, t, NULL);
-	}
 }
 
 void android_vh_binder_wait_for_work_handler(void *unused,
@@ -1180,12 +1166,6 @@ static bool sync_mode_check_ux(struct binder_proc *proc,
 		return false;
 	}
 
-	if (is_task_servicemg(binder_proc_task)) {
-		binder_set_inherit_ux(binder_proc_task, current, sync, true, t, proc);
-		trace_binder_proc_thread(binder_proc_task, binder_th_task, sync, INVALID_VALUE, t, proc,
-			"sync_ux set servicemg");
-	}
-
 	if (!binder_th_task)
 		return false;
 
@@ -1600,6 +1580,33 @@ static void android_vh_binder_set_priority_handler(void *unused,
 		task->pid, task->tgid, task->comm, obs->pending_async, obs->async_ux_no_thread);
 }
 
+static int set_servicemg_static_ux(struct binder_transaction *t,
+	struct binder_proc *proc, bool sync)
+{
+	struct task_struct *task = NULL;
+	int ux_type = 0;
+
+	if (!proc || !proc->tsk || !sync)
+		return TASK_NOT_SERVICEMG;
+
+	task = proc->tsk;
+	if (!is_task_servicemg(task)) {
+		return TASK_NOT_SERVICEMG;
+	}
+
+	ux_type = get_ux_state_type(task);
+	if (ux_type != UX_STATE_NONE) {
+		binder_ux_state_systrace(current, task, STATE_SERVICEMG_WAS_UX,
+				LOG_BINDER_SYSTRACE_LVL1, t, proc);
+		return SERVICEMG_WAS_UX;
+	}
+	binder_ux_state_systrace(current, task, STATE_SET_SERVICEMG_UX,
+			LOG_BINDER_SYSTRACE_LVL0, t, proc);
+	oplus_set_ux_state_lock(task, SA_TYPE_LIGHT, true);
+
+	return SET_SERVICEMG_UX;
+}
+
 static void android_vh_binder_proc_transaction_finish_handler(void *unused, struct binder_proc *proc,
 		struct binder_transaction *t, struct task_struct *binder_th_task, bool pending_async, bool sync)
 {
@@ -1619,6 +1626,10 @@ static void android_vh_binder_proc_transaction_finish_handler(void *unused, stru
 	}
 
 	set_binder_thread_node(t, binder_th_task, NULL, sync, false);
+
+	if (set_servicemg_static_ux(t, proc, sync) != TASK_NOT_SERVICEMG) {
+		return;
+	}
 
 	if (sync) {
 		set_ux = sync_mode_check_ux(proc, t, binder_th_task, sync);

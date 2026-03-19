@@ -27,6 +27,7 @@
 #include "dsi_iris_cmpt.h"
 
 #define IRIS_OCP_HEADER_ADDR_LEN  8
+#define IRIS_DEBUG_BUF_SIZE      64
 
 #define to_dsi_display(x) container_of(x, struct dsi_display, host)
 
@@ -1468,12 +1469,14 @@ static void _iris_add_cmd_seq(struct iris_ctrl_opt *ctrl_opt,
 static int32_t _iris_alloc_cmd_seq(
 		struct iris_ctrl_seq  *pctrl_seq, int32_t seq_cnt)
 {
-	pctrl_seq->ctrl_opt = vmalloc(seq_cnt * sizeof(struct iris_ctrl_seq));
-	if (pctrl_seq->ctrl_opt == NULL) {
-		IRIS_LOGE("can not malloc space for pctrl opt");
-		return -ENOMEM;
+	if (seq_cnt > 0) {
+		pctrl_seq->ctrl_opt = vmalloc(seq_cnt * sizeof(struct iris_ctrl_opt));
+		if (pctrl_seq->ctrl_opt == NULL) {
+			IRIS_LOGE("can not malloc space for pctrl opt");
+			return -ENOMEM;
+		}
+		pctrl_seq->cnt = seq_cnt;
 	}
-	pctrl_seq->cnt = seq_cnt;
 
 	return 0;
 }
@@ -2503,6 +2506,11 @@ void iris_free_ipopt_buf(uint32_t ip_type)
 	struct dsi_cmd_desc *pdesc_addr = NULL;
 	struct iris_ip_index *pip_index = iris_get_ip_idx(ip_type);
 
+	if (NULL == pip_index) {
+		IRIS_LOGE("%s(), pip_index[type: %#x] buffer is NULL!", __func__, pdesc_addr, ip_type);
+		return;
+	}
+
 	if (ip_type == IRIS_LUT_PIP_IDX)
 		ip_cnt = LUT_IP_END - LUT_IP_START;
 
@@ -2647,7 +2655,7 @@ void _iris_read_power_mode(struct dsi_panel *panel)
 	struct dsi_cmd_desc_pxlw cmds_pxlw = {
 		{0, MIPI_DSI_DCS_READ, MIPI_DSI_MSG_REQ_ACK, 0, 0,
 		sizeof(get_power_mode), get_power_mode, 1, read_cmd_rbuf}, 1, 0};
-	struct dsi_cmd_desc cmds;
+	struct dsi_cmd_desc cmds = {0};
 	struct dsi_panel_cmd_set cmdset = {
 		.state = DSI_CMD_SET_STATE_HS,
 		.count = 1,
@@ -3795,7 +3803,7 @@ static ssize_t _iris_list_debug(struct file *file,
 	uint8_t opt_id;
 	int32_t pos;
 	uint32_t value;
-	char buf[64];
+	char buf[IRIS_DEBUG_BUF_SIZE];
 	uint32_t *payload = NULL;
 
 	if (count > sizeof(buf))
@@ -3806,7 +3814,10 @@ static ssize_t _iris_list_debug(struct file *file,
 	if (copy_from_user(buf, user_buf, count))
 		return -EFAULT;
 
-	buf[count] = 0;	/* end if string */
+	if (count < IRIS_DEBUG_BUF_SIZE)
+		buf[count] = 0;	/* end if string */
+	else
+		buf[IRIS_DEBUG_BUF_SIZE - 1] = 0;
 
 	if (sscanf(buf, "%x %x %x %x", &ip, &opt_id, &pos, &value) != 4)
 		return -EINVAL;
@@ -3837,7 +3848,7 @@ static ssize_t _iris_dump_cmd_payload(struct file *file,
 	uint8_t ip;
 	uint8_t opt_id;
 	int32_t pos;
-	char buf[64];
+	char buf[IRIS_DEBUG_BUF_SIZE];
 	uint32_t *payload = NULL;
 
 	if (count > sizeof(buf))
@@ -3848,7 +3859,10 @@ static ssize_t _iris_dump_cmd_payload(struct file *file,
 	if (copy_from_user(buf, user_buf, count))
 		return -EFAULT;
 
-	buf[count] = 0;	/* end if string */
+	if (count < IRIS_DEBUG_BUF_SIZE)
+		buf[count] = 0;	/* end if string */
+	else
+		buf[IRIS_DEBUG_BUF_SIZE - 1] = 0;
 
 	if (sscanf(buf, "%x %x %d", &ip, &opt_id, &pos) != 3)
 		return -EINVAL;

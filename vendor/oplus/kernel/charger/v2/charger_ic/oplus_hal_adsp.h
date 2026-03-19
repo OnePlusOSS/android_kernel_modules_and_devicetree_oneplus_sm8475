@@ -28,6 +28,7 @@
 #include <linux/regmap.h>
 #include <oplus_chg_ic.h>
 #include <oplus_chg_pps.h>
+#include <oplus_reverse_chg.h>
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
 #include <oplus_mms_gauge.h>
@@ -43,12 +44,14 @@
 #define AP_OPCODE_UFCS_BUFFER     0x10005
 #define AP_OPCODE_READ_BUFFER     0x10006
 #define AP_OPCODE_WRITE_BUFFER    0x10008
+#define OPLUS_OPCODE_GET_SINK_RDO 0x10009
 #define OEM_READ_WAIT_TIME_MS    500
 #define MAX_OEM_PROPERTY_DATA_SIZE 128
 #define AP_READ_WAIT_TIME_MS      1000
 #define MAX_AP_PROPERTY_DATA_SIZE 512
 #define AP_UFCS_WAIT_TIME_MS      500
 #define MAX_UFCS_CAPS_ITEM        16
+#define MAX_REVERSE_CHG_MSG_ITEM  16
 #endif
 
 #define MSG_OWNER_BC			32778
@@ -375,6 +378,10 @@ enum usb_property_id {
 	USB_SET_AICL_VOL,
 	USB_GET_AICL_VOL,
 	USB_SET_PLC_STATUS,
+	USB_GET_POWER_ROLE,
+	USB_REVERSE_CHG_SET_VOLT,
+	USB_REVERSE_CHG_SET_CURRENT,
+	USB_RVS_HIGH_MODE_EN,
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 	USB_PROP_MAX,
 };
@@ -544,6 +551,17 @@ struct battery_charger_ship_mode_req_msg {
 	u32			ship_mode_type;
 };
 
+enum reserve_chg_msg_id {
+	RESERVED_CHG_MSG_GET_SINK_PDO,
+	RESERVED_CHG_MSG_ID_MAX,
+};
+struct reverse_chg_msg {
+	struct pmic_glink_hdr	hdr;
+	u32 data_buffer[MAX_REVERSE_CHG_MSG_ITEM];
+	u32 data_size;
+	u32 msg_id;
+};
+
 #ifdef OPLUS_FEATURE_CHG_BASIC
 #define ADAPTER_VERIFY_AUTH_DATA_SIZE 16
 struct adapter_verify_req_msg {
@@ -655,6 +673,7 @@ struct battery_chg_dev {
 	struct oplus_chg_ic_dev		*cp_ic;
 	struct oplus_chg_ic_dev		*misc_ic;
 	struct oplus_chg_ic_dev		*pps_ic;
+	struct oplus_chg_ic_dev *reverse_chg_ic_dev;
 	struct oplus_mms		*vooc_topic;
 	struct oplus_mms		*cpa_topic;
 	struct oplus_chg_ic_dev		*ufcs_ic;
@@ -692,6 +711,16 @@ struct battery_chg_dev {
 	int				pd_chg_volt;
 	struct work_struct		subsys_up_work;
 	struct work_struct		usb_type_work;
+
+	/* reverse charger	*/
+	bool 				reverse_enable;
+	bool				high_reverse_enable;
+	int				power_role;
+	int				sink_req_volt;
+	int				sink_req_curr;
+	enum reverse_chg_msg_type		rvs_msg_type;
+
+
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	int ccdetect_irq;
 	struct work_struct	plc_status_update_work;
@@ -721,6 +750,10 @@ struct battery_chg_dev {
 	struct delayed_work	release_qos_work;
 	struct work_struct	wired_otg_enable_work;
 	struct delayed_work	update_common_charge_flag_work;
+	struct delayed_work	check_abnormal_usbin_status_work;
+	int			abnormal_usbin_count;
+	struct delayed_work	reverse_chg_svid_check_work;
+	struct delayed_work	source_pdo_check_work;
 	bool			qos_status;
 	u32			oem_misc_ctl_data;
 	bool			oem_usb_online;
@@ -812,6 +845,9 @@ struct battery_chg_dev {
 	struct oplus_ap_read_ufcs_resp_msg  ufcs_read_buffer_dump;
 	struct mutex	ufcs_read_buffer_lock;
 	struct completion	 ufcs_read_ack;
+	struct reverse_chg_msg  rvs_chg_msg_t;
+	struct completion	 rvs_chg_msg_ack;
+	struct mutex	rvs_chg_msg_lock;
 
 	bool calib_info_init;
 	bool real_mvolts_min_support;

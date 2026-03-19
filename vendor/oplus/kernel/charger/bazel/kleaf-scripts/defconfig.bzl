@@ -2,7 +2,7 @@ load("//build/kernel/oplus:oplus_modules_define.bzl", "define_oplus_ddk_module",
     "oplus_ddk_get_kernel_version", "oplus_ddk_get_target", "oplus_ddk_get_variant", "bazel_support_platform")
 
 load(":kleaf-scripts/defconfig_fragment.bzl", "define_defconfig_fragment")
-load(":defconfig/config_define.bzl", "oplus_config")
+#load(":defconfig/config_define.bzl", "oplus_config")
 
 
 def oplus_modules_get_qcom_config(pre_target, config_data):

@@ -80,6 +80,8 @@ void iris_set_default_work_mode(int mode)
 		if (mode > ABP_SLEEP_MODE)
 			mode = ABP_SLEEP_MODE;
 		break;
+	default:
+		break;
 	}
 
 	pcfg->abypss_ctrl.default_abyp_mode = mode;
@@ -2184,7 +2186,7 @@ static ssize_t _iris_esd_dbg_write(struct file *file,
 	if (!mutex_trylock(&pcfg->panel->panel_lock))
 		return -EFAULT;
 
-	if (val >= 0 && val < 32) {
+	if (val < 32) {
 		pcfg->lp_ctrl.esd_ctrl = val;
 	} else if (val > 40 && val < 44) {
 		pcfg->lp_ctrl.esd_trigger = val - 40;

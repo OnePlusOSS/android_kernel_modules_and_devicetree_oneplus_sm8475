@@ -1260,6 +1260,10 @@ static int oplus_chg_vb_exit(struct oplus_chg_ic_dev *ic_dev)
 			oplus_chg_ic_virq_release(chip->child_list[i].ic_dev,
 						  OPLUS_IC_VIRQ_PLUGIN, chip);
 		}
+		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_POWER_ROLE_STATUS)) {
+			oplus_chg_ic_virq_release(chip->child_list[i].ic_dev,
+						  OPLUS_IC_VIRQ_POWER_ROLE_STATUS, chip);
+		}
 		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_CC_CHANGED)) {
 			oplus_chg_ic_virq_release(chip->child_list[i].ic_dev,
 						  OPLUS_IC_VIRQ_CC_CHANGED, chip);
@@ -3052,6 +3056,38 @@ static int oplus_chg_vb_get_typec_role(struct oplus_chg_ic_dev *ic_dev,
 	return rc;
 }
 
+static int oplus_chg_vb_get_power_role(struct oplus_chg_ic_dev *ic_dev,
+				       int  *power_role)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = -ENOTSUPP;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_GET_POWER_ROLE)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_BUCK_GET_POWER_ROLE,
+				       power_role);
+		if (rc < 0) {
+			if (rc != -ENOTSUPP)
+				chg_err("child ic[%d] get power role error, rc=%d\n", i, rc);
+			continue;
+		}
+		return 0;
+	}
+	if (rc == -ENOTSUPP)
+		chg_err("no child ic support get power role function\n");
+	return rc;
+}
+
 
 static int oplus_chg_vb_get_typec_mode(struct oplus_chg_ic_dev *ic_dev,
 				       enum oplus_chg_typec_port_role_type *mode)
@@ -3612,6 +3648,36 @@ static int oplus_chg_vb_get_otg_enable(struct oplus_chg_ic_dev *ic_dev, bool *en
 				       enable);
 		if (rc < 0) {
 			chg_err("child ic[%d] can't get otg enable status, rc=%d\n", i, rc);
+			return rc;
+		}
+		break;
+	}
+
+	return rc;
+}
+
+static int oplus_chg_vb_get_source_pdo(struct oplus_chg_ic_dev *ic_dev, u32 *data, int *num)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_GET_SOURCE_PDO)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(vb->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_GET_SOURCE_PDO,
+				       data, num);
+		if (rc < 0) {
+			chg_err("child ic[%d] can't get pdo volt status, rc=%d\n", i, rc);
 			return rc;
 		}
 		break;
@@ -4785,6 +4851,9 @@ static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 	case OPLUS_IC_FUNC_GET_OTG_ENABLE:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GET_OTG_ENABLE, oplus_chg_vb_get_otg_enable);
 		break;
+	case OPLUS_IC_FUNC_GET_SOURCE_PDO:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GET_SOURCE_PDO, oplus_chg_vb_get_source_pdo);
+		break;
 	case OPLUS_IC_FUNC_GET_CHARGER_VOL_MAX:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GET_CHARGER_VOL_MAX, oplus_chg_vb_get_charger_vol_max);
 		break;
@@ -4886,6 +4955,9 @@ static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 	case OPLUS_IC_FUNC_BUCK_ITEM_CHECK:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_ITEM_CHECK, oplus_chg_vb_iterm_check);
 		break;
+	case OPLUS_IC_FUNC_BUCK_GET_POWER_ROLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_POWER_ROLE, oplus_chg_vb_get_power_role);
+		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
 		func = NULL;
@@ -4918,6 +4990,16 @@ static void oplus_vb_plugin_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_
 		oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_PLUGIN);
 	else
 		chg_info("virtual buck plugin virq_data null\n");
+}
+
+static void oplus_vb_power_role_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_data)
+{
+	struct oplus_virtual_buck_ic *chip = virq_data;
+
+	if (virq_data != NULL)
+		oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_POWER_ROLE_STATUS);
+	else
+		chg_info("virtual buck power role virq_data null\n");
 }
 
 static void oplus_vb_cc_changed_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_data)
@@ -4963,6 +5045,14 @@ static void oplus_vb_otg_enable_handler(struct oplus_chg_ic_dev *ic_dev, void *v
 
 	oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_OTG_ENABLE);
 }
+
+static void oplus_vb_power_changed_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_data)
+{
+	struct oplus_virtual_buck_ic *chip = virq_data;
+
+	oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_POWER_CHANGED);
+}
+
 
 static void oplus_vb_voltage_change_handler(struct oplus_chg_ic_dev *ic_dev, void *virq_data)
 {
@@ -5023,6 +5113,8 @@ struct oplus_chg_ic_virq oplus_vb_virq_table[] = {
 	{ .virq_id = OPLUS_IC_VIRQ_DATA_ROLE_CHANGED },
 	{ .virq_id = OPLUS_IC_VIRQ_TYPEC_STATE},
 	{ .virq_id = OPLUS_IC_VIRQ_PD_COMPLETED},
+	{.virq_id = OPLUS_IC_VIRQ_POWER_ROLE_STATUS},
+	{.virq_id = OPLUS_IC_VIRQ_POWER_CHANGED},
 };
 
 static int oplus_vb_virq_register(struct oplus_virtual_buck_ic *chip)
@@ -5047,6 +5139,12 @@ static int oplus_vb_virq_register(struct oplus_virtual_buck_ic *chip)
 				OPLUS_IC_VIRQ_PLUGIN, oplus_vb_plugin_handler, chip);
 			if (rc < 0)
 				chg_err("register OPLUS_IC_VIRQ_PLUGIN error, rc=%d", rc);
+		}
+		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_POWER_ROLE_STATUS)) {
+			rc = oplus_chg_ic_virq_register(chip->child_list[i].ic_dev,
+				OPLUS_IC_VIRQ_POWER_ROLE_STATUS, oplus_vb_power_role_handler, chip);
+			if (rc < 0)
+				chg_err("register OPLUS_IC_VIRQ_POWER_ROLE_STATUS error, rc=%d", rc);
 		}
 		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_CC_CHANGED)) {
 			rc = oplus_chg_ic_virq_register(chip->child_list[i].ic_dev,
@@ -5077,6 +5175,12 @@ static int oplus_vb_virq_register(struct oplus_virtual_buck_ic *chip)
 				OPLUS_IC_VIRQ_OTG_ENABLE, oplus_vb_otg_enable_handler, chip);
 			if (rc < 0)
 				chg_err("register OPLUS_IC_VIRQ_OTG_ENABLE error, rc=%d", rc);
+		}
+		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_POWER_CHANGED)) {
+			rc = oplus_chg_ic_virq_register(chip->child_list[i].ic_dev,
+				OPLUS_IC_VIRQ_POWER_CHANGED, oplus_vb_power_changed_handler, chip);
+			if (rc < 0)
+				chg_err("register OPLUS_IC_VIRQ_POWER_CHANGED error, rc=%d", rc);
 		}
 		if (virq_is_support(&chip->child_list[i], OPLUS_IC_VIRQ_VOLTAGE_CHANGED)) {
 			rc = oplus_chg_ic_virq_register(chip->child_list[i].ic_dev,

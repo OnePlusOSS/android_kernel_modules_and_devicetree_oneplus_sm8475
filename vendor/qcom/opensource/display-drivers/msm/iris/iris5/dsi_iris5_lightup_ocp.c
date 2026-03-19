@@ -228,7 +228,7 @@ static u32 _iris_ocp_read_value(u32 mode)
 		{{0, MIPI_DSI_GENERIC_READ_REQUEST_1_PARAM, MIPI_DSI_MSG_REQ_ACK,
 			 0, 0, sizeof(pi_read), pi_read, 0, NULL},
 		1, 0} };
-	struct dsi_cmd_desc pi_read_cmd[1];
+	struct dsi_cmd_desc pi_read_cmd[1] = {0};
 	u32 response_value;
 
 	remap_to_qcom_style(pi_read_cmd, pi_read_cmd_pxlw, 1);

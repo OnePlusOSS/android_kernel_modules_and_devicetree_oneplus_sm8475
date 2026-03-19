@@ -32,6 +32,8 @@ enum wired_topic_item {
 	WIRED_ITEM_ICL_DONE_STATUS,
 	WIRED_ITEM_VBUS_VOL_TYPE,
 	WIRED_ITEM_BUCK_EIS_CURRENT_RATE,
+	WIRED_ITEM_POWER_ROLE,
+	WIRED_ITEM_SOURCE_PDO_VOLT,
 };
 
 enum oplus_wired_cc_detect_status {
@@ -149,4 +151,5 @@ int oplus_wired_set_chg_path(struct oplus_mms *topic, int path);
 int oplus_wired_get_chg_path_status(struct oplus_mms *topic);
 int oplus_wired_push_info(struct oplus_mms *topic, const char *err_scene, const char *err_reason);
 int oplus_wired_iterm_check(struct oplus_mms *topic, bool enable);
+int oplus_wired_set_dischg_status(bool dischg_en);
 #endif /* __OPLUS_MMS_WIRED_H__ */

@@ -5093,7 +5093,7 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 
 #if defined(CONFIG_PXLW_IRIS) || defined(CONFIG_PXLW_SOFT_IRIS)
 	if (iris_is_chip_supported() || iris_is_softiris_supported()) {
-		if (sde_enc && sde_enc->cur_master && sde_enc->cur_master->connector && (iris_backlight_update > 0)) {
+		if (sde_enc->cur_master && sde_enc->cur_master->connector && (iris_backlight_update > 0)) {
 			sde_encoder_wait_vblack(sde_enc->cur_master->connector, drm_enc, 1);
 			sde_encoder_pre_kickoff_update_panel_level(sde_enc->cur_master->connector, drm_enc);
 		} else {
@@ -5112,7 +5112,7 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 
 #if defined(CONFIG_PXLW_IRIS) || defined(CONFIG_PXLW_SOFT_IRIS)
 	if (iris_is_chip_supported() || iris_is_softiris_supported()) {
-		if (sde_enc && sde_enc->cur_master && sde_enc->cur_master->connector && (iris_backlight_update > 0)) {
+		if (sde_enc->cur_master && sde_enc->cur_master->connector && (iris_backlight_update > 0)) {
 			sde_encoder_post_kickoff_update_panel_level(
 					sde_enc->cur_master->connector);
 		} else {
