@@ -522,6 +522,13 @@
                         "zh": "BATT_BAL错误"
                     },
                     "str": "BATT_BAL"
+                },
+                {
+                    "lable": "OPLUS_IC_ERR_BURN",
+                    "desc": {
+                        "zh": "IC烧坏"
+                    },
+                    "str": "BURN"
                 }
             ]
         },
@@ -1046,6 +1053,7 @@
         "ic/switch.json",
         "ic/ufcs.json",
         "ic/pps.json",
-        "ic/batt_bal.json"
+        "ic/batt_bal.json",
+        "ic/gauge2.json"
     ]
 }

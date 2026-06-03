@@ -224,6 +224,8 @@
 
 #define TRACK_VALID_UTC_MIN_TIME		946656000
 
+#define TRACK_FCL_INFO_LEN 16
+#define PRE_CHG_BATT_R_LEN 64
 enum oplus_chg_track_voocphy_type {
 	TRACK_NO_VOOCPHY = 0,
 	TRACK_ADSP_VOOCPHY,
@@ -291,6 +293,12 @@ struct oplus_chg_track_app_ref {
 	u8 *alias_name;
 	u8 *real_name;
 	u32 cont_time;
+};
+
+struct oplus_chg_track_fcl {
+	int one_full_trigger_cnt;
+	int n_full_trigger_cnt;
+	unsigned char info[TRACK_FCL_INFO_LEN];
 };
 
 struct oplus_chg_track_app_status{
@@ -779,6 +787,8 @@ struct oplus_chg_track_status {
 	int anti_expansion_rus_status;
 	int anti_expansion_high_risk_of_6hours;
 	int anti_expansion_risk_state_of_21days;
+
+	struct oplus_chg_track_fcl fcl;
 };
 
 struct oplus_chg_track {
@@ -1050,6 +1060,7 @@ static struct flag_reason_table track_flag_reason_table[] = {
 	{ TRACK_NOTIFY_FLAG_I2C_ABNORMAL, "I2cAbnormal" },
 	{ TRACK_NOTIFY_FLAG_BOOST_BUCK_ERR, "BoostICAbnormal" },
 	{ TRACK_NOTIFY_FLAG_NTC_ABNORMAL, "NTCAbnormal" },
+	{ TRACK_NOTIFY_FLAG_IC_BURN, "IcBurn" },
 
 	{ TRACK_NOTIFY_FLAG_UFCS_ABNORMAL, "UfcsAbnormal" },
 	{ TRACK_NOTIFY_FLAG_COOLDOWN_ABNORMAL, "CoolDownAbnormal" },
@@ -1063,7 +1074,7 @@ static struct flag_reason_table track_flag_reason_table[] = {
 	{ TRACK_NOTIFY_FLAG_WIRED_ONLINE_ERROR, "WiredOnlineStatusError" },
 	{ TRACK_NOTIFY_FLAG_UISOC_KEEP_2_ERROR, "UisocKeep2Error" },
 	{ TRACK_NOTIFY_FLAG_BCC_SI_ABNORMAL, "BccSiAbnormal" },
-	{ TRACK_NOTIFY_FLAG_EIS_ABNORMAL, "EisAbnormal" }
+	{ TRACK_NOTIFY_FLAG_EIS_ABNORMAL, "EisAbnormal" },
 };
 #endif
 
@@ -3679,6 +3690,14 @@ oplus_chg_track_record_charger_info(struct oplus_monitor *monitor,
 			monitor->enable_count, monitor->plc_init_sm_soc, monitor->plc_init_ui_soc,
 			monitor->plc_init_temp);
 	}
+
+	if (!track_status->fcl.one_full_trigger_cnt)
+		scnprintf(track_status->fcl.info, TRACK_FCL_INFO_LEN - 1, "%s", "0,0,0");
+	index += scnprintf(&(p_trigger_data->crux_info[index]),
+		OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "$$fcl@@%d,%s,%d",
+		track_status->fcl.one_full_trigger_cnt, track_status->fcl.info, track_status->fcl.n_full_trigger_cnt);
+	memset(&(track_status->fcl), 0, sizeof(track_status->fcl));
+
 	oplus_chg_track_record_general_info(monitor, track_status,
 					    p_trigger_data, index);
 }
@@ -6048,7 +6067,8 @@ oplus_chg_track_wired_fastchg_exit_code(struct oplus_chg_track *track_chip)
 		if (!code || code == TRACK_CP_VOOCPHY_FULL ||
 		    code == TRACK_CP_VOOCPHY_BATT_TEMP_OVER ||
 		    code == TRACK_CP_VOOCPHY_USER_EXIT_FASTCHG ||
-		    code == TRACK_CP_VOOCPHY_SWITCH_TEMP_RANGE)
+		    code == TRACK_CP_VOOCPHY_SWITCH_TEMP_RANGE||
+		    code == TRACK_CP_VOOCPHY_IC_BURN)
 			ret = true;
 		else
 			ret = false;
@@ -7069,6 +7089,10 @@ static int oplus_chg_track_upload_ic_err_info(struct oplus_chg_track *track)
 		track->ic_err_msg_load_trigger.flag_reason =
 			TRACK_NOTIFY_FLAG_NTC_ABNORMAL;
 		break;
+	case OPLUS_IC_ERR_BURN:
+		track->ic_err_msg_load_trigger.flag_reason =
+			TRACK_NOTIFY_FLAG_IC_BURN;
+		break;
 	case OPLUS_IC_ERR_UNKNOWN:
 	default:
 		chg_err("unsupported error type(%d)\n", err_type);
@@ -7894,6 +7918,44 @@ static int oplus_chg_track_upload_plc_info(struct oplus_chg_track *chip)
 	return 0;
 }
 
+static int oplus_chg_track_upload_fcl_info(struct oplus_chg_track *chip)
+{
+	union mms_msg_data data = { 0 };
+	int rc = 0;
+	char *str;
+
+	if (!chip)
+		return -EINVAL;
+
+	rc = oplus_mms_get_item_data(chip->monitor->err_topic, ERR_ITEM_FCL_INFO, &data, false);
+	if (rc < 0) {
+		chg_err("get msg data error, rc=%d\n", rc);
+		return rc;
+	}
+
+	if (!data.strval)
+		return -EINVAL;
+
+	str = strstr(data.strval, "one_time_full=");
+	if (str) {
+		str += strlen("one_time_full=");
+		chip->track_status.fcl.one_full_trigger_cnt++;
+		if (!strlen(chip->track_status.fcl.info))
+			scnprintf(chip->track_status.fcl.info, TRACK_FCL_INFO_LEN - 1, "%s", str);
+	} else {
+		str = strstr(data.strval, "n_time_full=");
+		if (str)
+			chip->track_status.fcl.n_full_trigger_cnt++;
+		else
+			chg_err("fcl info error");
+	}
+
+	chg_info("fcl info:%s, cnt:%d,%d\n", data.strval,
+		chip->track_status.fcl.one_full_trigger_cnt, chip->track_status.fcl.n_full_trigger_cnt);
+
+	return rc;
+}
+
 static int oplus_chg_track_upload_chg_into_liquid(struct oplus_chg_track *track)
 {
 	union mms_msg_data data = { 0 };
@@ -7911,6 +7973,46 @@ static int oplus_chg_track_upload_chg_into_liquid(struct oplus_chg_track *track)
 	schedule_delayed_work(&track->chg_into_liquid_trigger_work, 0);
 	chg_info("%s\n", track->chg_into_liquid_load_trigger.crux_info);
 
+	return 0;
+}
+
+static int oplus_chg_track_upload_gauge_r_info(struct oplus_chg_track *chip)
+{
+	int index = 0;
+	union mms_msg_data data = { 0 };
+	int rc = 0;
+
+	if (!chip)
+		return -EINVAL;
+
+	mutex_lock(&chip->deep_dischg_info_lock);
+	if (chip->deep_dischg_info_trigger)
+		kfree(chip->deep_dischg_info_trigger);
+
+	chip->deep_dischg_info_trigger = kzalloc(sizeof(oplus_chg_track_trigger), GFP_KERNEL);
+	if (!chip->deep_dischg_info_trigger) {
+		chg_err("deep_dischg_info_trigger memery alloc fail\n");
+		mutex_unlock(&chip->deep_dischg_info_lock);
+		return -ENOMEM;
+	}
+
+	chip->deep_dischg_info_trigger->type_reason = TRACK_NOTIFY_TYPE_GENERAL_RECORD;
+	chip->deep_dischg_info_trigger->flag_reason = TRACK_NOTIFY_FLAG_GAUGE_INFO;
+	index += scnprintf(&(chip->deep_dischg_info_trigger->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+				  "$$err_scene@@end_r_info");
+	rc = oplus_mms_get_item_data(chip->monitor->err_topic, ERR_ITEM_GAUGE_R_INFO, &data, false);
+	if (rc < 0) {
+		chg_err("get msg data error, rc=%d\n", rc);
+		kfree(chip->deep_dischg_info_trigger);
+		chip->deep_dischg_info_trigger = NULL;
+		mutex_unlock(&chip->deep_dischg_info_lock);
+		return rc;
+	}
+	index += scnprintf(&(chip->deep_dischg_info_trigger->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "%s",
+			  data.strval);
+
+	schedule_delayed_work(&chip->deep_dischg_info_trigger_work, 0);
+	chg_info("success\n");
 	return 0;
 }
 
@@ -8215,6 +8317,7 @@ static void oplus_chg_track_reset_chg_abnormal_happened_flag(
 static int
 oplus_chg_track_status_reset(struct oplus_chg_track_status *track_status)
 {
+	memset(&(track_status->fcl), 0, sizeof(track_status->fcl));
 	track_status->chg_no_charging_cnt = 0;
 	track_status->ledon_ave_speed = 0;
 	track_status->ledoff_ave_speed = 0;
@@ -9921,6 +10024,12 @@ static void oplus_chg_track_err_subs_callback(struct mms_subscribe *subs,
 			break;
 		case ERR_ITEM_PLC_INFO:
 			oplus_chg_track_upload_plc_info(track);
+			break;
+		case ERR_ITEM_GAUGE_R_INFO:
+			oplus_chg_track_upload_gauge_r_info(track);
+			break;
+		case ERR_ITEM_FCL_INFO:
+			oplus_chg_track_upload_fcl_info(track);
 			break;
 		default:
 			break;

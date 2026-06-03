@@ -3170,6 +3170,26 @@ static int sc6607_enter_test_mode(struct sc6607 *chip, bool en)
 	return 0;
 }
 
+static int sc6607_set_pd_phy_tx_discard_time(struct sc6607 *chip)
+{
+	int ret = 0;
+	u8 value[3]= {SC6607_REG_TX_DISCARD, 0x00, 0x64};
+	struct i2c_msg xfer[1];
+
+	xfer[0].addr = chip->client->addr + 1,
+	xfer[0].flags = 0;
+	xfer[0].len = sizeof(value);
+	xfer[0].buf = value;
+
+	ret = i2c_transfer(chip->client->adapter, xfer, ARRAY_SIZE(xfer));
+	if (ret == ARRAY_SIZE(xfer)) {
+		return 0;
+	} else {
+		pr_err("sc6607_set_pd_phy_tx_discard_time err %d\n", ret);
+		return ret;
+	}
+}
+
 static void sc6607_set_cc_pull_up_idrive(struct sc6607 *chip)
 {
 	int ret = 0;
@@ -3281,6 +3301,7 @@ static int sc6607_init_device(struct sc6607 *chip)
 	sc6607_set_cc_pull_up_idrive(chip);
 	sc6607_set_cc_pull_down_idrive(chip);
 	sc6607_enter_test_mode(chip, true);
+	sc6607_set_pd_phy_tx_discard_time(chip);
 	sc6607_set_continuous_time(chip);
 	sc6607_set_bmc_width(chip);
 	sc6607_enter_test_mode(chip, false);
@@ -6549,7 +6570,7 @@ static int sc6607_voocphy_svooc_hw_setting(struct oplus_voocphy_manager *chip)
 	ret = sc6607_field_write(g_chip, F_IBUS_OCP, reg_data); /*IBUS_OCP_UCP:4.25A*/
 	ret = sc6607_set_watchdog_timer(g_chip, 1000);
 	ret = sc6607_field_write(g_chip, F_MODE, 0x0);
-	ret = sc6607_field_write(g_chip, F_PMID2OUT_OVP, 0x05);
+	ret = sc6607_field_write(g_chip, F_PMID2OUT_OVP, 0x07); /*PMID2OUT_OVP:600mV*/
 	ret = sc6607_field_write(g_chip, F_CHG_EN, true);
 	ret = sc6607_field_write(g_chip, F_PERFORMANCE_EN, true);
 	sc6607_set_sstimeout_ucp_enable(chip, false);

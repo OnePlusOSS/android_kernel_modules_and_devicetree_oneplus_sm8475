@@ -2216,6 +2216,66 @@ static int oplus_chg_vb_set_pd_config(struct oplus_chg_ic_dev *ic_dev, u32 pdo)
 	return rc;
 }
 
+static int oplus_chg_vb_set_burst_mode(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_SET_BURST_MODE)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(
+			vb->child_list[i].ic_dev,
+			OPLUS_IC_FUNC_BUCK_SET_BURST_MODE,
+			enable);
+		if (rc < 0)
+			chg_err("child ic[%d] set burst mode error, rc=%d\n", i, rc);
+		else
+			return 0;
+	}
+
+	return rc;
+}
+
+static int oplus_chg_vb_set_low_vsys_thr(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct oplus_virtual_buck_ic *vb;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vb = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < vb->child_num; i++) {
+		if (!func_is_support(&vb->child_list[i], OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR)) {
+			rc = -ENOTSUPP;
+			continue;
+		}
+		rc = oplus_chg_ic_func(
+			vb->child_list[i].ic_dev,
+			OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR,
+			enable);
+		if (rc < 0)
+			chg_err("child ic[%d] set vsys thr error, rc=%d\n", i, rc);
+		else
+			return 0;
+	}
+
+	return rc;
+}
+
 static int oplus_chg_vb_wls_boost_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
 {
 	struct oplus_virtual_buck_ic *vb;
@@ -4386,6 +4446,12 @@ static void *oplus_chg_vb_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 		break;
 	case OPLUS_IC_FUNC_BUCK_GET_BYBID_MATCH_INFO:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_GET_BYBID_MATCH_INFO, oplus_chg_vb_get_byb_id_match_info);
+		break;
+	case OPLUS_IC_FUNC_BUCK_SET_BURST_MODE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SET_BURST_MODE, oplus_chg_vb_set_burst_mode);
+		break;
+	case OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR, oplus_chg_vb_set_low_vsys_thr);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

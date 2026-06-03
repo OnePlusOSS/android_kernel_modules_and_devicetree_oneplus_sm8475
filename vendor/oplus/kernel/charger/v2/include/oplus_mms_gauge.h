@@ -42,6 +42,8 @@ enum gauge_topic_item {
 	GAUGE_ITEM_QMAX,
 	GAUGE_ITEM_CAR_C,
 	GAUGE_ITEM_RATIO_LIMIT_CURR,
+	GAUGE_ITEM_GAUGE_R_INFO,
+	GAUGE_ITEM_VOL_FCL,
 };
 
 enum gauge_type_id {
@@ -177,4 +179,7 @@ int oplus_gauge_get_used_flag(struct oplus_mms *topic);
 int oplus_gauge_set_used_flag(struct oplus_mms *topic, int flag);
 int oplus_gauge_show_batt_chem_id(struct oplus_mms *topic, char *buf, int len);
 int oplus_gauge_set_seal_flag(struct oplus_mms *topic, int seal_flag);
+bool oplus_gauge_get_fcl_curr(int hw_vth, int sw_vth, int vbat, int *curr_dec, int *min_curr, bool *hw);
+int oplus_gauge_get_fcl_support(struct oplus_mms *mms, bool *fcl_support);
+int oplus_gauge_get_vb_offset(struct oplus_mms *mms, int *vb_offset);
 #endif /* __OPLUS_MMS_GAUGE_H__ */

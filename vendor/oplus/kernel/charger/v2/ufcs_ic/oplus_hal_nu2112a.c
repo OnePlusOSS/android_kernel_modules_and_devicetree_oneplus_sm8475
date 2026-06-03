@@ -47,6 +47,7 @@
 #include <oplus_mms.h>
 #include <oplus_mms_gauge.h>
 #include <oplus_impedance_check.h>
+#include <oplus_chg_monitor.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
 #include <linux/pinctrl/consumer.h>
 #endif
@@ -60,6 +61,12 @@ enum nu2112a_osc_status {
 	NU2112A_OSC_INVALID,
 };
 
+enum nu2112a_ic_status {
+	NU2112A_IC_OK,
+	NU2112A_IC_PIN_DIAG_FAIL,
+	NU2112A_IC_POWER_NG,
+};
+
 static struct oplus_voocphy_manager *oplus_voocphy_mg = NULL;
 static struct mutex i2c_rw_lock;
 
@@ -69,6 +76,11 @@ static bool error_reported = false;
 #define DEFUALT_VBUS_HIGH 200
 #define I2C_ERR_NUM 10
 #define MAIN_I2C_ERROR (1 << 0)
+
+#define TRACK_REG_ADDR_START	NU2112A_REG_07
+#define TRACK_REG_ADDR_END	NU2112A_REG_15
+#define TRACK_REG_DUMP_NUM	(TRACK_REG_ADDR_END - TRACK_REG_ADDR_START)
+#define NU2112A_FLAG_REG_NUMS	3
 
 static struct ufcs_config nu2112a_ufcs_config = {
 	.check_crc = false,
@@ -107,12 +119,15 @@ struct nu2112a_device {
 	bool vac_support;
 
 	u8 ufcs_reg_dump[NU2112A_FLAG_NUM];
+	u8 track_reg_dump[TRACK_REG_DUMP_NUM];
 
 	enum nu2112a_osc_status osc_status;
 	struct mutex osc_status_lock;
 	struct delayed_work osc_status_daemon_work;
 	bool osc_ctrl_support;
 	enum oplus_cp_work_mode mode;
+	struct work_struct abnormal_upload_info_work;
+	enum nu2112a_ic_status ic_status;
 };
 
 static enum oplus_cp_work_mode g_cp_support_work_mode[] = {
@@ -614,6 +629,126 @@ static void nu2112a_dump_reg_in_err_issue(struct oplus_voocphy_manager *chip)
 	return;
 }
 
+static void nu2112a_track_dump_reg(struct oplus_voocphy_manager *voocphy)
+{
+	struct nu2112a_device *chip = voocphy->priv_data;
+
+	if (chip == NULL) {
+		chg_err("nu2112a chip is NULL\n");
+		return;
+	}
+
+	i2c_smbus_read_i2c_block_data(chip->client, TRACK_REG_ADDR_START, TRACK_REG_DUMP_NUM, chip->track_reg_dump);
+}
+
+#define ERR_MSG_BUF	PAGE_SIZE
+__printf(3, 4)
+static int nu2112a_publish_ic_err_msg(int type, int sub_type, const char *format, ...)
+{
+	va_list args;
+	char *buf;
+	int rc;
+	struct mms_msg *topic_msg;
+	struct oplus_mms *err_topic = oplus_mms_get_by_name("error");
+
+	if (!err_topic)
+		return -ENODEV;
+
+	buf = kzalloc(ERR_MSG_BUF, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
+
+	va_start(args, format);
+	vsnprintf(buf, ERR_MSG_BUF, format, args);
+	va_end(args);
+
+	topic_msg =
+		oplus_mms_alloc_str_msg(MSG_TYPE_ITEM, MSG_PRIO_HIGH, ERR_ITEM_IC,
+					"[%s]-[%d]-[%d]:%s", "nu2112a", type, sub_type, buf);
+	kfree(buf);
+	if (topic_msg == NULL) {
+		chg_err("alloc topic msg error\n");
+		return -ENOMEM;
+	}
+
+	rc = oplus_mms_publish_msg_sync(err_topic, topic_msg);
+	if (rc < 0) {
+		chg_err("publish error topic msg error, rc=%d\n", rc);
+		kfree(topic_msg);
+	}
+
+	return rc;
+}
+
+static void nu2112a_track_abnormal_upload_info_work(struct work_struct *work)
+{
+	struct nu2112a_device *chip =
+		container_of(work, struct nu2112a_device, abnormal_upload_info_work);
+	char *buf;
+	int i;
+	size_t index = 0;
+
+	buf = kzalloc(ERR_MSG_BUF, GFP_KERNEL);
+	if (buf == NULL)
+		return;
+
+	if (chip->ic_status == NU2112A_IC_PIN_DIAG_FAIL)
+		index += scnprintf(buf + index, ERR_MSG_BUF, "$$err_reason@@pin_diag_fail$$reg_info@@");
+	else
+		index += scnprintf(buf + index, ERR_MSG_BUF, "$$err_reason@@power_ng$$reg_info@@");
+
+	for (i = 0; i < TRACK_REG_DUMP_NUM; i++)
+		index += scnprintf(buf + index, ERR_MSG_BUF, "0x%04x=%02x,",
+			(TRACK_REG_ADDR_START + i), chip->track_reg_dump[i]);
+	if (index > 0)
+		buf[index - 1] = 0;
+
+	nu2112a_publish_ic_err_msg(OPLUS_IC_ERR_BURN, 0, "%s", buf);
+	kfree(buf);
+}
+
+static bool nu2112a_ic_is_abnormal(struct oplus_voocphy_manager *chip)
+{
+	u8 data = 0;
+	struct nu2112a_device *device_chip;
+	enum nu2112a_ic_status ic_status;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return false;
+	}
+
+	device_chip = chip->priv_data;
+	if (!device_chip) {
+		chg_err("device chip is NULL\n");
+		return false;
+	}
+
+	ic_status = device_chip->ic_status;
+	nu2112a_read_byte(chip->client, NU2112A_REG_14, &data);
+
+	if (data & NU2112A_PIN_DIAG_FALL_FLAG_MASK)
+		device_chip->ic_status = NU2112A_IC_PIN_DIAG_FAIL;
+	else if (data & NU2112A_POWER_NG_FLAG_MASK)
+		device_chip->ic_status = NU2112A_IC_POWER_NG;
+	else
+		device_chip->ic_status = NU2112A_IC_OK;
+
+	chg_info("reg[0x%x] = 0x%x, pre_ic_status:%d, ic_status:%d\n",
+		NU2112A_REG_14, data, ic_status, device_chip->ic_status);
+	if (device_chip->ic_status != NU2112A_IC_OK) {
+		if (ic_status != device_chip->ic_status) {
+			nu2112a_track_dump_reg(chip);
+			if (NU2112A_REG_14 >= TRACK_REG_ADDR_START && NU2112A_REG_14 < TRACK_REG_ADDR_END)
+				device_chip->track_reg_dump[NU2112A_REG_14 - TRACK_REG_ADDR_START] = data;
+			schedule_work(&device_chip->abnormal_upload_info_work);
+		}
+		return true;
+	}
+
+	return false;
+}
+
 static int nu2112a_cp_reg_dump(struct oplus_chg_ic_dev *ic_dev)
 {
 	struct nu2112a_device *chip;
@@ -805,7 +940,7 @@ static int nu2112a_get_adc_enable(struct oplus_voocphy_manager *chip, u8 *data)
 	return ret;
 }
 
-static u8 nu2112a_match_err_value(struct oplus_voocphy_manager *chip, u8 data_block[4])
+static u8 nu2112a_match_err_value(struct oplus_voocphy_manager *chip, u8 *data_block)
 {
 	/* TODO */
 	return 0;
@@ -815,23 +950,23 @@ static u8 nu2112a_get_int_value(struct oplus_voocphy_manager *chip)
 {
 	int ret = 0;
 	u8 data = 0;
-	u8 data_block[4] = { 0 };
+	u8 data_block[NU2112A_FLAG_REG_NUMS] = { 0 };
 	int i = 0;
 
 	if (!chip) {
 		pr_err("%s: chip null\n", __func__);
 		return -1;
 	}
-	memset(data_block, 0, sizeof(u8) * 4);
+	memset(data_block, 0, sizeof(u8) * NU2112A_FLAG_REG_NUMS);
 
-	ret = i2c_smbus_read_i2c_block_data(chip->client, NU2112A_REG_11, 4, data_block);
+	ret = i2c_smbus_read_i2c_block_data(chip->client, NU2112A_REG_11, NU2112A_FLAG_REG_NUMS, data_block);
 	if (ret < 0) {
 		nu2112a_i2c_error(true);
 		pr_err("nu2112a_get_int_value read vac error\n");
 	} else {
 		nu2112a_i2c_error(false);
 	}
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < NU2112A_FLAG_REG_NUMS; i++) {
 		pr_info("read int data_block[%d] = %u\n", i, data_block[i]);
 	}
 
@@ -1180,6 +1315,7 @@ static irqreturn_t nu2112a_charger_interrupt(int irq, void *dev_id)
 static int nu2112a_init_device(struct nu2112a_device *chip)
 {
 	u8 reg_data;
+
 	nu2112a_write_byte(chip->client, NU2112A_REG_18, 0x10); /* ADC_CTRL:disable */
 	nu2112a_write_byte(chip->client, NU2112A_REG_02, 0x4); /*VAC OVP=12V*/
 	nu2112a_write_byte(chip->client, NU2112A_REG_03, 0x50); /* VBUS_OVP:10V */
@@ -1197,6 +1333,10 @@ static int nu2112a_init_device(struct nu2112a_device *chip)
 	nu2112a_write_byte(chip->client, NU2112A_REG_08, 0x0); /*VOOC Option2*/
 	nu2112a_write_byte(chip->client, NU2112A_REG_17, 0x28); /*REG_17=0x28, IBUS_UCP_RISE_MASK_MASK*/
 	nu2112a_write_byte(chip->client, NU2112A_REG_15, 0x02); /* mask insert irq */
+
+	nu2112a_update_bits(chip->client, NU2112A_REG_0A, NU2112A_CFLY_PRECHG_TIMEOUT_MASK,
+		NU2112A_CFLY_PRECHG_20_MS << NU2112A_CFLY_PRECHG_TIMEOUT_SHIFT);
+
 	pr_err("nu2112a_init_device done");
 
 	return 0;
@@ -1736,6 +1876,7 @@ static struct oplus_voocphy_operations oplus_nu2112a_ops = {
 	.set_chg_pmid2out = nu2112a_set_chg_pmid2out,
 	.get_chg_pmid2out = nu2112a_get_chg_pmid2out,
 	.dump_voocphy_reg = nu2112a_dump_reg_in_err_issue,
+	.ic_is_abnormal = nu2112a_ic_is_abnormal,
 };
 
 static int nu2112a_ufcs_init(struct ufcs_dev *ufcs)
@@ -2339,6 +2480,7 @@ static int nu2112a_driver_probe(struct i2c_client *client, const struct i2c_devi
 
 	nu2112a_osc_init(chip);
 	nu2112a_create_device_node(&(client->dev));
+	INIT_WORK(&chip->abnormal_upload_info_work, nu2112a_track_abnormal_upload_info_work);
 
 	chip->use_vooc_phy = of_property_read_bool(chip->dev->of_node, "oplus,use_vooc_phy");
 	chip->use_ufcs_phy = of_property_read_bool(chip->dev->of_node, "oplus,use_ufcs_phy");

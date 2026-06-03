@@ -678,6 +678,17 @@ bool tcpm_inquire_usb_comm(struct tcpc_device *tcpc)
 	return !!(pd_port->pe_data.dpm_flags & DPM_FLAGS_PARTNER_USB_COMM);
 }
 EXPORT_SYMBOL(tcpm_inquire_usb_comm);
+
+int tcpci_notify_sourcecap_done(struct tcpc_device *tcpc, struct power_caps *info)
+{
+	struct tcp_notify tcp_noti;
+
+	tcp_noti.caps_msg.caps = info;
+
+	return tcpc_check_notify_time(tcpc, &tcp_noti, TCP_NOTIFY_IDX_MISC,
+					TCP_NOTIFY_PD_SOURCECAP_DONE);
+}
+EXPORT_SYMBOL(tcpci_notify_sourcecap_done);
 #endif
 
 

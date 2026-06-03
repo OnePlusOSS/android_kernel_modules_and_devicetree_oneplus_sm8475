@@ -14,15 +14,15 @@
 //#define IRIS_ABYP_LIGHTUP
 //#define IRIS_MIPI_TEST
 
-#define IRIS_FIRMWARE_NAME	"../../odm/firmware/iris7.fw"
-#define IRIS_CCF1_FIRMWARE_NAME "../../odm/firmware/iris7_ccf1.fw"
-#define IRIS_CCF2_FIRMWARE_NAME "../../odm/firmware/iris7_ccf2.fw"
-#define IRIS_CCF3_FIRMWARE_NAME "../../odm/firmware/iris7_ccf3.fw"
-#define IRIS_CCF4_FIRMWARE_NAME "../../odm/firmware/iris7_ccf4.fw"
-#define IRIS_CCF1_CALIBRATED_FIRMWARE_NAME "../../mnt/vendor/persist/display/iris7_ccf1b.fw"
-#define IRIS_CCF2_CALIBRATED_FIRMWARE_NAME "../../mnt/vendor/persist/display/iris7_ccf2b.fw"
-#define IRIS_CCF3_CALIBRATED_FIRMWARE_NAME "../../mnt/vendor/persist/display/iris7_ccf3b.fw"
-#define IRIS_CCF4_CALIBRATED_FIRMWARE_NAME "../../mnt/vendor/persist/display/iris7_ccf4b.fw"
+#define IRIS_FIRMWARE_NAME	"iris7.fw"
+#define IRIS_CCF1_FIRMWARE_NAME "iris7_ccf1.fw"
+#define IRIS_CCF2_FIRMWARE_NAME "iris7_ccf2.fw"
+#define IRIS_CCF3_FIRMWARE_NAME "iris7_ccf3.fw"
+#define IRIS_CCF4_FIRMWARE_NAME "iris7_ccf4.fw"
+#define IRIS_CCF1_CALIBRATED_FIRMWARE_NAME "iris7_ccf1b.fw"
+#define IRIS_CCF2_CALIBRATED_FIRMWARE_NAME "iris7_ccf2b.fw"
+#define IRIS_CCF3_CALIBRATED_FIRMWARE_NAME "iris7_ccf3b.fw"
+#define IRIS_CCF4_CALIBRATED_FIRMWARE_NAME "iris7_ccf4b.fw"
 #define IRIS3_CHIP_VERSION	0x6933
 #define IRIS5_CHIP_VERSION	0x6935
 #define IRIS7_CHIP_VERSION      0x4777

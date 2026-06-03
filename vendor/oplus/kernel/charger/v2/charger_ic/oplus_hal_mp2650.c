@@ -59,6 +59,7 @@ extern void mt_power_off(void);
 #include <oplus_chg_ic.h>
 #include <oplus_mms_wired.h>
 #include <oplus_battery_log.h>
+#include <oplus_chg_comm.h>
 
 /* TODO */
 #define WPC_TERMINATION_CURRENT		100
@@ -434,9 +435,6 @@ int mp2650_input_current_limit_ctrl_by_vooc_write(int current_ma)
 		return 0;
 	}
 
-	mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_104);
-	mp2650_burst_mode_enable(false);
-
 	tmp = tmp * 50;
 	for (count = (tmp / 500); count > 2; count--) {
 		chg_err("set charge current limit = %d\n", 500 * count);
@@ -479,9 +477,6 @@ int mp2650_input_current_limit_ctrl_by_vooc_write(int current_ma)
 		REG0F_MP2650_ADDRESS,
 		tmp << REG0F_MP2650_2ND_CURRENT_LIMIT_SHIFT,
 		REG0F_MP2650_2ND_CURRENT_LIMIT_MASK);
-
-	mp2650_burst_mode_enable(true);
-	mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_101);
 
 	return rc;
 }
@@ -2438,7 +2433,10 @@ int mp2650_hardware_init(void)
 
 	mp2650_set_chging_term_disable();
 
-	mp2650_input_current_limit_init();
+	if (!chip->support_icl_optimization ||
+	   (oplus_comm_get_boot_completed() ||
+	    oplus_is_power_off_charging()))
+		mp2650_input_current_limit_init();
 
 	mp2650_float_voltage_write(WPC_TERMINATION_VOLTAGE);
 
@@ -2481,7 +2479,10 @@ int mp2650_hardware_init(void)
 
 	mp2650_set_wdt_timer(REG09_MP2650_WTD_TIMER_40S);
 
-	mp2650_input_current_limit_without_aicl(chip, 500);
+	if (!chip->support_icl_optimization ||
+	   (oplus_comm_get_boot_completed() ||
+	    oplus_is_power_off_charging()))
+		mp2650_input_current_limit_without_aicl(chip, 500);
 
 	return true;
 }
@@ -3179,16 +3180,10 @@ static int mp2650_set_icl(struct oplus_chg_ic_dev *ic_dev,
 		return rc;
 	}
 
-	mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_104);
-	mp2650_burst_mode_enable(false);
-
 	if (step)
 		rc = mp2650_input_current_limit_write(chip, icl_ma);
 	else
 		rc = mp2650_input_current_limit_without_aicl(chip, icl_ma);
-
-	mp2650_burst_mode_enable(true);
-	mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_101);
 
 	return rc;
 }
@@ -3351,6 +3346,47 @@ static int mp2650_set_hardware_init(struct oplus_chg_ic_dev *ic_dev)
 	return 0;
 }
 
+static int mp2650_set_burst_mode(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct chip_mp2650 *chip;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+
+	if (atomic_read(&chip->charger_suspended) == 1)
+		return 0;
+
+	mp2650_burst_mode_enable(enable);
+	chg_info("enable:[%d]\n", enable);
+
+	return 0;
+}
+
+static int mp2650_set_low_vsys_thr(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct chip_mp2650 *chip;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+
+	if (atomic_read(&chip->charger_suspended) == 1)
+		return 0;
+
+	if (enable)
+		mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_101);
+	else
+		mp2650_set_charger_vsys_threshold(chip, MP2762_VSYS_THR_104);
+
+	chg_info("low vsys thr:[%d]\n", enable);
+
+	return 0;
+}
 
 static void *oplus_chg_get_func(struct oplus_chg_ic_dev *ic_dev,
 				enum oplus_chg_ic_func func_id)
@@ -3462,6 +3498,14 @@ static void *oplus_chg_get_func(struct oplus_chg_ic_dev *ic_dev,
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_HARDWARE_INIT,
 					       mp2650_set_hardware_init);
 		break;
+	case OPLUS_IC_FUNC_BUCK_SET_BURST_MODE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SET_BURST_MODE,
+					       mp2650_set_burst_mode);
+		break;
+	case OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR,
+					       mp2650_set_low_vsys_thr);
+		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
 		func = NULL;
@@ -3475,6 +3519,16 @@ struct oplus_chg_ic_virq mp2650_virq_table[] = {
 	{ .virq_id = OPLUS_IC_VIRQ_ERR },
 	{ .virq_id = OPLUS_IC_VIRQ_PLUGIN },
 };
+
+static int mp2650_parse_dt(struct chip_mp2650 *chip)
+{
+	struct device_node *node = chip->dev->of_node;
+
+	chip->support_icl_optimization = of_property_read_bool(node, "support_icl_optimization");
+	chg_info("support_icl_optimization=%d", chip->support_icl_optimization);
+
+	return 0;
+}
 
 static int mp2650_driver_probe(struct i2c_client *client,
 			       const struct i2c_device_id *id)
@@ -3508,6 +3562,7 @@ static int mp2650_driver_probe(struct i2c_client *client,
 	mp2650_dump_registers();
 	mp2650_vbus_avoid_electric_config();
 	chg_ic->probe_flag = true;
+	mp2650_parse_dt(chg_ic);
 	mp2650_hardware_init();
 	mp2650_gpio_init(chg_ic);
 

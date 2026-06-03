@@ -100,6 +100,10 @@ static int oplus_dbg_timeout = 0;
 module_param(oplus_dbg_timeout, int, 0644);
 MODULE_PARM_DESC(oplus_dbg_timeout, "oplus debug chg timeout");
 
+static int oplus_gauge_r_data = 0;
+module_param(oplus_gauge_r_data, int, 0644);
+MODULE_PARM_DESC(oplus_gauge_r_data, "oplus gauge r data flag");
+
 struct oplus_comm_spec_config {
 	int32_t temp_region_max;
 	int32_t ffc_temp_region_max;
@@ -190,6 +194,7 @@ struct oplus_comm_config {
 	int32_t chg_shutdown_max_mv;
 	uint8_t hidden_soc_switch;
 	uint32_t hidden_soc_percent;
+	bool support_gauge_r_track;
 } __attribute__ ((packed));
 
 struct ui_soc_decimal {
@@ -430,7 +435,17 @@ struct oplus_chg_comm {
 
 	unsigned int nvid_support_flags;
 	int plc_status;
+	struct delayed_work gauge_r_info_work;
 };
+
+typedef struct {
+	int charge_limit_enable;
+	int charge_limit_value;
+	int is_force_set_charge_limit;
+	int charge_limit_recharge_value;
+	int callname;
+}chg_up_limit_info;
+static chg_up_limit_info chg_up_limit_data;
 
 static struct oplus_comm_spec_config default_spec = {
 	.fcc_gear_shake_mv = {
@@ -1743,6 +1758,78 @@ void oplus_comm_get_rechg_soc_limit(struct oplus_mms *topic, int *rechg_soc, boo
 	*en = chip->rechg_soc_en;
 }
 
+static int oplus_chg_track_upload_gauge_r_info(struct oplus_chg_comm *chip)
+{
+#define TRACK_UPLOAD_COUNT_MAX 3
+#define TRACK_LOCAL_T_NS_TO_S_THD 1000000000
+#define TRACK_DEVICE_ABNORMAL_UPLOAD_PERIOD (24 * 3600)
+#define TRACK_GAUGE_R_MSG_LENTH 512
+
+	struct oplus_mms *err_topic;
+	struct mms_msg *msg;
+	union mms_msg_data data = { 0 };
+	static int upload_count = 0, pre_upload_time = 0, curr_time;
+	char msg_info[TRACK_GAUGE_R_MSG_LENTH] = { 0 };
+	int bat_soh = 0;
+	int rc, index = 0;
+
+
+	curr_time = local_clock() / TRACK_LOCAL_T_NS_TO_S_THD;
+	if (curr_time - pre_upload_time > TRACK_DEVICE_ABNORMAL_UPLOAD_PERIOD)
+		upload_count = 0;
+
+	if (upload_count >= TRACK_UPLOAD_COUNT_MAX)
+		return -ENODEV;
+
+	pre_upload_time = local_clock() / TRACK_LOCAL_T_NS_TO_S_THD;
+
+	err_topic = oplus_mms_get_by_name("error");
+	if (!err_topic) {
+		chg_err("error topic not found\n");
+		return -ENODEV;
+	}
+
+	bat_soh = oplus_gauge_get_batt_soh();
+	rc = oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_GAUGE_R_INFO, &data, true);
+	if (rc == 0 && data.strval && strlen(data.strval)) {
+		chg_err("[gauge_r_reg_info] %s", data.strval);
+		index += scnprintf(&(msg_info[index]),
+			TRACK_GAUGE_R_MSG_LENTH - index, "$$gauge_r_info@@%s", data.strval);
+	}
+
+	oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_FCC, &data, false);
+	chip->batt_fcc = data.intval;
+	index += scnprintf(&(msg_info[index]),
+			TRACK_GAUGE_R_MSG_LENTH - index, "$$soc@@%d$$smooth_soc@@%d$$uisoc@@%d$$vbatt_max@@%d$$vbatt_min@@%d"
+			"$$ibat_ma@@%d$$batt_temp@@%d$$batt_cc@@%d$$batt_fcc@@%d$$bat_soh@@%d",
+			chip->soc, chip->smooth_soc, chip->ui_soc, chip->vbat_mv, chip->vbat_min_mv,
+			chip->ibat_ma, chip->batt_temp, chip->batt_cc, chip->batt_fcc, bat_soh);
+
+	msg = oplus_mms_alloc_str_msg(
+		MSG_TYPE_ITEM, MSG_PRIO_MEDIUM, ERR_ITEM_GAUGE_R_INFO, msg_info);
+	if (msg == NULL) {
+		chg_err("alloc GAUGE_ITEM_GAUGE_R_INFO error msg error\n");
+		return -ENOMEM;
+	}
+
+	rc = oplus_mms_publish_msg_sync(err_topic, msg);
+	if (rc < 0) {
+		chg_err("publish gauge r para error msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
+	upload_count++;
+
+	return rc;
+}
+
+static void oplus_chg_track_gauge_r_info_trigger_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_chg_comm *chip = container_of(dwork, struct oplus_chg_comm, gauge_r_info_work);
+
+	oplus_chg_track_upload_gauge_r_info(chip);
+}
+
 static void oplus_comm_check_rechg(struct oplus_chg_comm *chip)
 {
 	struct oplus_comm_spec_config *spec = &chip->spec;
@@ -2693,6 +2780,32 @@ static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm
 	return soc_down_jiffies;
 }
 
+static void oplus_comm_gauge_r_info_check(struct oplus_chg_comm *chip)
+{
+	struct oplus_comm_spec_config *spec = &chip->spec;
+	int vbat_uv_thr_mv = spec->vbat_uv_thr_mv + GAUGE_VBAT_UV_DELATA;
+	static int pre_soc = 0;
+
+	if (!chip->config.support_gauge_r_track)
+		return;
+
+	if (oplus_gauge_r_data > 0 || (pre_soc > 0 && chip->ui_soc >= 2 && chip->soc == 0 && chip->vbat_min_mv > vbat_uv_thr_mv))
+		schedule_delayed_work(&chip->gauge_r_info_work, 0);
+
+	oplus_gauge_r_data = 0;
+	pre_soc = chip->soc;
+}
+
+#define CHG_UP_LIMIT_FAIL_THRESHOLD	3
+#define CHG_UP_LIMIT_REAL_SOC_THRESHOLD	99
+static bool get_chg_up_not_limit_state(int ui_soc, int smooth_soc)
+{
+	if (chg_up_limit_data.charge_limit_enable == 1 && ui_soc >= chg_up_limit_data.charge_limit_value &&
+	    smooth_soc <= (ui_soc + CHG_UP_LIMIT_FAIL_THRESHOLD) && smooth_soc <= CHG_UP_LIMIT_REAL_SOC_THRESHOLD)
+		return false;
+	else
+		return true;
+}
 #define CHARGE_FORCE_DEC_INTERVAL	60
 #define NON_CHARGE_FORCE_DEC_INTERVAL	20
 #define AGING_VERSION_SMOOTH_MIN_UISOC	1
@@ -2754,6 +2867,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 
 	if (chip->config.support_uisoc_low_battery_control)
 		soc_down_jiffies = oplus_comm_ui_soc_low_battery_control(chip, soc_down_jiffies, &force_down_1);
+	oplus_comm_gauge_r_info_check(chip);
 
 	if (chip->deep_support && config->chg_shutdown_max_mv != -EINVAL)
 		charging_uv_thr_mv = min(charging_uv_thr_mv, config->chg_shutdown_max_mv);
@@ -2881,7 +2995,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 
 	/* Here ui_soc is only allowed to drop to 1% as low as possible */
 	mmi_chg = oplus_comm_get_mmi_state(chip);
-	if (charging && mmi_chg) {
+	if (charging && mmi_chg && get_chg_up_not_limit_state(ui_soc, smooth_soc)) {
 		if (ui_soc < smooth_soc &&
 		    time_is_before_jiffies(soc_up_jiffies)) {
 			ui_soc = (ui_soc < 100) ? (ui_soc + 1) : 100;
@@ -3162,7 +3276,8 @@ void oplus_comm_ui_soc_decimal_deinit(struct oplus_chg_comm *chip)
 	ui_soc = (soc_decimal->ui_soc_integer + soc_decimal->ui_soc_decimal) / 1000;
 	mutex_unlock(&chip->decimal_lock);
 	if (ui_soc != 0) {
-		if (soc_decimal->ui_soc_decimal != 0 && ui_soc < chip->smooth_soc)
+		if (soc_decimal->ui_soc_decimal != 0 && ui_soc < chip->smooth_soc &&
+		    get_chg_up_not_limit_state(ui_soc, chip->smooth_soc))
 			ui_soc = (ui_soc < 100) ? (ui_soc + 1) : 100;
 		oplus_comm_set_ui_soc(chip, ui_soc);
 	}
@@ -3212,7 +3327,7 @@ static void oplus_comm_show_ui_soc_decimal(struct work_struct *work)
 
 	/*calculate the speed*/
 	mmi_chg = oplus_comm_get_mmi_state(chip);
-	if (icharging > 0 && mmi_chg) {
+	if (icharging > 0 && mmi_chg && get_chg_up_not_limit_state(chip->ui_soc, chip->smooth_soc)) {
 		if (!oplus_comm_calculate_eis_soc_speed(chip, &speed))
 			speed = 100000 * icharging * UPDATE_TIME * batt_num / (chip->batt_fcc * 3600);
 
@@ -3231,6 +3346,11 @@ static void oplus_comm_show_ui_soc_decimal(struct work_struct *work)
 	}
 	if (speed > 500)
 		speed = 500;
+
+	if (get_chg_up_not_limit_state(chip->ui_soc, chip->smooth_soc) == false) {
+		speed = 0;
+		soc_decimal->ui_soc_decimal = 0;
+	}
 
 	mutex_lock(&chip->decimal_lock);
 	soc_decimal->ui_soc_decimal += speed;
@@ -3273,15 +3393,6 @@ is_chg_suspend_votable_available(struct oplus_chg_comm *chip)
 	return !!chip->chg_suspend_votable;
 }
 
-typedef struct {
-    int charge_limit_enable;
-    int charge_limit_value;
-    int is_force_set_charge_limit;
-    int charge_limit_recharge_value;
-    int callname;
-}chg_up_limit_info;
-static chg_up_limit_info chg_up_limit_data;
-
 int oplus_set_chg_up_limit(struct oplus_mms *topic, int charge_limit_enable, int charge_limit_value,
 	int is_force_set_charge_limit, int charge_limit_recharge_value, int callname)
 {
@@ -3303,12 +3414,65 @@ int oplus_set_chg_up_limit(struct oplus_mms *topic, int charge_limit_enable, int
 	return 1;
 }
 
+#define DEFAULT_OVER_CHARGE_DOD 550
+static bool chg_up_limit_decimal_enable(struct oplus_chg_comm *chip)
+{
+	union mms_msg_data data = { 0 };
+	int ui_soc_decimal;
+	int batt_rm;
+	int batt_fcc;
+
+	if (chip == NULL || chip->gauge_topic == NULL) {
+		chg_err("chg_up chip->gauge_topic == NULL\n");
+		return true;
+	}
+
+	oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_RM, &data, false);
+	batt_rm = data.intval;
+	if (batt_rm < 0) {
+		chg_err("batt_rm is < 0\n");
+		goto out;
+	}
+	oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_FCC, &data, false);
+	batt_fcc = data.intval;
+	if (batt_fcc == 0) {
+		chg_err("batt_fcc is 0\n");
+		goto out;
+	}
+	ui_soc_decimal =
+		batt_rm * 100000 / batt_fcc;
+	if (ui_soc_decimal >
+	    (chg_up_limit_data.charge_limit_value - 1) * 1000 + DEFAULT_OVER_CHARGE_DOD ||
+	    chip->smooth_soc > chg_up_limit_data.charge_limit_value) {
+		chg_info("chg_up get_ui_soc_decimal %d %d %d %d %d\n",
+		    ui_soc_decimal, batt_rm, batt_fcc, chip->smooth_soc,
+		    chg_up_limit_data.charge_limit_value);
+		return true;
+	}
+	return false;
+
+out:
+	if (chip->smooth_soc > chg_up_limit_data.charge_limit_value) {
+		chg_info("chg_up get_ui_soc_decimal %d %d\n",
+		    chip->smooth_soc, chg_up_limit_data.charge_limit_value);
+		return true;
+	}
+	return false;
+}
+
 static int oplus_enforce_chg_up_limit_result(struct oplus_chg_comm *chip, bool cut_off_charge)
 {
 	int val = cut_off_charge;
 	int rc = 0;
 	static int pre_val = 0;
 	static int pre_is_force_set_flag = 0;
+	bool decimal_status;
+
+	if (chip == NULL) {
+		chg_err("chip == NULL\n");
+		return rc;
+	}
+
 	chg_debug("oplus_set_chg_up_limit %d\n", val);
 	if ((pre_val == val) && (pre_is_force_set_flag == chg_up_limit_data.is_force_set_charge_limit)) {
 		if ((val == true && (get_client_vote(chip->chg_disable_votable, CHG_LIMIT_CHG_VOTER) > 0 ||
@@ -3319,6 +3483,26 @@ static int oplus_enforce_chg_up_limit_result(struct oplus_chg_comm *chip, bool c
 			chg_debug("set same chg up limit command %d %d\n", val, pre_is_force_set_flag);
 			return rc;
 		}
+	}
+
+	/* When the charging upper limit suspend is enabled before, 
+	and ui_soc drops to the charging upper limit value, change it to disable charge. */
+	if (cut_off_charge == true &&
+	    chip->ui_soc == chg_up_limit_data.charge_limit_value &&
+		chg_up_limit_data.is_force_set_charge_limit == 1 &&
+		get_client_vote(chip->chg_suspend_votable, CHG_LIMIT_CHG_VOTER) > 0) {
+		rc = vote(chip->chg_suspend_votable, CHG_LIMIT_CHG_VOTER, false, 0, false);
+		if (is_chg_disable_votable_available(chip))
+			rc = vote(chip->chg_disable_votable, CHG_LIMIT_CHG_VOTER,
+				  true, val, false);
+		else
+			rc = -ENOTSUPP;
+	}
+
+	if (chip->ui_soc == chg_up_limit_data.charge_limit_value && cut_off_charge == true) {
+		decimal_status = chg_up_limit_decimal_enable(chip);
+		if (decimal_status == false)
+			return rc;
 	}
 
 	if (chg_up_limit_data.is_force_set_charge_limit == 0 || chip->ui_soc == chg_up_limit_data.charge_limit_value) {
@@ -3397,7 +3581,8 @@ static void monitor_ui_soc_to_enable_chg_up_limit(struct oplus_chg_comm *chip, b
 		chg_up_limit_data.charge_limit_recharge_value, over_count);
 
 	if (chg_up_limit_data.charge_limit_enable == 1) {
-		if (chip->ui_soc >= chg_up_limit_data.charge_limit_value) {
+		if (chip->ui_soc >= chg_up_limit_data.charge_limit_value &&
+			chg_up_limit_data.charge_limit_value < OPLUS_FULL_SOC) {
 			over_count++;
 			if (over_count >= CHG_UP_DELAY_COUNT || chip->vooc_charging || chip->ufcs_charging ||
 			    chip->pps_charging || is_wls_fastchg_started(chip)) {
@@ -3405,7 +3590,8 @@ static void monitor_ui_soc_to_enable_chg_up_limit(struct oplus_chg_comm *chip, b
 				oplus_enforce_chg_up_limit_result(chip, true);
 			}
 			return;
-		} else if (chip->ui_soc >= chg_up_limit_data.charge_limit_recharge_value) {
+		} else if (chip->ui_soc >= chg_up_limit_data.charge_limit_recharge_value &&
+		    chg_up_limit_data.charge_limit_recharge_value < OPLUS_FULL_SOC) {
 			over_count = 0;
 			return;
 		} else {
@@ -7607,6 +7793,7 @@ static int oplus_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 	if (rc < 0)
 		config->chg_shutdown_max_mv = -EINVAL;
 
+	config->support_gauge_r_track = of_property_read_bool(node, "oplus_spec,support_gauge_r_track");
 	oplus_comm_parse_dec_vol_dt(comm_dev);
 
 	oplus_comm_parse_smooth_soc_dt(comm_dev);
@@ -7843,6 +8030,11 @@ static ssize_t proc_ui_soc_decimal_read(struct file *file,
 		if(!soc_decimal->decimal_control)
 			val = 0;
 	} else {
+		val = 0;
+	}
+
+	if (get_chg_up_not_limit_state(chip->ui_soc, chip->smooth_soc) == false) {
+		soc_decimal->init_decimal_ui_soc = 0;
 		val = 0;
 	}
 
@@ -8279,13 +8471,14 @@ static ssize_t oplus_comm_chg_cycle_write(struct file *file,
 	struct oplus_chg_comm *chip = pde_data(file_inode(file));
 	char proc_chg_cycle_data[16];
 
-	if(count >= 16) {
-		count = 16;
-	}
+	if(count >= sizeof(proc_chg_cycle_data))
+		count = sizeof(proc_chg_cycle_data) - 1;
+
 	if (copy_from_user(&proc_chg_cycle_data, buff, count)) {
 		chg_err("chg_cycle_write error.\n");
 		return -EFAULT;
 	}
+	proc_chg_cycle_data[count] = '\0';
 
 	if ((strncmp(proc_chg_cycle_data, "en808", 5) == 0) ||
 	    (strncmp(proc_chg_cycle_data, "user_enable", 11) == 0)) {
@@ -8975,6 +9168,7 @@ static int oplus_comm_driver_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&comm_dev->ui_soc_decimal_work, oplus_comm_show_ui_soc_decimal);
 	INIT_DELAYED_WORK(&comm_dev->lcd_notify_reg_work, oplus_comm_lcd_notify_reg_work);
 	INIT_DELAYED_WORK(&comm_dev->fg_soft_reset_work, oplus_fg_soft_reset_work);
+	INIT_DELAYED_WORK(&comm_dev->gauge_r_info_work, oplus_chg_track_gauge_r_info_trigger_work);
 
 	spin_lock_init(&comm_dev->remuse_lock);
 	mutex_init(&comm_dev->decimal_lock);

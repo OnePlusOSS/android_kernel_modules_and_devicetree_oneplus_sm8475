@@ -602,6 +602,8 @@ struct oplus_voocphy_manager {
 
 	struct oplus_mms *plc_topic;
 	struct mms_subscribe *plc_subs;
+	struct oplus_mms *gauge_topic;
+	struct mms_subscribe *gauge_subs;
 
 	int irq_gpio;
 	int irq;
@@ -678,6 +680,14 @@ struct oplus_voocphy_manager {
 	unsigned int current_ap;
 	unsigned int current_bcc;
 	unsigned int current_batt_temp;
+	bool fcl_support;
+	bool allow_current_pcc_ctrl;
+	bool dchg;
+	bool fcl_trigger;
+	unsigned int current_pcc;
+	unsigned int current_fcl;
+	unsigned int pre_current_fcl;
+	unsigned int fcl_cnt;
 	unsigned char ap_need_change_current;
 	unsigned char adjust_curr;
 	unsigned char adjust_fail_cnt;
@@ -918,6 +928,10 @@ struct oplus_voocphy_manager {
 	bool cp_err_uploading;
 
 	int plc_status;
+	bool ic_abnormal;
+	bool slave_ic_abnormal;
+	struct delayed_work clear_ic_abnormal_status_work;
+	struct oplus_chg_strategy *svooc_pcc_strategy;
 };
 
 struct oplus_voocphy_operations {
@@ -960,6 +974,8 @@ struct oplus_voocphy_operations {
 	void (*dual_chan_buck_set_ucp)(struct oplus_voocphy_manager *chip, int ucp_value);
 	int (*upload_cp_error)(struct oplus_voocphy_manager *chip, int err_type);
 	int (*get_cp_error_type)(struct oplus_voocphy_manager *chip, int *err_type);
+	bool (*ic_is_abnormal)(struct oplus_voocphy_manager *chip);
+	int (*set_sstimeout_ucp_enable)(struct oplus_voocphy_manager *chip, bool enable);
 };
 
 #define VOOCPHY_LOG_BUF_LEN 1024

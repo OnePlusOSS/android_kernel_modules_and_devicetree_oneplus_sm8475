@@ -39,10 +39,14 @@
 #include <oplus_mms.h>
 #include <oplus_mms_gauge.h>
 #include <oplus_impedance_check.h>
+#include <oplus_chg_monitor.h>
 #include "../voocphy/oplus_voocphy.h"
 #include "oplus_hal_nu2112a.h"
 #define DEFAULT_OVP_REG_CONFIG	0x5C
 #define DEFAULT_OCP_REG_CONFIG	0x24
+#define TRACK_REG_ADDR_START	NU2112A_REG_07
+#define TRACK_REG_ADDR_END	NU2112A_REG_15
+#define TRACK_REG_DUMP_NUM	(TRACK_REG_ADDR_END - TRACK_REG_ADDR_START)
 
 enum nu2112a_osc_status {
 	NU2112A_OSC_INIT,
@@ -50,6 +54,13 @@ enum nu2112a_osc_status {
 	NU2112A_OSC_DISABLE,
 	NU2112A_OSC_INVALID,
 };
+
+enum nu2112a_slave_ic_status {
+	NU2112A_SLAVE_IC_OK,
+	NU2112A_SLAVE_IC_PIN_DIAG_FAIL,
+	NU2112A_SLAVE_IC_POWER_NG,
+};
+
 static struct oplus_voocphy_manager *oplus_voocphy_mg = NULL;
 static struct mutex i2c_rw_lock;
 static bool error_reported = false;
@@ -68,6 +79,10 @@ struct nu2112a_slave_device {
 	struct delayed_work osc_status_daemon_work;
 	bool osc_ctrl_support;
 	enum oplus_cp_work_mode mode;
+
+	u8 track_reg_dump[TRACK_REG_DUMP_NUM];
+	struct work_struct abnormal_upload_info_work;
+	enum nu2112a_slave_ic_status ic_status;
 };
 
 static enum oplus_cp_work_mode g_cp_support_work_mode[] = {
@@ -391,9 +406,125 @@ static void nu2112a_slave_dump_reg_in_err_issue(struct oplus_voocphy_manager *ch
 	return;
 }
 
+static void nu2112a_slave_track_dump_reg(void)
+{
+	struct nu2112a_slave_device *chip = g_device_chip;
+
+	if (chip == NULL) {
+		chg_err("nu2112a_slave_device chip is NULL\n");
+		return;
+	}
+
+	i2c_smbus_read_i2c_block_data(chip->slave_client,
+		TRACK_REG_ADDR_START, TRACK_REG_DUMP_NUM, chip->track_reg_dump);
+}
+
+#define ERR_MSG_BUF	PAGE_SIZE
+__printf(3, 4)
+static int nu2112a_slave_publish_ic_err_msg(int type, int sub_type, const char *format, ...)
+{
+	va_list args;
+	char *buf;
+	int rc;
+	struct mms_msg *topic_msg;
+	struct oplus_mms *err_topic = oplus_mms_get_by_name("error");
+
+	if (!err_topic)
+		return -ENODEV;
+
+	buf = kzalloc(ERR_MSG_BUF, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
+
+	va_start(args, format);
+	vsnprintf(buf, ERR_MSG_BUF, format, args);
+	va_end(args);
+
+	topic_msg =
+		oplus_mms_alloc_str_msg(MSG_TYPE_ITEM, MSG_PRIO_HIGH, ERR_ITEM_IC,
+					"[%s]-[%d]-[%d]:%s", "nu2112a_slave", type, sub_type, buf);
+	kfree(buf);
+	if (topic_msg == NULL) {
+		chg_err("alloc topic msg error\n");
+		return -ENOMEM;
+	}
+
+	rc = oplus_mms_publish_msg_sync(err_topic, topic_msg);
+	if (rc < 0) {
+		chg_err("publish error topic msg error, rc=%d\n", rc);
+		kfree(topic_msg);
+	}
+
+	return rc;
+}
+
+static void nu2112a_slave_track_abnormal_upload_info_work(struct work_struct *work)
+{
+	struct nu2112a_slave_device *chip =
+		container_of(work, struct nu2112a_slave_device, abnormal_upload_info_work);
+	char *buf;
+	int i;
+	size_t index = 0;
+
+	buf = kzalloc(ERR_MSG_BUF, GFP_KERNEL);
+	if (buf == NULL)
+		return;
+
+	if (chip->ic_status == NU2112A_SLAVE_IC_PIN_DIAG_FAIL)
+		index += scnprintf(buf + index, ERR_MSG_BUF, "$$err_reason@@pin_diag_fail$$reg_info@@");
+	else
+		index += scnprintf(buf + index, ERR_MSG_BUF, "$$err_reason@@power_ng$$reg_info@@");
+
+	for (i = 0; i < TRACK_REG_DUMP_NUM; i++)
+		index += scnprintf(buf + index, ERR_MSG_BUF, "0x%04x=%02x,",
+			(TRACK_REG_ADDR_START + i), chip->track_reg_dump[i]);
+	if (index > 0)
+		buf[index - 1] = 0;
+
+	nu2112a_slave_publish_ic_err_msg(OPLUS_IC_ERR_BURN, 0, "%s", buf);
+	kfree(buf);
+}
+
+static bool nu2112a_slave_ic_is_abnormal(struct oplus_voocphy_manager *chip)
+{
+	u8 data = 0;
+	enum nu2112a_slave_ic_status ic_status;
+	struct nu2112a_slave_device *device_chip = g_device_chip;
+
+	if (!chip || !device_chip) {
+		chg_err("oplus_voocphy_manager chip or device_chip is NULL\n");
+		return false;
+	}
+
+	ic_status = device_chip->ic_status;
+	nu2112a_slave_read_byte(chip->slave_client, NU2112A_REG_14, &data);
+
+	if (data & NU2112A_PIN_DIAG_FALL_FLAG_MASK)
+		device_chip->ic_status = NU2112A_SLAVE_IC_PIN_DIAG_FAIL;
+	else if (data & NU2112A_POWER_NG_FLAG_MASK)
+		device_chip->ic_status = NU2112A_SLAVE_IC_POWER_NG;
+	else
+		device_chip->ic_status = NU2112A_SLAVE_IC_OK;
+
+	chg_info("reg[0x%x] = 0x%x, pre_ic_status:%d, ic_status:%d\n",
+		NU2112A_REG_14, data, ic_status, device_chip->ic_status);
+	if (device_chip->ic_status != NU2112A_SLAVE_IC_OK) {
+		if (ic_status != device_chip->ic_status) {
+			nu2112a_slave_track_dump_reg();
+			if (NU2112A_REG_14 >= TRACK_REG_ADDR_START && NU2112A_REG_14 < TRACK_REG_ADDR_END)
+				device_chip->track_reg_dump[NU2112A_REG_14 - TRACK_REG_ADDR_START] = data;
+			schedule_work(&device_chip->abnormal_upload_info_work);
+		}
+		return true;
+	}
+
+	return false;
+}
+
 static int nu2112a_slave_init_device(struct oplus_voocphy_manager *chip)
 {
 	u8 reg_data;
+
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_18, 0x10); /* ADC_CTRL:disable */
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_02, 0x7); /* VAC OVP */
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_03, 0x50); /* VBUS_OVP:10V */
@@ -411,6 +542,9 @@ static int nu2112a_slave_init_device(struct oplus_voocphy_manager *chip)
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_08, 0x0); /* VOOC Option2 */
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_17, 0x28); /* IBUS_UCP_RISE_MASK_MASK */
 	nu2112a_slave_write_byte(chip->slave_client, NU2112A_REG_15, 0x02); /* mask insert irq */
+
+	nu2112a_slave_update_bits(chip->slave_client, NU2112A_REG_0A, NU2112A_CFLY_PRECHG_TIMEOUT_MASK,
+		NU2112A_CFLY_PRECHG_20_MS << NU2112A_CFLY_PRECHG_TIMEOUT_SHIFT);
 
 	pr_err("nu2112a_slave_init_device done");
 
@@ -930,6 +1064,7 @@ static struct oplus_voocphy_operations oplus_nu2112a_slave_ops = {
 	.set_chg_pmid2out = nu2112a_slave_set_chg_pmid2out,
 	.get_chg_pmid2out = nu2112a_slave_get_chg_pmid2out,
 	.dump_voocphy_reg = nu2112a_slave_dump_reg_in_err_issue,
+	.ic_is_abnormal = nu2112a_slave_ic_is_abnormal,
 };
 
 static int nu2112a_slave_parse_dt(struct oplus_voocphy_manager *chip)
@@ -1206,6 +1341,8 @@ static int nu2112a_slave_charger_probe(struct i2c_client *client, const struct i
 		chg_err("slave choose err\n");
 		goto chip_err;
 	}
+
+	INIT_WORK(&device->abnormal_upload_info_work, nu2112a_slave_track_abnormal_upload_info_work);
 
 	nu2112a_slave_create_device_node(&(client->dev));
 

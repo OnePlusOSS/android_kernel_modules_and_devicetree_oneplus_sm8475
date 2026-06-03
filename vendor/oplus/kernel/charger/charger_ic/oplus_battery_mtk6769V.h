@@ -256,7 +256,8 @@ extern int pmic_is_bif_exist(void);
 extern int pmic_enable_hw_vbus_ovp(bool enable);
 extern bool pmic_is_battery_exist(void);
 
-
+extern int oplus_set_bat_con_ntc_voltage(int value);
+extern int oplus_set_charger_ntc_voltage(int value);
 int notify_adapter_event(struct notifier_block *notifier,
 			unsigned long evt, void *val);
 

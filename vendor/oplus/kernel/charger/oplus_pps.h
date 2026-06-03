@@ -529,7 +529,7 @@ struct pps_current_limits {
 	int cp_r_down;
 	int cp_tdie_down;
 	int current_slow_chg;
-	int full_1time_limit;
+	int current_fcl;
 };
 
 struct oplus_pps_limits {

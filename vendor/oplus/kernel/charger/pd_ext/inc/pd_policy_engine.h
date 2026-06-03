@@ -419,6 +419,7 @@ enum pd_pe_state {
 #endif/* CONFIG_USB_PD_RECV_HRESET_COUNTER */
 
 	PE_REJECT,
+	PE_WAIT,
 	PE_ERROR_RECOVERY,
 #ifdef CONFIG_USB_PD_ERROR_RECOVERY_ONCE
 	PE_ERROR_RECOVERY_ONCE,
@@ -927,6 +928,8 @@ void pe_over_recv_hreset_limit_entry(
 	struct pd_port *pd_port);
 #endif/* CONFIG_USB_PD_RECV_HRESET_COUNTER */
 void pe_reject_entry(
+	struct pd_port *pd_port);
+void pe_wait_entry(
 	struct pd_port *pd_port);
 void pe_error_recovery_entry(
 	struct pd_port *pd_port);

@@ -25,6 +25,7 @@
 #include <linux/err.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
+#include <linux/version.h>
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
@@ -48,6 +49,11 @@
 #define SC2150A_PID			0x2150
 #define SC2150A_DID			0x0000
 #define SC2150A_1P2_DID 	0x0001
+#define HUSB311C_VID		0x2e99
+#define HUSB311C_PID		0x0311
+#define HUSB311C_DID		0x0000
+#define CPS_PID				0x8851
+#define CPS_VID				0x315C
 
 #define SC6601_PID 0x6600
 #define SC6601_DID 0x0000
@@ -76,6 +82,7 @@ extern void *tcpc_get_dev_data(struct tcpc_device *tcpc);
 extern void tcpci_lock_typec(struct tcpc_device *tcpc);
 extern void tcpci_unlock_typec(struct tcpc_device *tcpc);
 extern int tcpci_alert(struct tcpc_device *tcpc);
+extern int tcpci_alert_power_status_changed(struct tcpc_device *tcpc);
 
 extern void tcpci_vbus_level_init(
 		struct tcpc_device *tcpc, uint16_t power_status);
@@ -148,6 +155,7 @@ int tcpci_notify_wd0_state(struct tcpc_device *tcpc, bool wd0_state);
 int tcpci_notify_chrdet_state(struct tcpc_device *tcpc, bool uvlo_state);
 int tcpci_notify_bc12_complete_state(struct tcpc_device *tcpc, bool bc12_complete_state);
 int tcpci_notify_hvdcp_detect_dn(struct tcpc_device *tcpc, bool hvdcp_detect_dn);
+int tcpci_notify_sourcecap_done(struct tcpc_device *tcpc, struct power_caps *info);
 #endif
 int tcpci_notify_plug_out(struct tcpc_device *tcpc);
 

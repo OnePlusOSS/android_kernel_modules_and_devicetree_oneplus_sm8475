@@ -88,6 +88,7 @@
 	qcom,smart_chg_bcc_support;
 	qcom,support_3p6_standard;
 	qcom,voocphy_support = <1>;
+	oplus_spec,dec-vol-fv-mv = <40>;
 	qcom,input_current_charger_ma = <2000>;
 	qcom,pd_input_current_charger_ma = <2000>;
 	qcom,qc_input_current_charger_ma = <2000>;

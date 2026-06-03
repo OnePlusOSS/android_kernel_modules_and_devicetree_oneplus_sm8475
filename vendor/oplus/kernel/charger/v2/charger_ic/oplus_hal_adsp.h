@@ -162,6 +162,7 @@ enum oplus_ap_message_id {
 	AP_MESSAGE_GET_GAUGE_REG_INFO,
 	AP_MESSAGE_GET_GAUGE_CALIB_TIME,
 	AP_MESSAGE_GET_GAUGE_BATTINFO,
+	AP_MESSAGE_GET_GAUGE_R_INFO,
 	AP_MESSAGE_MAX_SIZE = 32,
 };
 
@@ -408,6 +409,25 @@ enum WLS_BOOST_SOURCE {
 	WLS_BOOST_SOURCE_PMIC_WLS,
 };
 
+enum charging_status {
+	CHARGING_TYPE_UNKNOW,
+	CHARGING_TYPE_VOOC_SVOOC,
+	CHARGING_TYPE_OPLUS_UFCS,
+	CHARGING_TYPE_OPLUS_PPS,
+	CHARGING_TYPE_THIRD_UFCS,
+	CHARGING_TYPE_THIRD_PPS,
+	CHARGING_TYPE_FFC,
+	CHARGING_TYPE_MAX,
+};
+
+enum qbg_full_temp_region {
+	QBG_TEMP_COLD,
+	QBG_TEMP_COOL,
+	QBG_TEMP_NORMAL,
+	QBG_TEMP_WARM,
+	QBG_TEMP_MAX,
+};
+
 enum OEM_MISC_CTL_CMD {
 	OEM_MISC_CTL_CMD_LCM_EN = 0,
 	OEM_MISC_CTL_CMD_LCM_25K = 2,
@@ -569,6 +589,7 @@ struct oplus_chg_iio {
 	struct iio_channel	*batt_con_btb_chan;
 	struct iio_channel	*usb_con_btb_chan;
 	struct iio_channel	*chg_mos_temp_chan;
+	struct iio_channel	*pmic_vbat_adc;
 };
 #endif
 
@@ -740,6 +761,9 @@ struct battery_chg_dev {
 	struct delayed_work check_adspfg_status;
 	struct delayed_work hboost_notify_work;
 #endif
+	int batt_full_para[CHARGING_TYPE_MAX][QBG_TEMP_MAX];
+	int batt_full_temp[QBG_TEMP_MAX];
+	bool batt_full_method_new;
 };
 
 /**********************************************************************
@@ -777,7 +801,7 @@ int oplus_adsp_voocphy_reset_again(void);
 int oplus_adsp_batt_curve_current(void);
 void oplus_chg_set_match_temp_ui_soc_to_voocphy(void);
 void oplus_chg_set_ap_fastchg_allow_to_voocphy(int allow);
-int oplus_adsp_voocphy_set_cool_down(int cool_down);
+int oplus_adsp_voocphy_set_cool_down(int cool_down, int curr_ma);
 int oplus_adsp_voocphy_get_bcc_max_current(void);
 int oplus_adsp_voocphy_get_bcc_min_current(void);
 int oplus_adsp_voocphy_get_atl_last_geat_current(void);

@@ -64,6 +64,7 @@
 	oplus,chg_ops = "plat-pmic";
 	qcom,smart_charging_screenoff;
 	qcom,voocphy_support = <1>;
+	oplus,full_limit_curr_support;
 	qcom,input_current_charger_ma = <2000>;
 	qcom,pd_input_current_charger_ma = <2000>;
 	qcom,qc_input_current_charger_ma = <2000>;

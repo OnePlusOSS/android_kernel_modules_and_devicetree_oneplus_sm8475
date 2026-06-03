@@ -1745,7 +1745,26 @@ static struct mms_item oplus_monitor_item[] = {
 			.update = NULL,
 		}
 	},
-
+	{
+		.desc = {
+			.item_id = ERR_ITEM_GAUGE_R_INFO,
+			.str_data = true,
+			.up_thr_enable = false,
+			.down_thr_enable = false,
+			.dead_thr_enable = false,
+			.update = NULL,
+		}
+	},
+	{
+		.desc = {
+			.item_id = ERR_ITEM_FCL_INFO,
+			.str_data = true,
+			.up_thr_enable = false,
+			.down_thr_enable = false,
+			.dead_thr_enable = false,
+			.update = NULL,
+		}
+	},
 };
 
 static const struct oplus_mms_desc oplus_monitor_desc = {

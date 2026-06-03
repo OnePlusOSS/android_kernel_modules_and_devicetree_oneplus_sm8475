@@ -90,6 +90,7 @@ oplus_chg_v2-y += strategy/oplus_strategy_pps_ufcs_curve.o
 oplus_chg_v2-y += strategy/oplus_strategy_low_curr_full.o
 oplus_chg_v2-y += strategy/oplus_strategy_pps_ufcs_curve_v2.o
 oplus_chg_v2-y += strategy/oplus_strategy_ddrc.o
+oplus_chg_v2-y += strategy/oplus_strategy_pcc.o
 oplus_chg_v2-y += monitor/oplus_monitor_core.o
 oplus_chg_v2-y += monitor/oplus_chg_track.o
 oplus_chg_v2-y += monitor/oplus_chg_exception.o

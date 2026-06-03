@@ -622,6 +622,7 @@ struct chip_mp2650 {
 	atomic_t charger_suspended;
 	bool probe_flag;
 	bool acok;
+	bool support_icl_optimization;
 };
 
 

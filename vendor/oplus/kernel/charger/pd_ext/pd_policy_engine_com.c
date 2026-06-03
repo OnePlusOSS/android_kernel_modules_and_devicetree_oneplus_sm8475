@@ -77,6 +77,13 @@ void pe_reject_entry(struct pd_port *pd_port)
 	pd_send_sop_ctrl_msg(pd_port, PD_CTRL_REJECT);
 }
 
+void pe_wait_entry(struct pd_port *pd_port)
+{
+	PE_STATE_WAIT_TX_SUCCESS(pd_port);
+
+	pd_send_sop_ctrl_msg(pd_port, PD_CTRL_WAIT);
+}
+
 void pe_error_recovery_entry(struct pd_port *pd_port)
 {
 #ifdef CONFIG_USB_PD_ERROR_RECOVERY_ONCE

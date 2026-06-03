@@ -9,10 +9,26 @@
 
 #define GAUGE_CALIB_TAG_LEN 12
 #define GAUGE_CALIB_OBTAIN_COUNTS 3
+#define FCL_TABLE_MAX 2
+#define FCL_CURVE_MAX 3
+
 struct gauge_calib_info_load {
     char tag_info[GAUGE_CALIB_TAG_LEN];
     struct gauge_calib_info calib_info[GAUGE_IC_NUM_MAX];
 }__attribute__((aligned(4)));
+
+struct fcl_table {
+	int volt_diff;
+	int curr_dec;
+	int min_curr;
+} __attribute__ ((packed));
+
+struct fcl_curves {
+	struct fcl_table limits[FCL_CURVE_MAX];
+	bool support;
+	int nums;
+	int index;
+};
 
 struct oplus_mms_gauge {
 	struct device *dev;
@@ -99,11 +115,14 @@ struct oplus_mms_gauge {
 	struct votable *gauge_term_voltage_votable;
 	struct votable *gauge_shutdown_voltage_votable;
 	unsigned char *gauge_reg_info[GAUGE_IC_NUM_MAX];
+	unsigned char *gauge_r_info[GAUGE_IC_NUM_MAX];
 	unsigned char calib_time_str[GAUGE_IC_NUM_MAX][CALIB_TIME_STR_LEN];
 	struct oplus_gauge_lifetime lifetime[GAUGE_IC_NUM_MAX];
 	struct gauge_calib_info_load calib_info_load;
 	bool calib_info_init[GAUGE_IC_NUM_MAX];
 	struct deep_track_info deep_info;
+	struct fcl_curves fcl;
+	int fcl_offset;
 };
 
 #endif /* __OPLUS_GAUGE_COMMON_H__ */

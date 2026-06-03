@@ -149,6 +149,10 @@ static int usbtemp_log_control = 0;
 static int usb_debug_temp = 65535;
 static int charger_ic__det_flag = 0;
 int ap_temp_debug = 65535;
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769R
+static int oplus_bat_con_ntc_voltage = 0;
+static int oplus_charger_ntc_voltage = 0;
+#endif
 module_param(usb_debug_temp, int, 0644);
 module_param(ap_temp_debug, int, 0644);
 module_param(usbtemp_log_control, int, 0644);
@@ -2073,6 +2077,10 @@ static int get_chargeric_temp(void)
 	}
 
 	ntc_param.ui_dwvolt =  get_charger_ntc_volt();
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769R
+	if (g_oplus_chip && ntc_param.ui_dwvolt == 0)
+		ntc_param.ui_dwvolt = oplus_charger_ntc_voltage;
+#endif
 	chargeric_temp = oplus_res_to_temp(&ntc_param);
 
 	chg_err("chargeric_temp:%d\n", chargeric_temp);
@@ -2096,6 +2104,24 @@ int oplus_chg_get_chargeric_temp_cal(void)
 	}
 }
 EXPORT_SYMBOL(oplus_chg_get_chargeric_temp_cal);
+
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769R
+int oplus_set_bat_con_ntc_voltage(int value)
+{
+	if (g_oplus_chip)
+		oplus_bat_con_ntc_voltage = value;
+	return 0;
+}
+EXPORT_SYMBOL(oplus_set_bat_con_ntc_voltage);
+
+int oplus_set_charger_ntc_voltage(int value)
+{
+	if (g_oplus_chip)
+		oplus_charger_ntc_voltage = value;
+	return 0;
+}
+EXPORT_SYMBOL(oplus_set_charger_ntc_voltage);
+#endif
 
 static int get_batcon_temp(void)
 {
@@ -2130,6 +2156,10 @@ static int get_batcon_temp(void)
 	}
 
 	ntc_param.ui_dwvolt =  get_bat_con_ntc_volt();
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769R
+	if (g_oplus_chip && ntc_param.ui_dwvolt == 0)
+		ntc_param.ui_dwvolt = oplus_bat_con_ntc_voltage;
+#endif
 	batt_btb_temp = oplus_res_to_temp(&ntc_param);
 
 	chg_err("batt_btb_temp:%d\n", batt_btb_temp);
@@ -5379,7 +5409,7 @@ static void oplus_ccdetect_work(struct work_struct *work)
 
 		if (oplus_get_otg_switch_status() == false)
 			oplus_ccdetect_disable();
-		if(g_oplus_chip->usb_status == USB_TEMP_HIGH) {
+		if (g_oplus_chip->usb_status == USB_TEMP_HIGH) {
 			schedule_delayed_work(&pinfo->usbtemp_recover_work, 0);
 		}
 	}

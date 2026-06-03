@@ -82,6 +82,8 @@ int oplus_wired_shipmode_enable(bool enable);
 bool oplus_wired_shipmode_is_enabled(void);
 int oplus_wired_set_qc_config(enum oplus_chg_qc_version version, int vol_mv);
 int oplus_wired_set_pd_config(u32 pdo);
+int oplus_wired_set_burst_mode(bool enable);
+int oplus_wired_set_low_vsys_thr(bool enable);
 int oplus_wired_get_usb_temp_volt(int *vol_l, int *vol_r);
 int oplus_wired_get_usb_temp(int *temp_l, int *temp_r);
 bool oplus_wired_usb_temp_check_is_support(void);

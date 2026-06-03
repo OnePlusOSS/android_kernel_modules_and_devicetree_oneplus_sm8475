@@ -1080,4 +1080,5 @@ int oplus_voocphy_set_ufcs_enable(bool enable);
 bool oplus_get_vooc_direct_charge_en(void);
 bool oplus_voocphy_get_vbatt_ovp_status(void);
 int oplus_voocphy_set_sstimeout_ucp_enable(bool enable);
+bool oplus_voocphy_get_parallel_charge_support(void);
 #endif /* _OPLUS_VOOCPHY_H_ */

@@ -253,7 +253,7 @@ struct oplus_vooc_chip {
 	int vooc_1time_full_volt;
 	int vooc_ntime_full_volt;
 	int notify_allow_reading_iic_cnt;
-	int ask_current_level;
+	int ask_current;
 
 	int pcb_version;
 	bool allow_reading;

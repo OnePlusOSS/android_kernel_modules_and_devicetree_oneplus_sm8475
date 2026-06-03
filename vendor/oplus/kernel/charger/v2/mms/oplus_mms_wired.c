@@ -1334,6 +1334,44 @@ int oplus_wired_set_pd_config(u32 pdo)
 	return rc;
 }
 
+int oplus_wired_set_burst_mode(bool enable)
+{
+	int rc;
+	struct oplus_mms_wired *chip = g_mms_wired;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	rc = oplus_chg_ic_func(chip->buck_ic,
+			       OPLUS_IC_FUNC_BUCK_SET_BURST_MODE,
+			       enable);
+	if (rc < 0 && rc != -ENOTSUPP)
+		chg_err("can't set burst mode rc=%d\n", rc);
+
+	return rc;
+}
+
+int oplus_wired_set_low_vsys_thr(bool enable)
+{
+	int rc;
+	struct oplus_mms_wired *chip = g_mms_wired;
+
+	if (chip == NULL) {
+		chg_err("chip is NULL");
+		return -ENODEV;
+	}
+
+	rc = oplus_chg_ic_func(chip->buck_ic,
+			       OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR,
+			       enable);
+	if (rc < 0 && rc != -ENOTSUPP)
+		chg_err("can't set low vsys thr rc=%d\n", rc);
+
+	return rc;
+}
+
 #define USB_TEMP_DEF	25
 int oplus_wired_get_usb_temp_volt(int *vol_l, int *vol_r)
 {

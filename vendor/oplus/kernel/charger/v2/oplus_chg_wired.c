@@ -529,7 +529,12 @@ static int oplus_wired_current_set(struct oplus_chg_wired *chip,
 	mutex_lock(&chip->current_lock);
 	icl_tmp_ma = get_effective_result(chip->icl_votable);
 	vote(chip->fcc_votable, SPEC_VOTER, true, fcc_ma, false);
-	vote(chip->icl_votable, SPEC_VOTER, true, icl_ma, true);
+	if ((oplus_comm_get_boot_completed() == false) &&
+		(chip->chg_mode == OPLUS_WIRED_CHG_MODE_UNKNOWN) &&
+		!oplus_is_power_off_charging())
+		chg_info("dont set icl=500ma, keep icl setting in lk/uefi");
+	else
+		vote(chip->icl_votable, SPEC_VOTER, true, icl_ma, true);
 	if (!chip->authenticate || !chip->hmac) {
 		vote(chip->fcc_votable, NON_STANDARD_VOTER, true,
 		     spec->non_standard_ibatmax_ma, false);
@@ -668,6 +673,8 @@ static void oplus_wired_qc_config_work(struct work_struct *work)
 			/* Set the current to 500ma before QC boost ot 9V */
 			vote(chip->icl_votable, SPEC_VOTER, true, PDQC_BUCK_DEF_CURR_MA,
 			     true);
+			oplus_wired_set_burst_mode(false);
+			oplus_wired_set_low_vsys_thr(false);
 			mutex_lock(&chip->icl_lock);
 			rc = oplus_wired_set_qc_config(OPLUS_CHG_QC_2_0, OPLUS_CHG_VBUS_9V);
 			mutex_unlock(&chip->icl_lock);
@@ -710,6 +717,8 @@ static void oplus_wired_qc_config_work(struct work_struct *work)
 		/* Set the current to 500ma before stepping down */
 		vote(chip->icl_votable, SPEC_VOTER, true, PDQC_BUCK_DEF_CURR_MA,
 		     true);
+		oplus_wired_set_burst_mode(true);
+		oplus_wired_set_low_vsys_thr(true);
 		mutex_lock(&chip->icl_lock);
 		rc = oplus_wired_set_qc_config(OPLUS_CHG_QC_2_0, OPLUS_CHG_VBUS_5V);
 		mutex_unlock(&chip->icl_lock);
@@ -727,6 +736,8 @@ static void oplus_wired_qc_config_work(struct work_struct *work)
 	reinit_completion(&chip->qc_action_ack);
 	if (!READ_ONCE(chip->chg_online)) {
 		chg_info("charger offline\n");
+		oplus_wired_set_burst_mode(true);
+		oplus_wired_set_low_vsys_thr(true);
 		return;
 	}
 	rc = wait_for_completion_timeout(
@@ -758,6 +769,7 @@ static void oplus_wired_qc_config_work(struct work_struct *work)
 	}
 
 set_curr:
+	oplus_wired_set_burst_mode(true);
 	/* The configuration fails and the current needs to be reset */
 	oplus_wired_current_set(chip, vbus_changed);
 }
@@ -908,6 +920,8 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 			cancel_delayed_work_sync(&chip->pd_boost_icl_disable_work);
 			vote(chip->icl_votable, BOOST_VOTER, true, PD_BOOST_ICL_MA, true);
 			schedule_delayed_work(&chip->pd_boost_icl_disable_work, PD_BOOST_DISABLE_ICL_DELAY);
+			oplus_wired_set_burst_mode(false);
+			oplus_wired_set_low_vsys_thr(false);
 			mutex_lock(&chip->icl_lock);
 			rc = oplus_wired_set_pd_config(OPLUS_PD_9V_PDO);
 			mutex_unlock(&chip->icl_lock);
@@ -949,6 +963,8 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 		     true);
 		vote(chip->icl_votable, BOOST_VOTER, false, 0, true);
 		cancel_delayed_work_sync(&chip->pd_boost_icl_disable_work);
+		oplus_wired_set_burst_mode(true);
+		oplus_wired_set_low_vsys_thr(true);
 		mutex_lock(&chip->icl_lock);
 		rc = oplus_wired_set_pd_config(OPLUS_PD_5V_PDO);
 		mutex_unlock(&chip->icl_lock);
@@ -966,6 +982,8 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 	reinit_completion(&chip->pd_action_ack);
 	if (!READ_ONCE(chip->chg_online)) {
 		chg_info("charger offline\n");
+		oplus_wired_set_burst_mode(true);
+		oplus_wired_set_low_vsys_thr(true);
 		return;
 	}
 	rc = wait_for_completion_timeout(
@@ -992,6 +1010,7 @@ static void oplus_wired_pd_config_work(struct work_struct *work)
 	}
 
 set_curr:
+	oplus_wired_set_burst_mode(true);
 	/* The configuration fails and the current needs to be reset */
 	oplus_wired_current_set(chip, vbus_changed);
 }
@@ -2191,7 +2210,6 @@ static int oplus_wired_parse_dt(struct oplus_chg_wired *chip)
 	chip->vooc_support = of_property_read_bool(node, "oplus,vooc-support");
 	chip->adjust_pdqc_vol_thr_support = of_property_read_bool(node,
 						"oplus,adjust-pdqc-vol-thr-support");
-
 	rc = of_property_read_u32(node, "oplus_spec,pd-iclmax-ma",
 				  &spec->pd_iclmax_ma);
 	if (rc < 0) {

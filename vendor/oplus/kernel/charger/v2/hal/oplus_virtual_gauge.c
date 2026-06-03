@@ -476,6 +476,38 @@ static int oplus_chg_vg_get_batt_max(struct oplus_chg_ic_dev *ic_dev,
 	return rc;
 }
 
+static int oplus_chg_vg_get_batt_fcl(struct oplus_chg_ic_dev *ic_dev, int *vol_mv)
+{
+	struct oplus_virtual_gauge_ic *chip;
+	int i;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	for (i = 0; i < chip->child_num; i++) {
+		if (!func_is_support(&chip->child_list[i],
+					 OPLUS_IC_FUNC_GAUGE_GET_FCL_VOLT)) {
+			rc = (rc == 0) ? -ENOTSUPP : rc;
+			continue;
+		}
+		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
+					   OPLUS_IC_FUNC_GAUGE_GET_FCL_VOLT,
+					   vol_mv);
+		if (rc == -ENOTSUPP)
+			continue;
+		if (rc < 0)
+			chg_err("child ic[%d] get battery fcl voltage max error, rc=%d, *vol_mv = %d\n",
+				i, rc, *vol_mv);
+		return rc;
+	}
+
+	return rc;
+}
+
 static int oplus_chg_vg_get_batt_min(struct oplus_chg_ic_dev *ic_dev,
 				     int *vol_mv)
 {
@@ -2735,6 +2767,43 @@ static int oplus_chg_vg_get_battinfo_sn(struct oplus_chg_ic_dev *ic_dev, char bu
 	return rc;
 }
 
+static int oplus_chg_vg_get_gauge_r_info(struct oplus_chg_ic_dev *ic_dev, unsigned char *info, int len)
+{
+	struct oplus_virtual_gauge_ic *chip;
+	int i, index;
+	int rc = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	chip = oplus_chg_ic_get_drvdata(ic_dev);
+	index = 0;
+	for (i = 0; i < chip->child_num; i++) {
+		if (!func_is_support(&chip->child_list[i], OPLUS_IC_FUNC_GAUGE_GET_GAUGE_R_INFO)) {
+			rc = (rc == 0) ? -ENOTSUPP : rc;
+			continue;
+		}
+
+		if (index >= len)
+			return len;
+		rc = oplus_chg_ic_func(chip->child_list[i].ic_dev,
+				       OPLUS_IC_FUNC_GAUGE_GET_GAUGE_R_INFO, info + index, len - index);
+		if (rc < 0) {
+			if (rc != -ENOTSUPP) {
+				chg_err("child ic[%d] get r info error, rc=%d\n", i, rc);
+				rc = snprintf(info + index, len - index, "ic %d read error, rc=%d", i, rc);
+			} else {
+				rc = 0;
+			}
+		}
+		index += rc;
+	}
+
+	return index;
+}
+
 static int oplus_chg_vg_set_read_mode(struct oplus_chg_ic_dev *ic_dev, int value)
 {
 	struct oplus_virtual_gauge_ic *chip;
@@ -3498,6 +3567,14 @@ static void *oplus_chg_vg_get_func(struct oplus_chg_ic_dev *ic_dev,
 	case OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_GAUGE_CAR_C,
 			oplus_chg_vg_get_gauge_car_c);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_GAUGE_R_INFO:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_GAUGE_R_INFO,
+			oplus_chg_vg_get_gauge_r_info);
+		break;
+	case OPLUS_IC_FUNC_GAUGE_GET_FCL_VOLT:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_GAUGE_GET_FCL_VOLT,
+			oplus_chg_vg_get_batt_fcl);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

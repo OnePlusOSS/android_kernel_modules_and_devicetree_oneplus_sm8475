@@ -606,8 +606,88 @@
                     }
                 }
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_CP_GET_IIN_MAX",
+            "desc": {
+                "zh": "获取CP在某个工作模式下最大支持的输入电流"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["enum oplus_cp_work_mode", "int *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "cp的工作模式"
+                    }
+                },
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "最大输入电流，单位mA"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_CP_WATCHDOG_RESET",
+            "desc": {
+                "zh": "复位CP的看门狗"
+            },
+            "auto_debug_code": true,
+            "parameter_list": [],
+            "parameter_desc": [],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_CP_SET_SSTIMEOUT_UCP_ENABLE",
+            "desc": {
+                "zh": "SS timeout和ucp开关"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1:打开, 0:关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "SS timeout和ucp开关"
+                    }
+                },
+                 "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "使用val覆盖传入的开启状态"
+                    }
+                }
+            }
         }
     ],
 
-    "version": "V2.1:17:5cfefedeabd4e3130fc656e8e49d971dc2bc20a2f5acb5038a83107d5461e310"
+    "version": "V2.3:20:f5b8fe23dec6d58f3e5980881af2bb23af34eb7f0a541058c6a13bb833a102c6"
 }

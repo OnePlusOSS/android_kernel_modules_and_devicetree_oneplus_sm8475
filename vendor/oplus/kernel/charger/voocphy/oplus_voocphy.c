@@ -150,13 +150,6 @@ do {                                    \
 #define IRQ_EVNET_NUM_HL7138	16
 #define BIDIRECT_IRQ_EVNET_NUM	12
 
-struct voocphy_full_limit_curr_table {
-	int volt_diff;
-	int curr_dec;
-	int dchg_curr;
-	int no_dchg_curr;
-};
-
 struct voocphy_log_buf *g_voocphy_log_buf = NULL;
 static struct oplus_voocphy_manager *g_voocphy_chip = NULL;
 ktime_t calltime, rettime;
@@ -170,12 +163,6 @@ static struct pm_qos_request pm_qos_req;
 #endif
 static int disable_sub_cp_count = 0;
 static int slave_trouble_count = 0;
-
-static struct voocphy_full_limit_curr_table full_limit_curr_table[] = {
-	{0, 10, 15, 10},
-	{20, 5, 15, 10},
-	{40, 0, 15, 10}
-};
 
 extern int oplus_chg_get_battery_btb_temp_cal(void);
 extern int oplus_chg_get_usb_btb_temp_cal(void);
@@ -1871,6 +1858,7 @@ static void oplus_voocphy_update_data(struct oplus_voocphy_manager *chip)
 			voocphy_err("slave_ops is NULL!\n");
 		} else {
 			slave_cp_ichg = chip->slave_ops->get_ichg(chip);
+			chip->slave_cp_ichg = slave_cp_ichg;
 			div_cp_ichg = (chip->cp_ichg > slave_cp_ichg)? (chip->cp_ichg - slave_cp_ichg) : (slave_cp_ichg - chip->cp_ichg);
 			chip->cp_ichg = chip->cp_ichg + slave_cp_ichg;
 			voocphy_err("total cp_ichg = %d div_ichg = %d\n", chip->cp_ichg, div_cp_ichg);
@@ -5760,52 +5748,72 @@ static int oplus_voocphy_check_dchg(struct oplus_voocphy_manager *chip)
 	return 0;
 }
 
-static int oplus_voocphy_cal_full_limit_curr(struct oplus_voocphy_manager *chip)
+static int oplus_voocphy_set_fcl_curr(struct oplus_voocphy_manager *chip)
 {
-	int i;
-	int volt_diff = 0;
-	int len = ARRAY_SIZE(full_limit_curr_table);
+	int curr_dec = 0, min_curr = 0;
+	bool hw_status = false, limit_status = false;
 	int batt_curr_limit = 0;
-	int vbat_temp_cur = chip->icharging;
+	int hw_vth = (int)chip->vooc_1time_full_voltage;
+	int sw_vth = (int)chip->vooc_ntime_full_voltage;
+	int ibus_ma = 0, ifg = 0, ibat = 0;
+	int vbat_fg = 0, vbat_cp = 0, vbat_r = 0;
+	int vb_offset = 0, vbat_offset = 0, ratio = 2;
 	int batt_temp = oplus_chg_get_chg_temperature();
 
-	for (i = 0; i < len; i++) {
-		if (i == 0)
-			volt_diff = (int)chip->vooc_1time_full_voltage - (int)chip->gauge_vbatt;
-		else
-			volt_diff = (int)chip->vooc_ntime_full_voltage - (int)chip->gauge_vbatt;
+	if (chip->dchg)
+		ratio = 1;
 
-		if (full_limit_curr_table[i].volt_diff > volt_diff)
-			break;
+	ifg = chip->icharging;
+	ibus_ma = chip->master_cp_ichg + chip->slave_cp_ichg;
+	if (oplus_voocphy_get_bidirect_cp_support())
+		ibat = abs(ifg);
+	else
+		ibat = ibus_ma * ratio;
+	vb_offset = oplus_chg_get_vb_offset();
+	vbat_cp = oplus_voocphy_get_cp_vbat();
+	if (chip->parallel_charge_support)
+		vbat_fg = chip->gauge_vbatt;
+	else
+		vbat_fg = oplus_gauge_get_batt_mvolts_2cell_max();
+
+	if (vbat_cp) {
+		vbat_offset = vbat_cp - (ibus_ma * vb_offset / 1000);
+		if (chip->parallel_charge_support)
+			vbat_r = max(vbat_offset, vbat_fg);
+		else
+			vbat_r = vbat_offset;
+	} else {
+		vbat_r = vbat_fg;
 	}
 
-	if (i != len) {
+	limit_status = oplus_chg_get_fcl_curr(hw_vth, sw_vth, vbat_r, &curr_dec, &min_curr, &hw_status);
+	if (limit_status) {
 		if (chip->dchg) {
-			batt_curr_limit = vbat_temp_cur /100 - full_limit_curr_table[i].curr_dec;
-			chip->current_full_limit = batt_curr_limit > full_limit_curr_table[i].dchg_curr ?
-				batt_curr_limit : full_limit_curr_table[i].dchg_curr;
+			batt_curr_limit = ibat - curr_dec;
+			chip->current_full_limit = batt_curr_limit > min_curr ? batt_curr_limit : min_curr;
 		} else {
-			batt_curr_limit = vbat_temp_cur /200 - full_limit_curr_table[i].curr_dec;
-			chip->current_full_limit = batt_curr_limit > full_limit_curr_table[i].no_dchg_curr ?
-				batt_curr_limit : full_limit_curr_table[i].no_dchg_curr;
+			batt_curr_limit = (ibat - curr_dec * 2) / 2;
+			chip->current_full_limit = batt_curr_limit > min_curr ? batt_curr_limit : min_curr;
 		}
+		chip->current_full_limit /= 100;
 		chip->full_limit_curr = true;
 
-		if (i == 0)
+		if (hw_status)
 			oplus_chg_track_set_fcl_info(
-				TRACK_1_TIME_FULL_CURR_LIMIT, chip->gauge_vbatt, vbat_temp_cur, batt_temp);
+				TRACK_1_TIME_FULL_CURR_LIMIT, vbat_r, ibat, batt_temp);
 		else
 			oplus_chg_track_set_fcl_info(
-				TRACK_N_TIME_FULL_CURR_LIMIT, chip->gauge_vbatt, vbat_temp_cur, batt_temp);
+				TRACK_N_TIME_FULL_CURR_LIMIT, 0, 0, 0);
 	}
 
-	chg_info("gauge_vbatt_ichg[%d,%d], volt_diff:%d, batt_curr_limit:%d,%d, rc:%d\n",
-		chip->gauge_vbatt, vbat_temp_cur, volt_diff, batt_curr_limit, chip->current_full_limit, chip->full_limit_curr);
+	chg_info(" gauge_vbatt_ichg[%d,%d,%d,%d][%d,%d,%d,%d], batt_curr_limit:[%d,%d], rc:%d\n",
+		vbat_offset, vbat_fg, vbat_cp, vbat_r, chip->icharging, ifg, chip->cp_ichg, ibat,
+		batt_curr_limit, chip->current_full_limit, limit_status);
 
 	return 0;
 }
 
-static int oplus_voocphy_check_full_limit_curr(struct oplus_voocphy_manager *chip)
+static int oplus_voocphy_check_fcl_curr(struct oplus_voocphy_manager *chip)
 {
 	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
 
@@ -5815,7 +5823,7 @@ static int oplus_voocphy_check_full_limit_curr(struct oplus_voocphy_manager *chi
 	if (!chip->full_limit_curr) {
 		chip->pre_current_full_limit = 0;
 		chip->full_limit_count = 0;
-		oplus_voocphy_cal_full_limit_curr(chip);
+		oplus_voocphy_set_fcl_curr(chip);
 	} else {
 		chip->full_limit_count++;
 		 if (chip->full_limit_count > 3) { /*TODO: wait count for 3 equ 2ms*/
@@ -5871,7 +5879,7 @@ int oplus_voocphy_vol_event_handle(unsigned long data)
 	if (!chip->btb_temp_over) {
 		oplus_voocphy_request_fastchg_curv(chip);
 
-		oplus_voocphy_check_full_limit_curr(chip);
+		oplus_voocphy_check_fcl_curr(chip);
 		//set above calculate max current
 		if (!chip->ap_need_change_current)
 			chip->ap_need_change_current
@@ -9406,4 +9414,15 @@ int oplus_voocphy_get_bcc_exit_curr(void)
 void oplus_voocphy_clear_variables(void)
 {
 	oplus_voocphy_pm_qos_update(PM_QOS_DEFAULT_VALUE);
+}
+
+bool oplus_voocphy_get_parallel_charge_support(void)
+{
+	struct oplus_voocphy_manager *chip = g_voocphy_chip;
+
+	if (!chip) {
+		chg_err("g_voocphy_chip or chip is null\n");
+		return false;
+	}
+	return chip->parallel_charge_support;
 }

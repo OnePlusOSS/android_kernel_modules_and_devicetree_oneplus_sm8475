@@ -4418,10 +4418,11 @@ int bq27541_set_batt_first_usage_date(const char *info)
 		chg_err("bq27z561 deep init failed\n");
 		return -EINVAL;
 	}
+	mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
 		BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN, write_data);
 	if (ret < 0)
-		return -EINVAL;
+		goto error;
 	usleep_range(1000, 1000);
 
 	for (i = 0; i < BQ27Z561_BATT_FIRST_USAGE_DATE_WLEN; i++) {
@@ -4429,13 +4430,18 @@ int bq27541_set_batt_first_usage_date(const char *info)
 	}
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 
 	if (!gauge_ic->bq27z561_seal_flag) {
 		usleep_range(1000, 1000);
 		bq27z561_deep_deinit();
 	}
+
+	return 0;
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 	return ret;
 }
 
@@ -4507,10 +4513,11 @@ int bq27541_set_batt_ui_cc(int ui_cycle_count)
 	if (!bq27z561_deep_init()) {
 		return -EINVAL;
 	}
+	mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
 		BQ27Z561_BATT_UI_CC_WLEN, write_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
 	usleep_range(1000, 1000);
 
@@ -4519,14 +4526,18 @@ int bq27541_set_batt_ui_cc(int ui_cycle_count)
 	}
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 
 	if (!gauge_ic->bq27z561_seal_flag) {
 		usleep_range(1000, 1000);
 		bq27z561_deep_deinit();
 	}
 
+	return 0;
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 	return ret;
 }
 
@@ -4563,10 +4574,12 @@ int bq27541_set_batt_ui_soh(int ui_soh)
 	if (!bq27z561_deep_init()) {
 		return -EINVAL;
 	}
+
+	mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
 		BQ27Z561_BATT_UI_SOH_WLEN, write_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
 	usleep_range(1000, 1000);
 
@@ -4575,14 +4588,18 @@ int bq27541_set_batt_ui_soh(int ui_soh)
 	}
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 
 	if (!gauge_ic->bq27z561_seal_flag) {
 		usleep_range(1000, 1000);
 		bq27z561_deep_deinit();
 	}
 
+	return 0;
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 	return ret;
 }
 
@@ -4620,10 +4637,12 @@ int bq27541_set_batt_used_flag(int used_flag)
 	if (!bq27z561_deep_init()) {
 		return -EINVAL;
 	}
+
+	mutex_lock(&gauge_ic->gauge_alt_manufacturer_access);
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_DATAFLASHBLOCK,
 		BQ27Z561_BATT_USED_FLAG_WLEN, write_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
 	usleep_range(1000, 1000);
 
@@ -4632,14 +4651,18 @@ int bq27541_set_batt_used_flag(int used_flag)
 	}
 	ret = gauge_write_i2c_block(gauge_ic, BQ27Z561_AUTHENCHECKSUM, 2, check_data);
 	if (ret < 0) {
-		return -EINVAL;
+		goto error;
 	}
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 
 	if (!gauge_ic->bq27z561_seal_flag) {
 		usleep_range(1000, 1000);
 		bq27z561_deep_deinit();
 	}
+	return 0;
 
+error:
+	mutex_unlock(&gauge_ic->gauge_alt_manufacturer_access);
 	return ret;
 }
 

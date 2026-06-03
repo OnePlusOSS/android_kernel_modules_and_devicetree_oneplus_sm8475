@@ -275,6 +275,7 @@ static const char *const pe_state_name[] = {
 	"PE_OVER_RECV_HRESET_LIMIT",
 #endif/* CONFIG_USB_PD_RECV_HRESET_COUNTER */
 	"PE_REJECT",
+	"PE_WAIT",
 	"PE_ERROR_RECOVERY",
 #ifdef CONFIG_USB_PD_ERROR_RECOVERY_ONCE
 	"PE_ERROR_RECOVERY_ONCE",
@@ -538,6 +539,7 @@ static const char *const pe_state_name[] = {
 	"OVER_HRESET_LIMIT",
 #endif/* CONFIG_USB_PD_RECV_HRESET_COUNTER */
 	"REJECT",
+	"WAIT",
 	"ERR_RECOVERY",
 #ifdef CONFIG_USB_PD_ERROR_RECOVERY_ONCE
 	"ERR_RECOVERY1",
@@ -810,6 +812,7 @@ static const struct pe_state_actions pe_state_actions[] = {
 	PE_STATE_ACTIONS(pe_over_recv_hreset_limit),
 #endif/* CONFIG_USB_PD_RECV_HRESET_COUNTER */
 	PE_STATE_ACTIONS(pe_reject),
+	PE_STATE_ACTIONS(pe_wait),
 	PE_STATE_ACTIONS(pe_error_recovery),
 #ifdef CONFIG_USB_PD_ERROR_RECOVERY_ONCE
 	PE_STATE_ACTIONS(pe_error_recovery_once),

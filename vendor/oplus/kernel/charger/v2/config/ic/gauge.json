@@ -2,6 +2,37 @@
     "type": "ic_cfg",
     "name": "gauge",
     "max": 100,
+    "enum_list": [
+        {
+            "name": "oplus_sub_btb_state",
+            "desc":{
+                "zh": "获取电池副BTB扣合状态"
+            },
+            "list": [
+                {
+                   "lable": "BATT_BTB_STATE_CONNECT",
+                   "desc": {
+                       "zh": "BTB处于连接状态"
+                   },
+                    "str": "btb_connect"
+                },
+                {
+                    "lable": "BATT_BTB_STATE_NOT_CONNECT",
+                    "desc": {
+                        "zh": "BTB处于断开状态"
+                    },
+                    "str": "btb_disconnect"
+                },
+                {
+                    "lable": "BATT_BTB_STATE_NOT_SUPPORT",
+                    "desc": {
+                        "zh": "不支持BTB连接状态读取"
+                    },
+                    "str": "btb_state_not_support"
+                }
+             ]
+         }
+    ],
     "list": [
         {
             "lable": "OPLUS_IC_FUNC_GAUGE_UPDATE",
@@ -2792,7 +2823,270 @@
                     }
                 }
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_SUB_BTB_CONNECT_STATE",
+            "desc": {
+                "zh": "获取电池副BTB扣合状态"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["enum oplus_sub_btb_state *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "副BTB的扣合状态 0:connect, 1:disconnect, 2:not_support"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "返回副BTB的扣合状态 0:connect, 1:disconnect, 2:not_support"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "使用val覆盖副BTB的扣合状态"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_DEC_FG_TYPE",
+            "desc": {
+                "zh": "获取循环降压老化类型"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "循环降压老化类型"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_DEC_CV_SOH",
+            "desc": {
+                "zh": "获取循环降压健康度"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "循环降压健康度"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_VCT",
+            "desc": {
+                "zh": "获取循环降压VCT"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "循环降压VCT"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_SET_VCT",
+            "desc": {
+                "zh": "设置循环降压VCT"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "0-10000",
+                    "type": "in",
+                    "desc": {
+                        "zh": "循环降压VCT"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_SET_CUV_STATE",
+            "desc": {
+                "zh": "设置两级过放保护点CUV电压切换"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "两级过放保护点CUV电压切换cuv_state"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_CUV_STATE",
+            "desc": {
+                "zh": "获取两级过放保护点CUV电压切换状态"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "两级CUV电压切换"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_GAUGE_GET_GAUGE_R_INFO",
+            "desc": {
+                "zh": "获取R寄存器信息"
+            },
+            "auto_debug_code": false,
+            "parameter_list": ["unsigned char *", "int"],
+            "parameter_desc": [
+                {
+                    "range": "字符串",
+                    "type": "out",
+                    "desc": {
+                        "zh": "用于接收输出结果的buf"
+                    }
+                },
+                {
+                    "range": "N/A",
+                    "type": "in",
+                    "desc": {
+                        "zh": "参数0对应的buf长度"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "返回寄存器字符串"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
         }
     ],
-    "version": "V4.7:92:e9030888c6429bdfd1c2e25dbb960648918d0ca1e133040b3dbb82ed74bbf118"
+    "version": "V4.8:100:91ecc2acda509efcc34435e363abecbcfcc0e26088bbc5f3d80f80ffb83b73a3"
 }

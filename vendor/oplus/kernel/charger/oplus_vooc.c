@@ -1335,6 +1335,7 @@ static int oplus_vooc_init_full_limit_curr(struct oplus_vooc_chip *chip)
 	chip->current_full_limit = 0;
 	chip->pre_ap_current_limit = 0;
 	chip->full_limit_curr_trigger = false;
+	chip->ask_current = 1500; /* starting current 1500 ma */
 
 	return 0;
 }
@@ -1374,12 +1375,12 @@ static int oplus_vooc_cal_full_limit_curr(struct oplus_vooc_chip *chip, int volt
 
 	/* single-cell running svooc must be non-direct charging */
 	if (charger_chip->vbatt_num == 1 &&
-	    chip->fast_chg_type == CHARGER_SUBTYPE_FASTCHG_SVOOC)
+	    chip->fast_chg_type != CHARGER_SUBTYPE_FASTCHG_VOOC)
 		dchg = false;
 
 	current_now = -current_now;
 	if (i != len) {
-		if (chip->fast_chg_type != CHARGER_SUBTYPE_FASTCHG_VOOC) {
+		if (dchg) {
 			batt_curr_limit = current_now - full_limit_curr_table[i].curr_dec;
 			batt_curr_limit = batt_curr_limit > full_limit_curr_table[i].dchg_curr ?
 				batt_curr_limit : full_limit_curr_table[i].dchg_curr;
@@ -1442,6 +1443,8 @@ static int oplus_vooc_cal_batt_r(struct oplus_vooc_chip *chip, int batt_volt, in
 			full_limit_curr_batt_r->batt_curr, batt_volt, batt_curr, batt_r);
 
 		if (batt_r <= 100) { /* impedance less than 100 milliohms */
+			full_limit_curr_batt_r->batt_volt = batt_volt;
+			full_limit_curr_batt_r->batt_curr = batt_curr;
 			chg_info("batt_r invalid\n");
 			return 0;
 		}
@@ -1508,36 +1511,54 @@ static int oplus_vooc_recovery_full_limit_curr(struct oplus_vooc_chip *chip, int
 	return 0;
 }
 
-static int oplus_vooc_ppc_fastchg_current(struct oplus_vooc_chip *chip, int ask_current_level, int target_current_level)
+static bool oplus_vooc_pcc_support(struct oplus_vooc_chip *chip, struct oplus_chg_chip *charger_chip)
 {
-	int ask_current = 0;
+	int reply_bits = oplus_vooc_get_reply_bits();
+
+	if (!chip || !charger_chip || !charger_chip->full_limit_curr_support)
+		return false;
+
+	if (reply_bits != 7)  /* mcu reply 7 bits only support */
+		return false;
+
+	return true;
+}
+
+static int oplus_vooc_pcc_fastchg_current(struct oplus_vooc_chip *chip, int target_current_level)
+{
+	bool support;
+	int ask_current_level = 0;
 	int target_current = 0;
 	struct oplus_chg_chip *charger_chip = oplus_chg_get_chg_struct();
 
-	if (!chip || !charger_chip || !charger_chip->full_limit_curr_support)
-		return -EINVAL;
+	support = oplus_vooc_pcc_support(chip, charger_chip);
+	if (!support)
+		return target_current_level;
 
 	if (chip->notify_allow_reading_iic_cnt < 2) { /* first two 0x58 command frames handle */
 		chip->notify_allow_reading_iic_cnt++;
 		/* first two frames 0x58 use the default 1500 ma to reply to the mcu */
-		chip->ask_current_level = oplus_convert_current_to_level(charger_chip, 1500);
+		ask_current_level = oplus_convert_current_to_level(charger_chip, 1500);
+		chip->ask_current = 1500; /* init current 1500ma */
 	} else {
-		ask_current = oplus_convert_level_to_current(charger_chip, ask_current_level);
 		target_current = oplus_convert_level_to_current(charger_chip, target_current_level);
-		if (ask_current >= target_current) {
-			ask_current = target_current;
+		if (chip->ask_current >= target_current) {
+			chip->ask_current = target_current;
 		} else {
-			ask_current += 500;/* when the current rises, it increases by 500ma each time */
-			if (ask_current > target_current)
-				ask_current = target_current;
+			chip->ask_current += 500;/* when the current rises, it increases by 500ma each time */
+			if (chip->ask_current > target_current)
+				chip->ask_current = target_current;
 		}
-		chip->ask_current_level = oplus_convert_current_to_level(charger_chip, ask_current);
+		ask_current_level = oplus_convert_current_to_level(charger_chip, chip->ask_current);
 	}
 
-	chg_info("cnt:%d, ask_current:%d, target_current:%d, ask_current_level:%d",
-		chip->notify_allow_reading_iic_cnt, ask_current, target_current, chip->ask_current_level);
+	if (ask_current_level <= 0)
+		ask_current_level = target_current_level;
 
-	return chip->ask_current_level;
+	chg_info("cnt:%d, ask_current:%d, target_current:%d, ask_current_level:%d,%d\n",
+		chip->notify_allow_reading_iic_cnt, chip->ask_current, target_current, ask_current_level, target_current_level);
+
+	return ask_current_level;
 }
 
 static void oplus_vooc_fastchg_func(struct work_struct *work)
@@ -2007,7 +2028,7 @@ static void oplus_vooc_fastchg_func(struct work_struct *work)
 
 		if (chip->vooc_multistep_adjust_current_support && (!(chip->support_vooc_by_normal_charger_path &&
 		    chip->fast_chg_type == CHARGER_SUBTYPE_FASTCHG_VOOC)) && !oplus_get_fg_i2c_err_occured()) {
-			ret_info = oplus_vooc_ppc_fastchg_current(chip, chip->ask_current_level, ret_info);
+			ret_info = oplus_vooc_pcc_fastchg_current(chip, ret_info);
 			oplus_vooc_recovery_full_limit_curr(chip, ret_info);
 		}
 

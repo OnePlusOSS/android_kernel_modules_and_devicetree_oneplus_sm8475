@@ -4330,26 +4330,36 @@ static int chg_alg_event(struct notifier_block *notifier,
 #ifdef OPLUS_FEATURE_CHG_BASIC
 /* Add for charging */
 #define OPLUS_SVID 0x22D9
+#define DISCOVER_SVID_MAX_RETRIES 2
+#define DISCOVER_SVID_RETRY_DELAY 50
 uint32_t pd_svooc_abnormal_adapter[] = {
 	0x20002,
+	0x10002,
+	0x10001,
+	0x40001,
 };
 
 int oplus_get_adapter_svid(void)
 {
-	int i = 0;
+	int i = 0, ret = 0;
 	uint32_t vdos[VDO_MAX_NR] = {0};
 	struct tcpc_device *tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
 	struct tcpm_svid_list svid_list = {0, {0}};
-	int recheck_svid = 0;
+	int disc_svid_retries = 0;
 
 	if (tcpc_dev == NULL || !g_oplus_chip) {
 		chg_err("tcpc_dev is null return\n");
 		return -1;
 	}
-recheck:
+
+	if (!oplus_is_vooc_project()) {
+		chg_err("device don't support vooc\n");
+		return -1;
+	}
+
 	tcpm_inquire_pd_partner_svids(tcpc_dev, &svid_list);
 	for (i = 0; i < svid_list.cnt; i++) {
-		chg_err("svid[%d] = 0x%x\n", i, svid_list.svids[i]);
+		chg_err("svid[%d] = %d\n", i, svid_list.svids[i]);
 		if (svid_list.svids[i] == OPLUS_SVID) {
 			g_oplus_chip->pd_svooc = true;
 			chg_err("match svid and this is oplus adapter\n");
@@ -4361,18 +4371,53 @@ recheck:
 	if ((vdos[0] & 0xFFFF) == OPLUS_SVID) {
 		g_oplus_chip->pd_svooc = true;
 		chg_err("match svid and this is oplus adapter 11\n");
+		for (i = 0; i < ARRAY_SIZE(pd_svooc_abnormal_adapter); i++) {
+			if (pd_svooc_abnormal_adapter[i] == vdos[2]) {
+				chg_err("This is oplus gnd abnormal adapter %x %x \n", vdos[1], vdos[2]);
+				g_oplus_chip->is_abnormal_adapter = true;
+				break;
+			}
+		}
 	}
 
-	if (!g_oplus_chip->chg_ops->check_chrdet_status() &&
-	    g_oplus_chip->pd_svooc == true &&
-	    get_charger_ic_det(g_oplus_chip) == (1 << SC6607) &&
-	    recheck_svid < 3) {
-		msleep(10);
-		recheck_svid++;
-		if (g_oplus_chip->pd_svooc == false)
-			goto recheck;
+	if (!g_oplus_chip->pd_svooc) {
+		chg_info("get pd_svooc svid fail, retry to discover id/svid\n");
+
+		do {
+			ret = tcpm_dpm_vdm_discover_id(tcpc_dev, NULL);
+			if (ret != TCPM_SUCCESS) {
+				chg_err("failed to discover id %d\n", ret);
+			}
+			ret = tcpm_dpm_vdm_discover_svid(tcpc_dev, NULL);
+			if (ret != TCPM_SUCCESS) {
+				disc_svid_retries++;
+				chg_err("Failed to discover svid. ret %d retries: %d\n", ret, disc_svid_retries);
+				if (disc_svid_retries < DISCOVER_SVID_MAX_RETRIES) {
+					msleep(DISCOVER_SVID_RETRY_DELAY);
+				}
+			}
+		} while (ret != TCPM_SUCCESS && disc_svid_retries < DISCOVER_SVID_MAX_RETRIES);
+		if (disc_svid_retries >= DISCOVER_SVID_MAX_RETRIES)
+			goto GET_SVID_COMPLETE;
+
+		tcpm_inquire_pd_partner_svids(tcpc_dev, &svid_list);
+		for (i = 0; i < svid_list.cnt; i++) {
+			chg_err("svid[%d] = 0x%x\n", i, svid_list.svids[i]);
+			if (svid_list.svids[i] == OPLUS_SVID) {
+				g_oplus_chip->pd_svooc = true;
+				chg_err("retry get match svid and this is oplus adapter\n");
+				break;
+			}
+		}
+
+		tcpm_inquire_pd_partner_inform(tcpc_dev, vdos);
+		if ((vdos[0] & 0xFFFF) == OPLUS_SVID) {
+			g_oplus_chip->pd_svooc = true;
+			chg_err("retry get match svid and this is oplus adapter 11\n");
+		}
 	}
 
+GET_SVID_COMPLETE:
 	return 0;
 }
 

@@ -17,6 +17,7 @@ chg_ic_cfg += $(chg_ic_cfg_path)/vooc.json
 chg_ic_cfg += $(chg_ic_cfg_path)/ufcs.json
 chg_ic_cfg += $(chg_ic_cfg_path)/pps.json
 chg_ic_cfg += $(chg_ic_cfg_path)/switch.json
+chg_ic_cfg += $(chg_ic_cfg_path)/gauge2.json
 
 chg_ic_cfg_c = $(chg_v2_src)/oplus_chg_ic_cfg.c
 chg_ic_cfg_debug = $(chg_v2_src)/oplus_chg_ic_auto_debug.c

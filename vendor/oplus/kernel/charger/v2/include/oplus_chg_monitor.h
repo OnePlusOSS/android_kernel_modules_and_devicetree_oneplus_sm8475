@@ -23,6 +23,8 @@ enum err_topic_item {
 	ERR_ITEM_CLOSE_CP,
 	ERR_ITEM_BIDIRECT_CP_INFO,
 	ERR_ITEM_PLC_INFO,
+	ERR_ITEM_GAUGE_R_INFO,
+	ERR_ITEM_FCL_INFO,
 };
 
 enum oplus_chg_track_mcu_voocphy_break_code {
@@ -83,6 +85,7 @@ enum oplus_chg_track_cp_voocphy_break_code {
 	TRACK_CP_VOOCPHY_SWITCH_TEMP_RANGE,
 	TRACK_CP_VOOCPHY_CURR_LIMIT_SMALL,
 	TRACK_CP_VOOCPHY_ADAPTER_ABNORMAL,
+	TRACK_CP_VOOCPHY_IC_BURN,
 	TRACK_CP_VOOCPHY_OTHER,
 };
 

@@ -483,8 +483,6 @@ static void oplus_retention_present_check_work(struct work_struct *work)
 	int ret = 0;
 
 	oplus_state_retention_notify(chip->retention_topic, chip->irq_plugin);
-	chip->cc_detect = oplus_wired_get_hw_detect_recheck();
-	chip->detect_flag = chip->cc_detect;
 	schedule_delayed_work(&chip->update_work, 0);
 	chip->connect_status_flag = oplus_state_retention(chip->retention_topic);
 	chg_debug("plugin = %d, connect_status_flag =%d\n", chip->irq_plugin, chip->connect_status_flag);

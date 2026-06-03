@@ -1243,8 +1243,385 @@
                 "write": false,
                 "overwrite": false
             }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_FPGA_RST",
+            "desc": {
+                "zh": "FPGA reset start通知"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "FPGA通知的reset 类型"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_USB_AICL_ENHANCE",
+            "desc": {
+                "zh": "获取是否支持usb增强方案"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool *"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "out",
+                    "desc": {
+                        "zh": "0: 不支持, 1: 支持"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_LPD_INFO",
+            "desc": {
+                "zh": "获取潮湿检测信息"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["u32 *", "u32"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "用于存放潮湿检测数据"
+                    }
+                },
+                {
+                    "range": "0-*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "用于标记需要获取的潮湿检测数据源"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "获取潮湿检测数据,对应数据分别为:SBU1,SBU2,SBU1_PULLUP,SBU2_PULLUP,CC1,CC2,DM,DP"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "val单位为mv输入顺序为:SBU1,SBU2,SBU1_PULLUP,SBU2_PULLUP,CC1,CC2,DM,DP"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_FLASH_MODE",
+            "desc": {
+                "zh": "设置高压打闪模式"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1: 高压打闪模式, 0: 非高压打闪模式"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                },
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_CHG_PATH",
+            "desc": {
+                "zh": "设置充电通道"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1:1S通道，2:2S通道"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_CHG_PATH_STATUS",
+            "desc": {
+                "zh": "获取充电通道状态信息"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "充电通道状态信息"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_BYB_STATUS",
+            "desc": {
+                "zh": "获取byb信息"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["char *"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_BYB_VOUT",
+            "desc": {
+                "zh": "获取byb vout"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["char *"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_BYB_VOUT",
+            "desc": {
+                "zh": "设置byb vout"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "设置vout电压，单位mA"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_ITEM_CHECK",
+            "desc": {
+                "zh": "是否要开iterm"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1: 开启, 0: 关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": {
+                    "cmd": "vict -f {id} -S{val} vic-*",
+                    "desc": {
+                        "zh": "是否要开iterm"
+                    }
+                },
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "使用val覆盖要设置Iterm开启状态"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_POWER_ROLE",
+            "desc": {
+                "zh": "获得power_role"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["int *"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "0: 正充, 1: 反充, -1:未知"
+                    }
+                }
+            ],
+            "vict": {
+                "read": {
+                    "cmd": "vict -f {id} -G vic-*",
+                    "desc": {
+                        "zh": "获取power role"
+                    }
+                },
+                "write": false,
+                "overwrite": {
+                    "cmd": "vict -f {id} -O {val} vic-*",
+                    "desc": {
+                        "zh": "power role 可选值为0，1，-1"
+                    }
+                }
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE",
+            "desc": {
+                "zh": "获取补电 pmos开关状态"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool *"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "out",
+                    "desc": {
+                        "zh": "1: 使能, 0: 关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE",
+            "desc": {
+                "zh": "补电 pmos开关控制"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1: 使能, 0: 关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_BURST_MODE",
+            "desc": {
+                "zh": "设置buck的burst mode"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_LOW_VSYS_THR",
+            "desc": {
+                "zh": "设置buck的vsys thr"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "*",
+                    "type": "in",
+                    "desc": {
+                        "zh": "N/A"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
         }
     ],
 
-    "version": "V2.0:44:c0fa54ea9069c791033d11d212a084ec2aaa5d9d93be9149cfad779433b8b93b"
+    "version": "V3.0:59:d9a866fc880acabc8c3ca4ceb51a956e62b2810c5ac255488345ff6692643bd8"
 }
